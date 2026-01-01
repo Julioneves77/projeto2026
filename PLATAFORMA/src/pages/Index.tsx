@@ -1,0 +1,52 @@
+import React, { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { Login } from '@/components/Login';
+import { Header } from '@/components/Header';
+import { Dashboard } from '@/components/Dashboard';
+import { Tickets } from '@/components/Tickets';
+import { Users } from '@/components/Users';
+import { Statistics } from '@/components/Statistics';
+import { Reports } from '@/components/Reports';
+import { EmailSupport } from '@/components/EmailSupport';
+import { SystemStability } from '@/components/SystemStability';
+
+const Index = () => {
+  const { currentUser } = useAuth();
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  if (!currentUser) {
+    return <Login />;
+  }
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'tickets':
+        return <Tickets />;
+      case 'usuarios':
+        return <Users />;
+      case 'estatisticas':
+        return <Statistics />;
+      case 'relatorios':
+        return <Reports />;
+      case 'suporte-email':
+        return <EmailSupport />;
+      case 'estabilidade':
+        return <SystemStability />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      <Header activeTab={activeTab} onTabChange={setActiveTab} />
+      <main className="flex-1 p-6 overflow-auto">
+        {renderContent()}
+      </main>
+    </div>
+  );
+};
+
+export default Index;

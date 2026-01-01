@@ -1,0 +1,264 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Background & Surfaces */
+    --background: 220 25% 97%;
+    --foreground: 220 30% 15%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 220 30% 15%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 30% 15%;
+    
+    /* Primary - Professional Blue */
+    --primary: 217 91% 45%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 217 91% 38%;
+    
+    /* Secondary */
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 220 30% 25%;
+    
+    /* Muted */
+    --muted: 220 20% 94%;
+    --muted-foreground: 220 15% 50%;
+    
+    /* Accent */
+    --accent: 217 91% 95%;
+    --accent-foreground: 217 91% 35%;
+    
+    /* Status Colors */
+    --status-waiting: 0 72% 51%;
+    --status-waiting-bg: 0 72% 95%;
+    --status-financial: 45 93% 47%;
+    --status-financial-bg: 45 93% 92%;
+    --status-progress: 217 91% 50%;
+    --status-progress-bg: 217 91% 95%;
+    --status-complete: 142 71% 40%;
+    --status-complete-bg: 142 71% 93%;
+    --status-priority: 280 65% 55%;
+    --status-priority-bg: 280 65% 95%;
+    
+    /* Utility */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 217 91% 45%;
+    
+    --radius: 0.625rem;
+    
+    /* Sidebar */
+    --sidebar-background: 220 30% 15%;
+    --sidebar-foreground: 220 20% 85%;
+    --sidebar-primary: 217 91% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 30% 22%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 30% 25%;
+    --sidebar-ring: 217 91% 55%;
+    
+    /* Custom */
+    --header-bg: 0 0% 100%;
+    --table-header: 220 20% 96%;
+    --table-row-hover: 220 20% 98%;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+    
+    --card: 222 47% 10%;
+    --card-foreground: 210 40% 96%;
+    
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 96%;
+    
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 7%;
+    --primary-hover: 217 91% 52%;
+    
+    --secondary: 222 47% 15%;
+    --secondary-foreground: 210 40% 90%;
+    
+    --muted: 222 47% 14%;
+    --muted-foreground: 215 20% 55%;
+    
+    --accent: 217 50% 18%;
+    --accent-foreground: 217 91% 75%;
+    
+    /* Status Colors - Dark */
+    --status-waiting: 0 72% 55%;
+    --status-waiting-bg: 0 50% 15%;
+    --status-financial: 45 93% 50%;
+    --status-financial-bg: 45 50% 15%;
+    --status-progress: 217 91% 60%;
+    --status-progress-bg: 217 50% 18%;
+    --status-complete: 142 71% 45%;
+    --status-complete-bg: 142 40% 15%;
+    --status-priority: 280 65% 60%;
+    --status-priority-bg: 280 40% 18%;
+    
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 222 47% 18%;
+    --input: 222 47% 18%;
+    --ring: 217 91% 60%;
+    
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 210 40% 85%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 222 47% 7%;
+    --sidebar-accent: 222 47% 12%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 222 47% 15%;
+    
+    --header-bg: 222 47% 8%;
+    --table-header: 222 47% 12%;
+    --table-row-hover: 222 47% 11%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 transition-colors duration-200;
+  }
+  
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .status-waiting {
+    @apply bg-[hsl(var(--status-waiting-bg))] text-[hsl(var(--status-waiting))];
+  }
+  
+  .status-financial {
+    @apply bg-[hsl(var(--status-financial-bg))] text-[hsl(var(--status-financial))];
+  }
+  
+  .status-progress {
+    @apply bg-[hsl(var(--status-progress-bg))] text-[hsl(var(--status-progress))];
+  }
+  
+  .status-complete {
+    @apply bg-[hsl(var(--status-complete-bg))] text-[hsl(var(--status-complete))];
+  }
+  
+  .status-priority {
+    @apply bg-[hsl(var(--status-priority-bg))] text-[hsl(var(--status-priority))];
+  }
+
+  .table-row-open {
+    @apply bg-muted/30;
+  }
+  
+  .table-row-atendimento {
+    @apply bg-[hsl(var(--status-financial-bg)/0.4)] border-l-4 border-l-[hsl(var(--status-financial))];
+  }
+  
+  .table-row-waiting {
+    @apply bg-[hsl(var(--status-waiting-bg)/0.3)] border-l-4 border-l-[hsl(var(--status-waiting))];
+  }
+  
+  .table-row-financial {
+    @apply bg-[hsl(var(--status-progress-bg)/0.3)] border-l-4 border-l-[hsl(var(--status-progress))];
+  }
+  
+  .table-row-complete {
+    @apply bg-[hsl(var(--status-complete-bg)/0.3)] border-l-4 border-l-[hsl(var(--status-complete))];
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 text-sidebar-foreground rounded-lg transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  }
+  
+  .sidebar-item-active {
+    @apply bg-sidebar-accent text-sidebar-primary font-medium;
+  }
+
+  .card-stat {
+    @apply bg-card rounded-xl p-6 shadow-sm border border-border transition-all duration-200 hover:shadow-md;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 bg-foreground/60 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+  }
+
+  .modal-content {
+    @apply bg-card rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col;
+  }
+
+  .copy-btn {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}

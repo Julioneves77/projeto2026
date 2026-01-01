@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 210 25% 97%;
+    --foreground: 215 30% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 30% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 30% 12%;
+
+    --primary: 175 70% 38%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 175 25% 93%;
+    --secondary-foreground: 175 55% 28%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 175 40% 90%;
+    --accent-foreground: 175 60% 25%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 210 20% 88%;
+    --input: 210 20% 88%;
+    --ring: 175 70% 38%;
+
+    --radius: 0.75rem;
+
+    /* Custom tokens */
+    --gradient-hero: linear-gradient(135deg, hsl(175, 70%, 38%) 0%, hsl(185, 60%, 45%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(210, 25%, 97%) 0%, hsl(175, 15%, 95%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0, 0%, 100%) 0%, hsl(175, 10%, 99%) 100%);
+    --shadow-sm: 0 1px 3px 0 hsl(215 30% 12% / 0.04), 0 1px 2px -1px hsl(215 30% 12% / 0.04);
+    --shadow-card: 0 4px 20px -4px hsl(175 40% 40% / 0.08), 0 2px 8px -2px hsl(215 30% 12% / 0.04);
+    --shadow-card-hover: 0 8px 30px -4px hsl(175 40% 40% / 0.12), 0 4px 12px -2px hsl(215 30% 12% / 0.06);
+    --shadow-button: 0 4px 16px -4px hsl(175 70% 38% / 0.35);
+    --shadow-button-hover: 0 8px 24px -4px hsl(175 70% 38% / 0.45);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 215 30% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 28% 12%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 28% 12%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 175 60% 50%;
+    --primary-foreground: 215 30% 8%;
+
+    --secondary: 215 25% 18%;
+    --secondary-foreground: 175 40% 70%;
+
+    --muted: 215 20% 15%;
+    --muted-foreground: 210 15% 60%;
+
+    --accent: 175 35% 18%;
+    --accent-foreground: 175 50% 75%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 215 20% 20%;
+    --input: 215 20% 20%;
+    --ring: 175 60% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Outfit', sans-serif;
+    background: var(--gradient-subtle);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+    @apply tracking-tight;
+  }
+}
+
+@layer components {
+  .btn-action {
+    @apply w-full py-4 px-6 bg-primary text-primary-foreground font-semibold text-lg rounded-xl;
+    @apply hover:opacity-90 active:scale-[0.98];
+    @apply transition-all duration-300 ease-out;
+    background: var(--gradient-hero);
+    box-shadow: var(--shadow-button);
+  }
+
+  .btn-action:hover {
+    box-shadow: var(--shadow-button-hover);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium;
+    @apply hover:opacity-90 transition-all duration-300;
+    background: var(--gradient-hero);
+    box-shadow: var(--shadow-button);
+  }
+
+  .btn-secondary:hover {
+    box-shadow: var(--shadow-button-hover);
+    transform: translateY(-1px);
+  }
+
+  .card-main {
+    @apply bg-card rounded-2xl p-8 border border-border/50;
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+    transition: var(--transition-smooth);
+  }
+
+  .card-main:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .card-interactive {
+    @apply card-main cursor-pointer;
+  }
+
+  .card-interactive:hover {
+    @apply border-primary/20;
+    transform: translateY(-2px);
+  }
+
+  .footer-link {
+    @apply text-muted-foreground hover:text-foreground transition-colors duration-200;
+  }
+
+  .section-title {
+    @apply text-3xl md:text-4xl font-bold text-foreground tracking-tight;
+  }
+
+  .section-subtitle {
+    @apply text-lg text-muted-foreground;
+  }
+
+  .icon-box {
+    @apply w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center;
+    @apply transition-all duration-300;
+  }
+
+  .icon-box-sm {
+    @apply w-12 h-12 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0;
+    @apply transition-all duration-300;
+  }
+
+  .page-header {
+    @apply pt-8 pb-4 px-6;
+  }
+
+  .page-content {
+    @apply flex-1 px-6 py-12;
+  }
+
+  .page-container {
+    @apply max-w-3xl mx-auto;
+  }
+
+  .back-link {
+    @apply inline-flex items-center gap-2 text-primary hover:opacity-80 transition-opacity;
+  }
+
+  .badge {
+    @apply text-sm font-semibold text-primary;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
