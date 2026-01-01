@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Login } from '@/components/Login';
 import { Header } from '@/components/Header';
@@ -12,7 +12,17 @@ import { SystemStability } from '@/components/SystemStability';
 
 const Index = () => {
   const { currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Carregar aba ativa do localStorage
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('av_active_tab');
+    const validTabs = ['dashboard', 'tickets', 'usuarios', 'estatisticas', 'relatorios', 'suporte-email', 'estabilidade'];
+    return (saved && validTabs.includes(saved)) ? saved : 'dashboard';
+  });
+
+  // Salvar aba ativa quando mudar
+  useEffect(() => {
+    localStorage.setItem('av_active_tab', activeTab);
+  }, [activeTab]);
 
   if (!currentUser) {
     return <Login />;

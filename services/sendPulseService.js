@@ -232,7 +232,275 @@ Portal Certidão
   }
 }
 
+/**
+ * Cria template HTML para email de conclusão de ticket
+ */
+function createCompletionEmailTemplate(ticketData, mensagemInteracao) {
+  const { nomeCompleto, codigo, tipoCertidao } = ticketData;
+  
+  const tipoCertidaoNome = {
+    'criminal-federal': 'Certidão Negativa Criminal Federal',
+    'criminal-estadual': 'Certidão Negativa Criminal Estadual',
+    'antecedentes-pf': 'Antecedente Criminal de Polícia Federal',
+    'eleitoral': 'Certidão de Quitação Eleitoral',
+    'civil-federal': 'Certidão Negativa Cível Federal',
+    'civil-estadual': 'Certidão Negativa Cível Estadual',
+    'cnd': 'Certidão Negativa de Débito (CND)',
+    'cpf-regular': 'Certidão CPF Regular'
+  }[tipoCertidao] || tipoCertidao;
+
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certidão Pronta</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+    <h1 style="color: #28a745; margin-top: 0;">✅ Certidão Pronta!</h1>
+    
+    <p>Olá <strong>${nomeCompleto}</strong>,</p>
+    
+    <p>Sua certidão está pronta e disponível para download.</p>
+    
+    <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
+      <h2 style="margin-top: 0; color: #333;">Detalhes da Certidão</h2>
+      <p><strong>Código do Ticket:</strong> ${codigo}</p>
+      <p><strong>Tipo de Certidão:</strong> ${tipoCertidaoNome}</p>
+      <p><strong>Status:</strong> Concluída</p>
+    </div>
+    
+    ${mensagemInteracao ? `
+    <div style="background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
+      <h3 style="margin-top: 0; color: #333;">Informações Adicionais:</h3>
+      <p style="white-space: pre-wrap;">${mensagemInteracao}</p>
+    </div>
+    ` : ''}
+    
+    <p>Seu arquivo está disponível em anexo neste email.</p>
+    
+    <p>Dúvidas acesse: <a href="https://www.portalcertidao.org" style="color: #007bff; text-decoration: none;">www.portalcertidao.org</a></p>
+    
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+    
+    <p style="font-size: 12px; color: #666;">
+      Este é um email automático, por favor não responda.<br>
+      Portal Certidão - Todos os direitos reservados.
+    </p>
+  </div>
+</body>
+</html>
+  `.trim();
+}
+
+/**
+ * Envia email de conclusão de ticket via SendPulse com anexo
+ */
+async function sendCompletionEmail(ticketData, mensagemInteracao, anexo) {
+  try {
+    await initializeSendPulse();
+
+    const { email, nomeCompleto, codigo } = ticketData;
+
+    if (!email) {
+      throw new Error('Email do cliente não fornecido');
+    }
+
+    const senderEmail = process.env.SENDPULSE_SENDER_EMAIL || 'noreply@portalcertidao.com.br';
+    const senderName = process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
+
+    const htmlContent = createCompletionEmailTemplate(ticketData, mensagemInteracao);
+    const textContent = `
+Certidão Pronta!
+
+Olá ${nomeCompleto},
+
+Sua certidão está pronta e disponível para download.
+
+Código do Ticket: ${codigo}
+Status: Concluída
+
+${mensagemInteracao ? `Informações Adicionais:\n${mensagemInteracao}\n\n` : ''}
+Seu arquivo está disponível em anexo neste email.
+
+Dúvidas acesse: www.portalcertidao.org
+
+Portal Certidão
+    `.trim();
+
+    console.log(`📧 [SendPulse] Enviando email de conclusão para ${email} (Ticket: ${codigo})`);
+    if (anexo) {
+      console.log(`📎 [SendPulse] Anexo: ${anexo.nome} (${anexo.tipo})`);
+      console.log(`📎 [SendPulse] Tamanho base64: ${anexo.base64 ? anexo.base64.length : 0} caracteres`);
+    }
+
+    const emailData = {
+      html: htmlContent,
+      text: textContent,
+      subject: `Certidão Pronta - Ticket ${codigo}`,
+      from: {
+        name: senderName,
+        email: senderEmail
+      },
+      to: [
+        {
+          name: nomeCompleto,
+          email: email
+        }
+      ]
+    };
+
+    // Adicionar anexo se disponível (formato correto para SendPulse)
+    // SendPulse pode ter problemas com anexos muito grandes ou formato incorreto
+    if (anexo && anexo.base64) {
+      console.log(`📎 [SendPulse] Preparando anexo para envio: ${anexo.nome}`);
+      console.log(`📎 [SendPulse] Tamanho base64: ${anexo.base64.length} caracteres`);
+      
+      // Verificar tamanho do anexo (SendPulse geralmente aceita até 10MB por anexo)
+      const base64SizeInMB = (anexo.base64.length * 3) / 4 / 1024 / 1024;
+      console.log(`📎 [SendPulse] Tamanho estimado do arquivo: ${base64SizeInMB.toFixed(2)} MB`);
+      
+      if (base64SizeInMB > 10) {
+        console.warn(`⚠️ [SendPulse] Anexo muito grande (${base64SizeInMB.toFixed(2)} MB). SendPulse pode rejeitar.`);
+      }
+      
+      // SendPulse API oficial espera attachments_binary como objeto onde:
+      // - Chave: nome do arquivo
+      // - Valor: conteúdo em base64 (sem prefixo data:type;base64,)
+      // OU attachments como objeto com nome do arquivo como chave
+      try {
+        // Limpar base64 se tiver prefixo data URI
+        let base64Content = anexo.base64;
+        if (base64Content.startsWith('data:')) {
+          const prefixMatch = base64Content.match(/^data:([^;]+);base64,(.+)$/);
+          if (prefixMatch) {
+            base64Content = prefixMatch[2];
+            console.log(`📎 [SendPulse] Removido prefixo data URI. Tipo detectado: ${prefixMatch[1]}`);
+          } else {
+            base64Content = base64Content.split(',')[1] || base64Content;
+            console.log(`📎 [SendPulse] Removido prefixo data URI (fallback)`);
+          }
+        }
+        
+        console.log(`📎 [SendPulse] Tamanho base64 após limpeza: ${base64Content.length} caracteres`);
+        console.log(`📎 [SendPulse] Primeiros 50 caracteres: ${base64Content.substring(0, 50)}...`);
+        
+        // Formato correto segundo documentação SendPulse: attachments_binary é um objeto
+        emailData.attachments_binary = {
+          [anexo.nome]: base64Content // Base64 sem prefixo data:type;base64,
+        };
+        console.log(`📎 [SendPulse] Anexo adicionado ao emailData:`, {
+          name: anexo.nome,
+          type: anexo.tipo || 'application/pdf',
+          contentLength: anexo.base64.length,
+          estimatedSizeMB: base64SizeInMB.toFixed(2)
+        });
+      } catch (error) {
+        console.error(`❌ [SendPulse] Erro ao preparar anexo:`, error);
+        // Continuar sem anexo se houver erro ao preparar
+        delete emailData.attachments_binary;
+      }
+    } else {
+      console.log(`⚠️ [SendPulse] Nenhum anexo disponível para enviar`);
+      if (!anexo) {
+        console.log(`⚠️ [SendPulse] Anexo é null ou undefined`);
+      } else if (!anexo.base64) {
+        console.log(`⚠️ [SendPulse] Anexo não tem propriedade base64`);
+      }
+    }
+
+    // Log do payload antes de enviar (sem o conteúdo base64 completo para não poluir logs)
+    const logData = {
+      ...emailData,
+      attachments_binary: emailData.attachments_binary ? Object.keys(emailData.attachments_binary).map(fileName => ({
+        fileName: fileName,
+        contentLength: emailData.attachments_binary[fileName] ? emailData.attachments_binary[fileName].length : 0
+      })) : undefined
+    };
+    console.log(`📧 [SendPulse] Enviando email com payload:`, JSON.stringify(logData, null, 2));
+
+    return new Promise((resolve, reject) => {
+      sendpulse.smtpSendMail((response) => {
+        console.log(`📧 [SendPulse] Resposta completa:`, JSON.stringify(response, null, 2));
+        
+        // Verificar diferentes formatos de erro do SendPulse
+        const hasError = response?.is_error || 
+                        response?.error_code || 
+                        (response?.error_code && response.error_code !== 200 && response.error_code !== 0) ||
+                        (response?.message && (
+                          response.message.includes('not valid') ||
+                          response.message.includes('error') ||
+                          response.message.includes('Error') ||
+                          response.message.includes('Interval server error') ||
+                          response.message.includes('Internal server error')
+                        ));
+        
+        if (hasError) {
+          const errorMessage = response.message || response.error || 'Erro desconhecido ao enviar email';
+          const errorCode = response.error_code || 'N/A';
+          console.error(`❌ [SendPulse] Erro ao enviar email de conclusão:`, {
+            message: errorMessage,
+            error_code: errorCode,
+            fullResponse: response
+          });
+          
+          // Se o erro for relacionado a anexo muito grande, tentar enviar sem anexo
+          if (errorMessage.includes('server error') && emailData.attachments_binary && Object.keys(emailData.attachments_binary).length > 0) {
+            console.log(`⚠️ [SendPulse] Tentando reenviar sem anexo devido a erro do servidor...`);
+            const emailDataWithoutAttachment = { ...emailData };
+            delete emailDataWithoutAttachment.attachments_binary;
+            
+            sendpulse.smtpSendMail((retryResponse) => {
+              if (retryResponse?.is_error || retryResponse?.error_code) {
+                resolve({
+                  success: false,
+                  error: `Erro original: ${errorMessage}. Tentativa sem anexo também falhou: ${retryResponse.message || retryResponse.error}`,
+                  email: email
+                });
+              } else {
+                console.log(`✅ [SendPulse] Email enviado com sucesso sem anexo`);
+                resolve({
+                  success: true,
+                  messageId: retryResponse?.id || 'N/A',
+                  email: email,
+                  warning: 'Email enviado sem anexo devido a erro do servidor'
+                });
+              }
+            }, emailDataWithoutAttachment);
+            return;
+          }
+          
+          resolve({
+            success: false,
+            error: errorMessage,
+            errorCode: errorCode,
+            email: email
+          });
+        } else {
+          console.log(`✅ [SendPulse] Email de conclusão enviado com sucesso para ${email}`);
+          resolve({
+            success: true,
+            messageId: response?.id || 'N/A',
+            email: email
+          });
+        }
+      }, emailData);
+    });
+
+  } catch (error) {
+    console.error('❌ [SendPulse] Erro ao enviar email de conclusão:', error);
+    return {
+      success: false,
+      error: error.message || 'Erro desconhecido ao enviar email',
+      email: ticketData.email
+    };
+  }
+}
+
 module.exports = {
   sendConfirmationEmail,
+  sendCompletionEmail,
   initializeSendPulse
 };

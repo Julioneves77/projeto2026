@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { format, parse, isValid } from 'date-fns';
 import { Ticket, TicketStatus, HistoricoItem } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
 import { useRespostasProntas } from '@/hooks/useRespostasProntas';
+import { useToast } from '@/hooks/use-toast';
 import { 
   X, 
   Copy, 
@@ -31,13 +32,22 @@ interface TicketDetailModalProps {
 
 type ModalTab = 'dados' | 'interacao' | 'respostas';
 
-export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
+// Limites para evitar travamentos com tickets pesados
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB por anexo
+const MAX_HISTORICO_RENDER = 50; // renderizar apenas as últimas interações
+
+function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps) {
+  // Debug: verificar se componente está sendo renderizado
+  console.log('🔍 [TicketDetailModal] Componente renderizado para ticket:', ticket?.codigo);
+  
   const { currentUser, userRole } = useAuth();
-  const { addHistorico } = useTickets();
+  const { addHistorico, updateTicket, pausePolling, resumePolling } = useTickets();
   const { respostas, addResposta, updateResposta, deleteResposta } = useRespostasProntas();
+  const { toast } = useToast();
   
   const [activeTab, setActiveTab] = useState<ModalTab>('dados');
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Interação state
   const [novoStatus, setNovoStatus] = useState<TicketStatus>(ticket.status);
@@ -52,6 +62,54 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
   
   // Anexo viewer
   const [viewingAnexo, setViewingAnexo] = useState<HistoricoItem['anexo'] | null>(null);
+  const anexoUrlRef = useRef<string | null>(null);
+
+  // Pausar polling quando modal abre e retomar quando fecha
+  // Usando dependências vazias porque pausePolling/resumePolling são estáveis (useCallback)
+  useEffect(() => {
+    pausePolling();
+    return () => {
+      resumePolling();
+      // Limpar URL de objeto quando componente desmonta
+      if (anexoUrlRef.current) {
+        URL.revokeObjectURL(anexoUrlRef.current);
+        anexoUrlRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Dependências vazias - executar apenas na montagem/desmontagem
+
+  // Limpar URLs de objeto quando anexo muda
+  useEffect(() => {
+    return () => {
+      if (anexoUrlRef.current) {
+        URL.revokeObjectURL(anexoUrlRef.current);
+        anexoUrlRef.current = null;
+      }
+    };
+  }, [anexo]);
+
+  // Sincronizar novoStatus com ticket.status apenas quando ticket.id muda
+  useEffect(() => {
+    // Resetar estado quando ticket muda
+    setNovoStatus(ticket.status);
+    setMensagem('');
+    setEnviarEmail(false);
+    setAnexo(null);
+  }, [ticket.id]);
+
+  // Quando status mudar para CONCLUIDO, marcar checkbox automaticamente
+  // Usar useCallback para evitar atualizações desnecessárias
+  useEffect(() => {
+    if (novoStatus === 'CONCLUIDO' && !enviarEmail) {
+      setEnviarEmail(true);
+    }
+  }, [novoStatus, enviarEmail]);
+
+  // Estabilizar função de visualização de anexo
+  const handleViewAnexo = useCallback((anexo: HistoricoItem['anexo']) => {
+    setViewingAnexo(anexo);
+  }, []);
 
   const tabs: { id: ModalTab; label: string; icon: React.ElementType }[] = [
     { id: 'dados', label: 'Dados', icon: FileText },
@@ -69,10 +127,84 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
     }
   };
 
-  const handleSaveInteracao = () => {
-    if (!mensagem.trim()) {
-      alert('Por favor, adicione uma mensagem.');
+  const handleSaveInteracao = async () => {
+    if (isSaving) {
+      console.log('⚠️ [PLATAFORMA] Salvamento já em andamento, ignorando clique duplicado');
       return;
+    }
+    
+    if (!mensagem.trim()) {
+      toast({
+        title: "Atenção",
+        description: "Por favor, adicione uma mensagem.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+  // Validar tamanho do anexo antes de processar
+  if (anexo && anexo.size > MAX_ATTACHMENT_SIZE) {
+    toast({
+      title: "Anexo muito grande",
+      description: "Limite de 10MB por anexo. Envie um arquivo menor.",
+      variant: "destructive"
+    });
+    return;
+  }
+  
+  setIsSaving(true);
+
+    // Preparar anexo para envio (converter para base64 se disponível)
+    // Otimizado com timeout para evitar travamento
+    let anexoBase64 = null;
+    if (anexo) {
+      try {
+        const reader = new FileReader();
+        anexoBase64 = await new Promise((resolve, reject) => {
+          // Timeout de 10 segundos para evitar travamento
+          const timeout = setTimeout(() => {
+            reader.abort();
+            reject(new Error('Timeout ao converter arquivo. Arquivo muito grande ou corrompido.'));
+          }, 10000);
+          
+          reader.onload = () => {
+            clearTimeout(timeout);
+            const base64 = reader.result as string;
+            // Remover prefixo data:type;base64,
+            const base64Data = base64.split(',')[1] || base64;
+            resolve({
+              nome: anexo.name,
+              tipo: anexo.type,
+              base64: base64Data
+            });
+          };
+          reader.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Erro ao ler arquivo'));
+          };
+          reader.readAsDataURL(anexo);
+        });
+      } catch (error) {
+        console.error('Erro ao converter anexo para base64:', error);
+        toast({
+          title: "Erro ao processar anexo",
+          description: error instanceof Error ? error.message : 'Erro desconhecido ao converter arquivo',
+          variant: "destructive"
+        });
+        setIsSaving(false);
+        return;
+      }
+    }
+
+    // Criar URL de objeto apenas se necessário e armazenar referência para limpeza
+    let anexoUrl: string | undefined = undefined;
+    if (anexo) {
+      // Limpar URL anterior se existir
+      if (anexoUrlRef.current) {
+        URL.revokeObjectURL(anexoUrlRef.current);
+      }
+      anexoUrl = URL.createObjectURL(anexo);
+      anexoUrlRef.current = anexoUrl;
     }
 
     const historicoItem: Omit<HistoricoItem, 'id'> = {
@@ -84,12 +216,131 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
       enviouEmail: enviarEmail,
       anexo: anexo ? {
         nome: anexo.name,
-        url: URL.createObjectURL(anexo),
+        url: anexoUrl!,
         tipo: anexo.type
       } : undefined
     };
 
+    // Adicionar histórico (isso já atualiza o status do ticket automaticamente)
     addHistorico(ticket.id, historicoItem);
+
+    // Aguardar um pouco para garantir que o ticket foi atualizado no servidor
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Se status é CONCLUIDO, enviar notificações
+    if (novoStatus === 'CONCLUIDO') {
+      try {
+        console.log('📧 [PLATAFORMA] Enviando notificações de conclusão...');
+        
+        // Preparar payload do anexo
+        let anexoPayload = null;
+        if (anexoBase64) {
+          console.log('📎 [PLATAFORMA] Preparando anexo para envio:', {
+            nome: anexoBase64.nome,
+            tipo: anexoBase64.tipo,
+            base64Length: anexoBase64.base64 ? anexoBase64.base64.length : 0
+          });
+          anexoPayload = anexoBase64;
+        } else {
+          console.log('⚠️ [PLATAFORMA] Nenhum anexo para enviar');
+        }
+        
+        // Chamar endpoint do sync-server para enviar email/WhatsApp
+        console.log('📧 [PLATAFORMA] Enviando requisição para sync-server:', {
+          ticketId: ticket.id,
+          mensagemLength: mensagem.trim().length,
+          anexoPresente: !!anexoPayload
+        });
+        
+        const response = await fetch(`http://localhost:3001/tickets/${ticket.id}/send-completion`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            mensagemInteracao: mensagem.trim(),
+            anexo: anexoPayload
+          }),
+        });
+        
+        console.log('📧 [PLATAFORMA] Resposta recebida:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ [PLATAFORMA] Notificações enviadas:', result);
+          
+          const ticketCodigo = result.ticketCodigo || ticket.codigo;
+          let description = '';
+          
+          if (result.email?.success) {
+            description += '✅ Email enviado. ';
+          } else if (result.email?.error) {
+            description += `❌ Erro no email: ${result.email.error}. `;
+          }
+          
+          if (result.whatsapp?.success) {
+            description += '✅ WhatsApp enviado.';
+          } else if (result.whatsapp?.skipped) {
+            description += '⏭️ WhatsApp não enviado (tipo padrão - apenas email).';
+          } else if (result.whatsapp?.error) {
+            description += `❌ Erro no WhatsApp: ${result.whatsapp.error}.`;
+          }
+          
+          toast({
+            title: `Ticket ${ticketCodigo} concluído!`,
+            description: description.trim(),
+            variant: "default"
+          });
+        } else {
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch (parseError) {
+            errorData = { 
+              error: `Erro HTTP ${response.status}: ${response.statusText}`,
+              status: response.status,
+              statusText: response.statusText
+            };
+          }
+          
+          console.error('❌ [PLATAFORMA] Erro ao enviar notificações:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData
+          });
+          
+          const errorMessage = errorData.error || errorData.message || `Erro ${response.status}: ${response.statusText}`;
+          const ticketCodigo = errorData.ticketCodigo || ticket.codigo;
+          const statusInfo = errorData.currentStatus ? `Status atual: ${errorData.currentStatus}` : '';
+          
+          toast({
+            title: "Erro ao enviar notificações",
+            description: `Ticket ${ticketCodigo} concluído, mas houve erro ao enviar notificações: ${errorMessage}${statusInfo ? `. ${statusInfo}` : ''}`,
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error('❌ [PLATAFORMA] Erro ao conectar com servidor:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+        
+        toast({
+          title: "Erro de conexão",
+          description: `Ticket concluído, mas não foi possível enviar notificações. Erro: ${errorMessage}. Verifique se o sync-server está rodando na porta 3001.`,
+          variant: "destructive"
+        });
+      }
+    }
+
+    setIsSaving(false);
+    // Limpar URL de objeto antes de fechar
+    if (anexoUrlRef.current) {
+      URL.revokeObjectURL(anexoUrlRef.current);
+      anexoUrlRef.current = null;
+    }
     onClose();
   };
 
@@ -114,10 +365,79 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
     setOpenRespostaMenu(null);
   };
 
-  const formatDate = (date: Date | null) => {
+  const formatDate = useCallback((date: Date | null) => {
     if (!date) return '-';
     return new Date(date).toLocaleString('pt-BR');
-  };
+  }, []);
+
+  // Componente memoizado para item do histórico
+  // Passar formatDate como prop para evitar dependências desnecessárias
+  const HistoricoItemComponent = React.memo(({ item, onViewAnexo, formatDateFn }: { 
+    item: HistoricoItem; 
+    onViewAnexo: (anexo: HistoricoItem['anexo']) => void;
+    formatDateFn: (date: Date | null) => string;
+  }) => (
+    <div className="p-4 bg-muted/30 rounded-lg border-l-4 border-primary/30">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <User className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">{item.autor}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Clock className="w-3 h-3" />
+          {formatDateFn(item.dataHora)}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mb-2 text-xs">
+        <span className="status-badge status-progress">{item.statusAnterior}</span>
+        <ArrowRight className="w-3 h-3 text-muted-foreground" />
+        <span className={`status-badge ${item.statusNovo === 'CONCLUIDO' ? 'status-complete' : 'status-progress'}`}>
+          {item.statusNovo}
+        </span>
+        {item.enviouEmail && (
+          <span className="inline-flex items-center gap-1 text-primary">
+            <Mail className="w-3 h-3" />
+            E-mail enviado
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-foreground">{item.mensagem}</p>
+      {item.anexo && (
+        <button
+          onClick={() => onViewAnexo(item.anexo)}
+          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          <Paperclip className="w-3 h-3" />
+          {item.anexo.nome}
+        </button>
+      )}
+    </div>
+  ));
+
+  HistoricoItemComponent.displayName = 'HistoricoItemComponent';
+
+  // Limitar histórico para evitar travas com tickets pesados
+  const { historicoLimitado, historicoTruncado } = useMemo(() => {
+    const historico = Array.isArray(ticket.historico) ? ticket.historico : [];
+    const slice = historico.slice(-MAX_HISTORICO_RENDER);
+    const truncated = historico.length > MAX_HISTORICO_RENDER;
+    return { historicoLimitado: slice, historicoTruncado: truncated };
+  }, [ticket.historico]);
+
+  // Memoizar histórico renderizado apenas quando necessário
+  const historicoRenderizado = useMemo(() => {
+    if (historicoLimitado.length === 0) {
+      return null;
+    }
+    return historicoLimitado.map((item) => (
+      <HistoricoItemComponent 
+        key={item.id} 
+        item={item} 
+        onViewAnexo={handleViewAnexo}
+        formatDateFn={formatDate}
+      />
+    ));
+  }, [historicoLimitado, handleViewAnexo, formatDate]);
 
   const formatBirthDate = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -249,7 +569,7 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
                         <div key={campo.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-muted-foreground mb-1">{campo.label}</p>
-                            <p className="text-sm font-medium text-foreground break-words">{campo.value}</p>
+                            <p className="text-sm font-medium text-foreground break-words">{String(campo.value)}</p>
                           </div>
                           <button
                             onClick={() => copyToClipboard(String(campo.value), campo.id)}
@@ -301,13 +621,20 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
                         <input
                           type="checkbox"
                           id="enviarEmail"
-                          checked={novoStatus === 'CONCLUIDO' ? enviarEmail : false}
-                          onChange={(e) => setEnviarEmail(e.target.checked)}
+                          checked={novoStatus === 'CONCLUIDO' ? true : enviarEmail}
+                          onChange={(e) => {
+                            // Quando CONCLUIDO, não permitir desmarcar
+                            if (novoStatus === 'CONCLUIDO') {
+                              return;
+                            }
+                            setEnviarEmail(e.target.checked);
+                          }}
                           disabled={novoStatus !== 'CONCLUIDO'}
                           className="w-4 h-4 rounded border-input text-primary focus:ring-primary disabled:cursor-not-allowed"
                         />
                         <label htmlFor="enviarEmail" className="text-sm text-foreground">
                           Enviar e-mail para o cliente
+                          {novoStatus === 'CONCLUIDO' && <span className="text-red-500 ml-1">*</span>}
                         </label>
                       </div>
 
@@ -342,10 +669,11 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
 
                       <button
                         onClick={handleSaveInteracao}
-                        className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors"
+                        disabled={isSaving}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Send className="w-5 h-5" />
-                        Salvar Atualização
+                        {isSaving ? 'Salvando...' : 'Salvar Atualização'}
                       </button>
                     </div>
                   </div>
@@ -353,52 +681,21 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
 
                 {/* Histórico de Interações */}
                 <div className={ticket.status !== 'CONCLUIDO' ? 'border-t border-border pt-6' : ''}>
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                     Histórico de Interações
                   </h3>
+                  {historicoTruncado && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Exibindo as últimas {MAX_HISTORICO_RENDER} interações para evitar travamentos.
+                    </p>
+                  )}
                   <div className="space-y-3">
-                    {ticket.historico.length === 0 ? (
+                    {historicoLimitado.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">
                         Nenhuma interação registrada
                       </p>
                     ) : (
-                      ticket.historico.map((item) => (
-                        <div key={item.id} className="p-4 bg-muted/30 rounded-lg border-l-4 border-primary/30">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <User className="w-4 h-4 text-muted-foreground" />
-                              <span className="text-sm font-medium text-foreground">{item.autor}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Clock className="w-3 h-3" />
-                              {formatDate(item.dataHora)}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 mb-2 text-xs">
-                            <span className="status-badge status-progress">{item.statusAnterior}</span>
-                            <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                            <span className={`status-badge ${item.statusNovo === 'CONCLUIDO' ? 'status-complete' : 'status-progress'}`}>
-                              {item.statusNovo}
-                            </span>
-                            {item.enviouEmail && (
-                              <span className="inline-flex items-center gap-1 text-primary">
-                                <Mail className="w-3 h-3" />
-                                E-mail enviado
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-foreground">{item.mensagem}</p>
-                          {item.anexo && (
-                            <button
-                              onClick={() => setViewingAnexo(item.anexo)}
-                              className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                            >
-                              <Paperclip className="w-3 h-3" />
-                              {item.anexo.nome}
-                            </button>
-                          )}
-                        </div>
-                      ))
+                      historicoRenderizado
                     )}
                   </div>
                 </div>
@@ -544,3 +841,21 @@ export function TicketDetailModal({ ticket, onClose }: TicketDetailModalProps) {
     </>
   );
 }
+
+// Otimizar renderização com React.memo
+// Função de comparação personalizada: sempre re-renderizar quando ticket mudar
+export const TicketDetailModal = React.memo(TicketDetailModalComponent, (prevProps, nextProps) => {
+  // Retornar true se props são iguais (não re-renderizar)
+  // Retornar false se props são diferentes (re-renderizar)
+  // Sempre re-renderizar quando ticket.id mudar ou quando ticket for null/undefined
+  if (!prevProps.ticket || !nextProps.ticket) {
+    return false; // Re-renderizar se ticket mudou de null para objeto ou vice-versa
+  }
+  
+  const ticketsEqual = prevProps.ticket.id === nextProps.ticket.id;
+  const onCloseEqual = prevProps.onClose === nextProps.onClose;
+  
+  // Se ticket ou onClose mudaram, re-renderizar (retornar false)
+  // Se ambos são iguais, não re-renderizar (retornar true)
+  return ticketsEqual && onCloseEqual;
+});

@@ -4,6 +4,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Resize handle para colunas da tabela */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: transparent;
+  z-index: 10;
+  transition: opacity 0.2s;
+}
+
+.resize-handle:hover {
+  background-color: hsl(var(--primary) / 0.3);
+  opacity: 1 !important;
+}
+
+.resize-handle:active {
+  background-color: hsl(var(--primary));
+  opacity: 1 !important;
+}
+
+/* Prevenir seleção durante redimensionamento */
+body.resizing {
+  user-select: none;
+  cursor: col-resize !important;
+}
+
 @layer base {
   :root {
     /* Background & Surfaces */

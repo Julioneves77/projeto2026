@@ -13,6 +13,43 @@ const axios = require('axios');
 const ZAP_API_URL = process.env.ZAP_API_URL || process.env.ZAP_API_BASE_URL || '';
 
 /**
+ * Cria template de mensagem WhatsApp para conclusão de ticket
+ */
+function createCompletionWhatsAppMessage(ticketData, mensagemInteracao) {
+  const { nomeCompleto, codigo, tipoCertidao } = ticketData;
+  
+  const tipoCertidaoNome = {
+    'criminal-federal': 'Certidão Negativa Criminal Federal',
+    'criminal-estadual': 'Certidão Negativa Criminal Estadual',
+    'antecedentes-pf': 'Antecedente Criminal de Polícia Federal',
+    'eleitoral': 'Certidão de Quitação Eleitoral',
+    'civil-federal': 'Certidão Negativa Cível Federal',
+    'civil-estadual': 'Certidão Negativa Cível Estadual',
+    'cnd': 'Certidão Negativa de Débito (CND)',
+    'cpf-regular': 'Certidão CPF Regular'
+  }[tipoCertidao] || tipoCertidao;
+
+  let mensagem = `✅ *Certidão Pronta!*
+
+Olá ${nomeCompleto.split(' ')[0]}, sua certidão está pronta! 🎉
+
+📋 *Detalhes:*
+• Código: *${codigo}*
+• Tipo: ${tipoCertidaoNome}
+• Status: Concluída`;
+
+  if (mensagemInteracao) {
+    mensagem += `\n\n📝 *Informações Adicionais:*
+${mensagemInteracao}`;
+  }
+
+  mensagem += `\n\nPortal Certidão
+www.portalcertidao.org`;
+
+  return mensagem;
+}
+
+/**
  * Cria template de mensagem WhatsApp para confirmação de pagamento
  */
 function createWhatsAppMessage(ticketData) {
@@ -333,7 +370,235 @@ async function sendWhatsAppMessage(ticketData) {
   }
 }
 
+/**
+ * Envia mensagem WhatsApp de conclusão de ticket via Zap API com anexo
+ */
+async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
+  try {
+    const apiKey = process.env.ZAP_API_KEY;
+    const apiUrl = ZAP_API_URL;
+    const instanceId = process.env.ZAP_INSTANCE_ID || process.env.ZAP_INSTANCE;
+    const clientToken = process.env.ZAP_CLIENT_TOKEN;
+
+    if (!apiKey) {
+      throw new Error('Zap API Key não configurada');
+    }
+
+    if (!apiUrl) {
+      throw new Error('Zap API URL não configurada');
+    }
+
+    const { telefone, codigo } = ticketData;
+
+    if (!telefone) {
+      throw new Error('Telefone do cliente não fornecido');
+    }
+
+    const phoneNumber = formatPhoneNumber(telefone);
+    if (!phoneNumber) {
+      throw new Error('Número de telefone inválido');
+    }
+
+    const message = createCompletionWhatsAppMessage(ticketData, mensagemInteracao);
+
+    console.log(`📱 [Zap API] Enviando WhatsApp de conclusão para ${phoneNumber} (Ticket: ${codigo})`);
+    if (anexo) {
+      console.log(`📎 [Zap API] Anexo: ${anexo.nome} (${anexo.tipo})`);
+    }
+
+    // Primeiro enviar mensagem de texto
+    let response;
+    let successFormat = null;
+
+    if (apiUrl.includes('z-api.io')) {
+      const parts = apiKey.split(':');
+      let instance, token;
+      
+      if (parts.length > 1) {
+        instance = parts[0];
+        token = parts[1];
+      } else {
+        const allParts = apiKey.split(':');
+        if (allParts.length >= 2) {
+          instance = allParts[0];
+          token = allParts[1];
+        } else {
+          instance = instanceId || 'default';
+          token = apiKey;
+        }
+      }
+      
+      // Z-API base URL deve ser sem /v1 para endpoints de instância
+      const baseUrl = apiUrl.replace('/v1', '').replace(/\/$/, '');
+      // Se não tem instância na URL, usar formato correto
+      const instanceBaseUrl = baseUrl.includes('/instances/') ? baseUrl : `${baseUrl}/instances/${instance}/token/${token}`;
+      const textEndpoint = `${instanceBaseUrl}/send-text`;
+      
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (clientToken) {
+        headers['Client-Token'] = clientToken;
+      }
+      
+      // Enviar mensagem de texto primeiro
+      response = await axios.post(
+        textEndpoint,
+        {
+          phone: phoneNumber,
+          message: message
+        },
+        {
+          headers: headers,
+          timeout: 15000
+        }
+      );
+      
+      successFormat = 'Z-API';
+      
+      // Se tem anexo, enviar arquivo como documento anexado (não link)
+      if (anexo) {
+        console.log(`📎 [Zap API] Enviando anexo via Z-API como arquivo...`);
+        console.log(`📎 [Zap API] Nome do arquivo: ${anexo.nome || 'sem-nome'}`);
+        if (anexo.base64) {
+          console.log(`📎 [Zap API] Tamanho base64: ${anexo.base64.length} caracteres`);
+        } else if (anexo.url) {
+          console.log(`📎 [Zap API] URL do anexo: ${anexo.url}`);
+        }
+        
+        // Derivar extensão pelo tipo ou nome do arquivo
+        const mime = anexo.tipo || 'application/octet-stream';
+        const extFromMime = mime.split('/')[1] || 'bin';
+        const extFromName = (anexo.nome && anexo.nome.includes('.')) ? anexo.nome.split('.').pop() : null;
+        const ext = (extFromName || extFromMime || 'bin').toLowerCase();
+
+        // Se não houver URL, subir para o sync-server e obter uma URL local
+        if (!anexo.url && anexo.base64) {
+          try {
+            console.log('📤 [Zap API] Subindo anexo para servidor local...');
+            const uploadResp = await axios.post(
+              process.env.UPLOAD_URL || 'http://localhost:3001/upload',
+              {
+                fileName: anexo.nome || `arquivo.${ext}`,
+                base64: anexo.base64,
+                mimeType: mime
+              },
+              { timeout: 30000 }
+            );
+            if (uploadResp.data?.success && uploadResp.data.url) {
+              anexo.url = uploadResp.data.url;
+              console.log('✅ [Zap API] Upload local concluído. URL:', anexo.url);
+            } else {
+              throw new Error('Upload local falhou');
+            }
+          } catch (upErr) {
+            console.error('❌ [Zap API] Falha no upload local:', upErr.message);
+            throw upErr;
+          }
+        }
+
+        // Endpoints conforme coleção: /send-document/{ext}
+        const documentEndpoint = `${baseUrl}/instances/${instance}/token/${token}/send-document/${ext}`;
+        const documentEndpointNoExt = `${baseUrl}/instances/${instance}/token/${token}/send-document`;
+        const endpointsToTry = [
+          documentEndpoint,
+          documentEndpointNoExt
+        ];
+        console.log(`📎 [Zap API] Endpoints para tentar (send-document):`, endpointsToTry);
+        
+        // Limpar base64 se tiver prefixo data URI
+        let base64Content = anexo.base64 || '';
+        if (base64Content && base64Content.startsWith('data:')) {
+          const prefixMatch = base64Content.match(/^data:([^;]+);base64,(.+)$/);
+          if (prefixMatch) {
+            base64Content = prefixMatch[2];
+            console.log(`📎 [Zap API] Removido prefixo data URI. Tipo detectado: ${prefixMatch[1]}`);
+          } else {
+            base64Content = base64Content.split(',')[1] || base64Content;
+            console.log(`📎 [Zap API] Removido prefixo data URI (fallback)`);
+          }
+        }
+
+        // Primeiro tentar multipart/binário (file) – sem link
+        const FormData = require('form-data');
+        const buffer = base64Content ? Buffer.from(base64Content, 'base64') : null;
+        let sent = false;
+
+        // Apenas URL (upload já feito), enviar em JSON conforme doc
+        if (anexo.url) {
+          for (const url of endpointsToTry) {
+            try {
+              const resp = await axios.post(
+                url,
+                {
+                  phone: phoneNumber,
+                  document: anexo.url,
+                  fileName: anexo.nome || `arquivo.${ext}`,
+                  mimeType: mime
+                },
+                {
+                  headers: headers,
+                  timeout: 30000
+                }
+              );
+              if (resp.data && (resp.data.error || resp.data.message?.includes('NOT_FOUND'))) {
+                throw new Error(resp.data.error || resp.data.message);
+              }
+              console.log(`✅ [Zap API] Documento enviado com sucesso via ${url}`);
+              console.log(`📎 [Zap API] Resposta:`, JSON.stringify(resp.data, null, 2));
+              sent = true;
+              break;
+            } catch (err) {
+              console.log(`⚠️ [Zap API] Falha em ${url}: ${err.message}`);
+            }
+          }
+        }
+
+        if (!sent) {
+          throw new Error('Anexo não enviado: send-document falhou em todos os formatos (multipart/URL)');
+        }
+      } else {
+        console.log(`⚠️ [Zap API] Nenhum anexo disponível para enviar`);
+      }
+    } else {
+      // Para outras APIs, tentar formato genérico
+      response = await axios.post(
+        `${apiUrl}/messages`,
+        {
+          phone: phoneNumber,
+          message: message
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        }
+      );
+      successFormat = 'Generic API';
+    }
+
+    console.log(`✅ [Zap API] Mensagem de conclusão enviada com sucesso para ${phoneNumber}`);
+    
+    return {
+      success: true,
+      messageId: response?.data?.id || 'N/A',
+      phone: phoneNumber
+    };
+  } catch (error) {
+    console.error('❌ [Zap API] Erro ao enviar WhatsApp de conclusão:', error);
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message,
+      phone: ticketData.telefone
+    };
+  }
+}
+
 module.exports = {
   sendWhatsAppMessage,
+  sendCompletionWhatsApp,
   formatPhoneNumber
 };

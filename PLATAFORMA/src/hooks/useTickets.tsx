@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { Ticket, HistoricoItem, TicketStatus } from '@/types';
 import { ticketsMock } from '@/data/mockData';
 
@@ -8,6 +8,8 @@ interface TicketsContextType {
   addHistorico: (ticketId: string, item: Omit<HistoricoItem, 'id'>) => void;
   atribuirTicket: (ticketId: string, operador: string) => void;
   createTicket: (ticket: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>) => Ticket;
+  pausePolling: () => void;
+  resumePolling: () => void;
 }
 
 const TicketsContext = createContext<TicketsContextType | undefined>(undefined);
@@ -17,6 +19,8 @@ const SYNC_SERVER_URL = 'http://localhost:3001';
 
 export function TicketsProvider({ children }: { children: ReactNode }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const isPollingPausedRef = useRef(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadTickets = async () => {
     console.log('🟢 [PLATAFORMA] Carregando tickets do servidor de sincronização...');
@@ -37,15 +41,17 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
                 return null;
               }
               
+              const historicoLimitado = (t.historico || []).slice(-50).map((h: any) => ({
+                ...h,
+                dataHora: h.dataHora ? new Date(h.dataHora) : new Date()
+              }));
+
               const ticket = {
                 ...t,
                 dataCadastro: t.dataCadastro ? new Date(t.dataCadastro) : new Date(),
                 dataAtribuicao: t.dataAtribuicao ? new Date(t.dataAtribuicao) : null,
                 dataConclusao: t.dataConclusao ? new Date(t.dataConclusao) : null,
-                historico: (t.historico || []).map((h: any) => ({
-                  ...h,
-                  dataHora: h.dataHora ? new Date(h.dataHora) : new Date()
-                }))
+                historico: historicoLimitado
               };
               
               return ticket;
@@ -58,9 +64,31 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           console.log(`🟢 [PLATAFORMA] ${ticketsWithDates.length} tickets processados do servidor`);
           setTickets(ticketsWithDates);
           
-          // Salvar no localStorage como cache
-          localStorage.setItem(TICKETS_KEY, JSON.stringify(serverTickets));
-          localStorage.setItem('av_tickets_version', '2');
+          // Evitar guardar histórico pesado no localStorage; salvar apenas dados mínimos
+          try {
+            const compactData = serverTickets.slice(-50).map((t: any) => ({
+              id: t.id,
+              codigo: t.codigo,
+              status: t.status,
+              dataCadastro: t.dataCadastro
+            }));
+            localStorage.setItem(TICKETS_KEY, JSON.stringify(compactData));
+            localStorage.setItem('av_tickets_version', '3');
+          } catch (error: any) {
+            if (error.name === 'QuotaExceededError') {
+              console.warn('⚠️ [PLATAFORMA] Quota do localStorage excedida, limpando dados antigos...');
+              // Limpar localStorage e tentar novamente com menos dados
+              try {
+                localStorage.removeItem(TICKETS_KEY);
+                localStorage.removeItem('av_tickets_version');
+              } catch (cleanError) {
+                console.warn('⚠️ [PLATAFORMA] Não foi possível salvar no localStorage, usando apenas servidor');
+                // Não salvar nada - servidor está disponível mesmo
+              }
+            } else {
+              console.warn('⚠️ [PLATAFORMA] Erro ao salvar no localStorage:', error);
+            }
+          }
           return;
         }
       }
@@ -71,7 +99,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     // Fallback para localStorage
     const stored = localStorage.getItem(TICKETS_KEY);
     const storedVersion = localStorage.getItem('av_tickets_version');
-    const currentVersion = '2';
+    const currentVersion = '3';
     
     if (stored) {
       try {
@@ -94,15 +122,17 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           try {
             if (!t.id || !t.codigo) return null;
             
+            const historicoLimitado = (t.historico || []).slice(-50).map((h: any) => ({
+              ...h,
+              dataHora: h.dataHora ? new Date(h.dataHora) : new Date()
+            }));
+
             return {
               ...t,
               dataCadastro: t.dataCadastro ? new Date(t.dataCadastro) : new Date(),
               dataAtribuicao: t.dataAtribuicao ? new Date(t.dataAtribuicao) : null,
               dataConclusao: t.dataConclusao ? new Date(t.dataConclusao) : null,
-              historico: (t.historico || []).map((h: any) => ({
-                ...h,
-                dataHora: h.dataHora ? new Date(h.dataHora) : new Date()
-              }))
+              historico: historicoLimitado
             };
           } catch (error) {
             console.error('❌ [PLATAFORMA] Erro ao processar ticket:', error);
@@ -126,34 +156,94 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Função para pausar polling - usando useCallback para evitar recriação
+  const pausePolling = useCallback(() => {
+    isPollingPausedRef.current = true;
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []); // Dependências vazias - função nunca muda
+
+  // Função para retomar polling - usando useCallback para evitar recriação
+  // Nota: loadTickets é estável (não muda entre renders), então não precisa estar nas dependências
+  const resumePolling = useCallback(() => {
+    isPollingPausedRef.current = false;
+    // Se não há intervalo ativo, criar um novo
+    if (!pollingIntervalRef.current) {
+      // Usar função loadTickets diretamente (ela é estável)
+      loadTickets(); // Carregar imediatamente
+      pollingIntervalRef.current = setInterval(() => {
+        if (!isPollingPausedRef.current) {
+          loadTickets();
+        }
+      }, 10000); // 10 segundos em vez de 2 segundos
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Dependências vazias - loadTickets é estável e não precisa estar aqui
+
   useEffect(() => {
     loadTickets();
 
-    // Polling a cada 2 segundos para detectar novos tickets do PORTAL via servidor
-    const interval = setInterval(() => {
-      loadTickets();
-    }, 2000);
+    // Polling a cada 10 segundos para detectar novos tickets do PORTAL via servidor
+    // Reduzido de 2 segundos para melhorar performance
+    pollingIntervalRef.current = setInterval(() => {
+      if (!isPollingPausedRef.current) {
+        loadTickets();
+      }
+    }, 10000); // 10 segundos em vez de 2000ms
 
     return () => {
-      clearInterval(interval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
   }, []);
 
   const saveTickets = async (newTickets: Ticket[]) => {
     setTickets(newTickets);
     
-    // Salvar no localStorage (cache)
-    const ticketsAsJson = newTickets.map(t => ({
-      ...t,
-      dataCadastro: t.dataCadastro instanceof Date ? t.dataCadastro.toISOString() : t.dataCadastro,
-      dataAtribuicao: t.dataAtribuicao instanceof Date ? t.dataAtribuicao.toISOString() : t.dataAtribuicao,
-      dataConclusao: t.dataConclusao instanceof Date ? t.dataConclusao.toISOString() : t.dataConclusao,
-      historico: (t.historico || []).map(h => ({
-        ...h,
-        dataHora: h.dataHora instanceof Date ? h.dataHora.toISOString() : h.dataHora
-      }))
-    }));
-    localStorage.setItem(TICKETS_KEY, JSON.stringify(ticketsAsJson));
+    // Salvar no localStorage apenas como cache compacto
+    // Limitar dados para evitar quota excedida
+    try {
+      const compactTickets = newTickets.slice(-50).map(t => ({
+        id: t.id,
+        codigo: t.codigo,
+        status: t.status,
+        dataCadastro: t.dataCadastro instanceof Date ? t.dataCadastro.toISOString() : t.dataCadastro,
+        dataAtribuicao: t.dataAtribuicao instanceof Date ? t.dataAtribuicao.toISOString() : t.dataAtribuicao,
+        dataConclusao: t.dataConclusao instanceof Date ? t.dataConclusao.toISOString() : t.dataConclusao,
+        // Limitar histórico para economizar espaço
+        historico: (t.historico || []).slice(-5).map(h => ({
+          id: h.id,
+          dataHora: h.dataHora instanceof Date ? h.dataHora.toISOString() : h.dataHora,
+          autor: h.autor,
+          statusNovo: h.statusNovo,
+          mensagem: h.mensagem?.substring(0, 200) // Limitar tamanho da mensagem
+        }))
+      }));
+      
+      localStorage.setItem(TICKETS_KEY, JSON.stringify(compactTickets));
+    } catch (error: any) {
+      if (error.name === 'QuotaExceededError') {
+        console.warn('⚠️ [PLATAFORMA] Quota excedida em saveTickets, limpando...');
+        try {
+          localStorage.removeItem(TICKETS_KEY);
+          // Salvar apenas dados essenciais
+          const minimalData = newTickets.slice(-20).map(t => ({
+            id: t.id,
+            codigo: t.codigo,
+            status: t.status
+          }));
+          localStorage.setItem(TICKETS_KEY, JSON.stringify(minimalData));
+        } catch (cleanError) {
+          console.warn('⚠️ [PLATAFORMA] Não foi possível salvar no localStorage');
+        }
+      } else {
+        console.warn('⚠️ [PLATAFORMA] Erro ao salvar no localStorage:', error);
+      }
+    }
     
     // Sincronizar com servidor (apenas se houver mudanças significativas)
     // Nota: Para atualizações individuais, usar updateTicket que já sincroniza
@@ -209,9 +299,16 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
+    // Gerar ID único usando timestamp + índice do histórico + random string
+    // Isso garante unicidade mesmo se múltiplos itens forem criados no mesmo milissegundo
+    const historicoLength = ticket.historico.length;
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substr(2, 9);
+    const uniqueId = `h-${timestamp}-${historicoLength}-${randomStr}`;
+
     const newItem: HistoricoItem = {
       ...item,
-      id: `h-${Date.now()}`
+      id: uniqueId
     };
 
     const updatedHistorico = [...ticket.historico, newItem];
@@ -229,10 +326,40 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   };
 
   const atribuirTicket = (ticketId: string, operador: string) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+
+    const statusAnterior = ticket.status;
+    const statusNovo: TicketStatus = 'EM_ATENDIMENTO';
+    
+    // Criar item de histórico
+    const historicoItem: Omit<HistoricoItem, 'id'> = {
+      dataHora: new Date(),
+      autor: operador,
+      statusAnterior,
+      statusNovo,
+      mensagem: `Ticket atribuído para ${operador}`
+    };
+
+    // Gerar ID único usando timestamp + índice do histórico + random string
+    // Isso garante unicidade mesmo se múltiplos tickets forem atribuídos no mesmo milissegundo
+    const historicoLength = ticket.historico.length;
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substr(2, 9);
+    const uniqueId = `h-${timestamp}-${historicoLength}-${randomStr}`;
+
+    // Adicionar ao histórico existente
+    const updatedHistorico = [...(ticket.historico || []), {
+      ...historicoItem,
+      id: uniqueId
+    }];
+
+    // Ao atribuir, mudar status para EM_ATENDIMENTO
     updateTicket(ticketId, {
       operador,
       dataAtribuicao: new Date(),
-      status: 'EM_OPERACAO'
+      status: statusNovo,
+      historico: updatedHistorico
     });
   };
 
@@ -266,7 +393,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       updateTicket,
       addHistorico,
       atribuirTicket,
-      createTicket
+      createTicket,
+      pausePolling,
+      resumePolling
     }}>
       {children}
     </TicketsContext.Provider>

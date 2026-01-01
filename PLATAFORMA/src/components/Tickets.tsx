@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
+import { useColumnResize } from '@/hooks/useColumnResize';
 import { Ticket, TicketStatus, PrioridadeType } from '@/types';
 import { TicketDetailModal } from './TicketDetailModal';
 import { TicketEditModal } from './TicketEditModal';
@@ -26,6 +27,7 @@ type TabType = 'geral' | 'em_operacao' | 'concluidos';
 export function Tickets() {
   const { currentUser, userRole } = useAuth();
   const { tickets, atribuirTicket, updateTicket } = useTickets();
+  const { columnWidths, isResizing, resizingColumn, tableRef, handleResizeStart, handleDoubleClick } = useColumnResize();
   const [activeTab, setActiveTab] = useState<TabType>('em_operacao');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -139,20 +141,56 @@ export function Tickets() {
     }
   };
 
-  // Cores de linha por status
+  // Cores de linha por status - cores destacadas no background
+  // Se ticket está atribuído a operador, sempre seguir cor do status (nunca cinza)
+  // Se não tem operador, GERAL e EM_OPERACAO ficam cinza
   const getRowClass = (ticket: Ticket): string => {
+    const hasOperador = ticket.operador && ticket.operador.trim() !== '';
+    
+    // Se tem operador atribuído, sempre seguir cor do status atual
+    if (hasOperador) {
+      switch (ticket.status) {
+        case 'EM_ATENDIMENTO':
+          // Em Atendimento - Laranja destacado
+          return 'bg-orange-100 dark:bg-orange-900/30';
+        case 'AGUARDANDO_INFO':
+          // Precisa de dados - Vermelho destacado
+          return 'bg-red-100 dark:bg-red-900/30';
+        case 'FINANCEIRO':
+          // Financeiro - Azul destacado
+          return 'bg-blue-100 dark:bg-blue-900/30';
+        case 'CONCLUIDO':
+          // Concluído - Verde destacado
+          return 'bg-green-100 dark:bg-green-900/30';
+        case 'GERAL':
+        case 'EM_OPERACAO':
+          // Mesmo com operador, se status é GERAL/EM_OPERACAO, usar laranja para indicar que está atribuído
+          return 'bg-orange-100 dark:bg-orange-900/30';
+        default:
+          return '';
+      }
+    }
+    
+    // Sem operador: comportamento padrão
     switch (ticket.status) {
       case 'GERAL':
+        // Em aberto - Cinza
+        return 'bg-gray-100 dark:bg-gray-800';
       case 'EM_OPERACAO':
-        return 'table-row-open'; // Cinza
+        // Em operação (sem operador atribuído ainda) - Cinza
+        return 'bg-gray-100 dark:bg-gray-800';
       case 'EM_ATENDIMENTO':
-        return 'table-row-atendimento'; // Amarelo
+        // Em Atendimento - Laranja destacado
+        return 'bg-orange-100 dark:bg-orange-900/30';
       case 'AGUARDANDO_INFO':
-        return 'table-row-waiting'; // Vermelho
+        // Precisa de dados - Vermelho destacado
+        return 'bg-red-100 dark:bg-red-900/30';
       case 'FINANCEIRO':
-        return 'table-row-financial'; // Azul
+        // Financeiro - Azul destacado
+        return 'bg-blue-100 dark:bg-blue-900/30';
       case 'CONCLUIDO':
-        return 'table-row-complete';
+        // Concluído - Verde destacado
+        return 'bg-green-100 dark:bg-green-900/30';
       default:
         return '';
     }
@@ -326,43 +364,173 @@ export function Tickets() {
       {/* Table */}
       <div className="bg-card rounded-xl border border-border">
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full" style={{ minWidth: '1200px' }}>
+          <table ref={tableRef} className="w-full" style={{ minWidth: '1200px' }}>
             <thead>
               <tr className="bg-[hsl(var(--table-header))]">
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-24">Código</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-32">CPF</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Nome/Telefone</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-24">Cadastro</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-24">Atribuição</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-24">Finalização</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-32">Status</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-28">Operador</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-24">Prioridade</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-20">Ações</th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.codigo }}
+                >
+                  Código
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('codigo', e)}
+                    onDoubleClick={(e) => handleDoubleClick('codigo', e)}
+                    style={{
+                      opacity: resizingColumn === 'codigo' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.cpf }}
+                >
+                  CPF
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('cpf', e)}
+                    onDoubleClick={(e) => handleDoubleClick('cpf', e)}
+                    style={{
+                      opacity: resizingColumn === 'cpf' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.nomeTelefone }}
+                >
+                  Nome/Telefone
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('nomeTelefone', e)}
+                    onDoubleClick={(e) => handleDoubleClick('nomeTelefone', e)}
+                    style={{
+                      opacity: resizingColumn === 'nomeTelefone' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.cadastro }}
+                >
+                  Cadastro
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('cadastro', e)}
+                    onDoubleClick={(e) => handleDoubleClick('cadastro', e)}
+                    style={{
+                      opacity: resizingColumn === 'cadastro' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.atribuicao }}
+                >
+                  Atribuição
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('atribuicao', e)}
+                    onDoubleClick={(e) => handleDoubleClick('atribuicao', e)}
+                    style={{
+                      opacity: resizingColumn === 'atribuicao' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.finalizacao }}
+                >
+                  Finalização
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('finalizacao', e)}
+                    onDoubleClick={(e) => handleDoubleClick('finalizacao', e)}
+                    style={{
+                      opacity: resizingColumn === 'finalizacao' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.status }}
+                >
+                  Status
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('status', e)}
+                    onDoubleClick={(e) => handleDoubleClick('status', e)}
+                    style={{
+                      opacity: resizingColumn === 'status' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.operador }}
+                >
+                  Operador
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('operador', e)}
+                    onDoubleClick={(e) => handleDoubleClick('operador', e)}
+                    style={{
+                      opacity: resizingColumn === 'operador' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.prioridade }}
+                >
+                  Prioridade
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('prioridade', e)}
+                    onDoubleClick={(e) => handleDoubleClick('prioridade', e)}
+                    style={{
+                      opacity: resizingColumn === 'prioridade' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
+                <th 
+                  className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                  style={{ width: columnWidths.acoes }}
+                >
+                  Ações
+                  <div
+                    className="resize-handle"
+                    onMouseDown={(e) => handleResizeStart('acoes', e)}
+                    onDoubleClick={(e) => handleDoubleClick('acoes', e)}
+                    style={{
+                      opacity: resizingColumn === 'acoes' ? 1 : 0.5,
+                    }}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filteredTickets.map((ticket) => (
                 <tr 
                   key={ticket.id} 
-                  className={`hover:bg-[hsl(var(--table-row-hover))] transition-colors ${getRowClass(ticket)}`}
+                  className={`${getRowClass(ticket)} transition-all duration-200 hover:brightness-95`}
                 >
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.codigo }}>
                     <span className="font-mono text-sm font-medium text-foreground">{ticket.codigo}</span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.cpf }}>
                     <span className="text-sm text-foreground">{ticket.cpfSolicitante}</span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.nomeTelefone }}>
                     <div>
-                      <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{ticket.nomeCompleto}</p>
+                      <p className="text-sm font-medium text-foreground truncate">{ticket.nomeCompleto}</p>
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Phone className="w-3 h-3" />
                         {ticket.telefone}
                       </p>
                     </div>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.cadastro }}>
                     <span className="text-sm text-foreground">
                       {new Date(ticket.dataCadastro).toLocaleDateString('pt-BR')}
                     </span>
@@ -370,7 +538,7 @@ export function Tickets() {
                       {new Date(ticket.dataCadastro).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.atribuicao }}>
                     {ticket.dataAtribuicao ? (
                       <>
                         <span className="text-sm text-foreground">
@@ -384,7 +552,7 @@ export function Tickets() {
                       <span className="text-sm text-muted-foreground">-</span>
                     )}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.finalizacao }}>
                     {ticket.dataConclusao ? (
                       <>
                         <span className="text-sm text-foreground">
@@ -398,17 +566,17 @@ export function Tickets() {
                       <span className="text-sm text-muted-foreground">-</span>
                     )}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.status }}>
                     <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${getStatusBadgeClass(ticket.status)}`}>
                       {getStatusLabel(ticket.status)}
                     </span>
                   </td>
-                  <td className="px-3 py-3">
-                    <span className="text-sm text-foreground truncate max-w-[100px] block">
+                  <td className="px-3 py-3" style={{ width: columnWidths.operador }}>
+                    <span className="text-sm text-foreground truncate block">
                       {ticket.operador || <span className="text-muted-foreground">-</span>}
                     </span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3" style={{ width: columnWidths.prioridade }}>
                     {(() => {
                       const badge = getPrioridadeBadge(ticket.prioridade);
                       return (
@@ -420,7 +588,7 @@ export function Tickets() {
                       );
                     })()}
                   </td>
-                  <td className="px-3 py-3 text-center">
+                  <td className="px-3 py-3 text-center" style={{ width: columnWidths.acoes }}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className="p-2 rounded-lg hover:bg-muted transition-colors">
