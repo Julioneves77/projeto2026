@@ -22,7 +22,8 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
-  Download
+  Download,
+  MessageCircle
 } from 'lucide-react';
 
 interface TicketDetailModalProps {
@@ -384,59 +385,180 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     return new Date(date).toLocaleString('pt-BR');
   }, []);
 
-  // Componente memoizado para item do histórico
-  // Passar formatDate como prop para evitar dependências desnecessárias
+  // Função para filtrar histórico importante (reduzir repetições)
+  const filterHistoricoImportante = useCallback((historico: HistoricoItem[]): HistoricoItem[] => {
+    const filtered: HistoricoItem[] = [];
+    const processedIds = new Set<string>();
+    
+    for (let i = 0; i < historico.length; i++) {
+      const item = historico[i];
+      const nextItem = historico[i + 1];
+      
+      // Sempre incluir se já foi processado (evitar duplicatas)
+      if (processedIds.has(item.id)) continue;
+      
+      // Sempre mostrar mudanças de status reais
+      if (item.statusAnterior !== item.statusNovo) {
+        filtered.push(item);
+        processedIds.add(item.id);
+        continue;
+      }
+      
+      // Sempre mostrar se tem mensagem do operador (não é sistema)
+      if (item.autor !== 'Sistema' && item.mensagem && item.mensagem.trim()) {
+        filtered.push(item);
+        processedIds.add(item.id);
+        continue;
+      }
+      
+      // Sempre mostrar se tem anexo
+      if (item.anexo) {
+        filtered.push(item);
+        processedIds.add(item.id);
+        continue;
+      }
+      
+      // Para entradas do sistema com mesmo status, tentar combinar email + WhatsApp
+      if (item.autor === 'Sistema' && item.statusAnterior === item.statusNovo) {
+        // Verificar se próximo item é complementar (email + WhatsApp)
+        if (nextItem && 
+            nextItem.autor === 'Sistema' && 
+            nextItem.statusAnterior === nextItem.statusNovo &&
+            nextItem.statusAnterior === item.statusAnterior &&
+            ((item.enviouEmail && nextItem.enviouWhatsApp) || 
+             (item.enviouWhatsApp && nextItem.enviouEmail))) {
+          
+          // Criar item consolidado
+          const consolidated: HistoricoItem = {
+            ...item,
+            mensagem: item.mensagem.includes('confirmação') 
+              ? 'Confirmação de pagamento enviada por email e WhatsApp'
+              : item.mensagem.includes('conclusão')
+              ? 'Resultado enviado por email e WhatsApp'
+              : 'Notificação enviada por email e WhatsApp',
+            enviouEmail: item.enviouEmail || nextItem.enviouEmail || false,
+            enviouWhatsApp: item.enviouWhatsApp || nextItem.enviouWhatsApp || false
+          };
+          
+          filtered.push(consolidated);
+          processedIds.add(item.id);
+          processedIds.add(nextItem.id);
+          i++; // Pular próximo item
+          continue;
+        }
+        
+        // Se não tem complemento, mostrar apenas se for importante
+        // Filtrar mensagens muito detalhadas do sistema (mas manter mensagens consolidadas)
+        const mensagemSimples = item.mensagem.toLowerCase();
+        const ehMensagemConsolidada = mensagemSimples.includes('confirmação de pagamento enviada por') ||
+                                      mensagemSimples.includes('resultado enviado por') ||
+                                      mensagemSimples.includes('notificação enviada por');
+        
+        if (!ehMensagemConsolidada && (
+            mensagemSimples.includes('email de confirmação enviado para') ||
+            mensagemSimples.includes('whatsapp de confirmação enviado para') ||
+            mensagemSimples.includes('email de conclusão enviado para') ||
+            mensagemSimples.includes('whatsapp de conclusão enviado para'))) {
+          // Não incluir - muito detalhado e repetitivo (mas manter consolidadas)
+          continue;
+        }
+        
+        // Incluir mensagens consolidadas do backend
+        if (ehMensagemConsolidada) {
+          filtered.push(item);
+          processedIds.add(item.id);
+          continue;
+        }
+      }
+      
+      // Incluir outros itens por padrão
+      filtered.push(item);
+      processedIds.add(item.id);
+    }
+    
+    return filtered;
+  }, []);
+
+  // Componente memoizado para item do histórico (simplificado)
   const HistoricoItemComponent = React.memo(({ item, onViewAnexo, formatDateFn }: { 
     item: HistoricoItem; 
     onViewAnexo: (anexo: HistoricoItem['anexo']) => void;
     formatDateFn: (date: Date | null) => string;
-  }) => (
-    <div className="p-4 bg-muted/30 rounded-lg border-l-4 border-primary/30">
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <User className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">{item.autor}</span>
+  }) => {
+    const temMudancaStatus = item.statusAnterior !== item.statusNovo;
+    const temMensagem = item.mensagem && item.mensagem.trim();
+    const temAnexo = !!item.anexo;
+    const temNotificacoes = item.enviouEmail || item.enviouWhatsApp;
+    
+    return (
+      <div className="p-2.5 bg-muted/20 rounded border-l-2 border-primary/20 mb-2">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs font-medium text-foreground truncate">{item.autor}</span>
+            {temMudancaStatus && (
+              <>
+                <span className="text-xs text-muted-foreground mx-1">•</span>
+                <span className="text-xs status-badge status-progress">{item.statusAnterior}</span>
+                <ArrowRight className="w-2.5 h-2.5 text-muted-foreground mx-0.5" />
+                <span className={`text-xs status-badge ${item.statusNovo === 'CONCLUIDO' ? 'status-complete' : 'status-progress'}`}>
+                  {item.statusNovo}
+                </span>
+              </>
+            )}
+            {temNotificacoes && !temMudancaStatus && (
+              <>
+                <span className="text-xs text-muted-foreground mx-1">•</span>
+                <div className="flex items-center gap-1.5">
+                  {item.enviouEmail && (
+                    <span className="inline-flex items-center gap-0.5 text-primary" title="E-mail enviado">
+                      <Mail className="w-3 h-3" />
+                    </span>
+                  )}
+                  {item.enviouWhatsApp && (
+                    <span className="inline-flex items-center gap-0.5 text-green-600" title="WhatsApp enviado">
+                      <MessageCircle className="w-3 h-3" />
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+            <Clock className="w-3 h-3" />
+            <span>{formatDateFn(item.dataHora)}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock className="w-3 h-3" />
-          {formatDateFn(item.dataHora)}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mb-2 text-xs">
-        <span className="status-badge status-progress">{item.statusAnterior}</span>
-        <ArrowRight className="w-3 h-3 text-muted-foreground" />
-        <span className={`status-badge ${item.statusNovo === 'CONCLUIDO' ? 'status-complete' : 'status-progress'}`}>
-          {item.statusNovo}
-        </span>
-        {item.enviouEmail && (
-          <span className="inline-flex items-center gap-1 text-primary">
-            <Mail className="w-3 h-3" />
-            E-mail enviado
-          </span>
+        {temMensagem && (
+          <p className="text-xs text-foreground/90 mb-1">{item.mensagem}</p>
+        )}
+        {temAnexo && (
+          <button
+            onClick={() => onViewAnexo(item.anexo)}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <Paperclip className="w-3 h-3" />
+            {item.anexo.nome}
+          </button>
         )}
       </div>
-      <p className="text-sm text-foreground">{item.mensagem}</p>
-      {item.anexo && (
-        <button
-          onClick={() => onViewAnexo(item.anexo)}
-          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          <Paperclip className="w-3 h-3" />
-          {item.anexo.nome}
-        </button>
-      )}
-    </div>
-  ));
+    );
+  });
 
   HistoricoItemComponent.displayName = 'HistoricoItemComponent';
 
-  // Limitar histórico para evitar travas com tickets pesados
-  const { historicoLimitado, historicoTruncado } = useMemo(() => {
+  // Filtrar e limitar histórico para evitar travas com tickets pesados
+  const { historicoLimitado, historicoTruncado, historicoOriginalLength } = useMemo(() => {
     const historico = Array.isArray(ticket.historico) ? ticket.historico : [];
-    const slice = historico.slice(-MAX_HISTORICO_RENDER);
-    const truncated = historico.length > MAX_HISTORICO_RENDER;
-    return { historicoLimitado: slice, historicoTruncado: truncated };
-  }, [ticket.historico]);
+    const historicoFiltrado = filterHistoricoImportante(historico);
+    const slice = historicoFiltrado.slice(-MAX_HISTORICO_RENDER);
+    const truncated = historicoFiltrado.length > MAX_HISTORICO_RENDER;
+    return { 
+      historicoLimitado: slice, 
+      historicoTruncado: truncated,
+      historicoOriginalLength: historico.length
+    };
+  }, [ticket.historico, filterHistoricoImportante]);
 
   // Memoizar histórico renderizado apenas quando necessário
   const historicoRenderizado = useMemo(() => {
@@ -704,16 +826,19 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                         ⚠️ Histórico limitado para melhor performance
                       </p>
                       <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                        Exibindo as últimas <strong>{MAX_HISTORICO_RENDER}</strong> de <strong>{ticket.historico.length}</strong> interações.
-                        {ticket.historico.length - MAX_HISTORICO_RENDER > 0 && (
-                          <span> ({ticket.historico.length - MAX_HISTORICO_RENDER} itens anteriores ocultos)</span>
+                        Exibindo as últimas <strong>{MAX_HISTORICO_RENDER}</strong> de <strong>{historicoLimitado.length}</strong> interações importantes
+                        {historicoOriginalLength > historicoLimitado.length && (
+                          <span> (de <strong>{historicoOriginalLength}</strong> totais - itens repetitivos ocultos)</span>
                         )}
                       </p>
                     </div>
                   )}
-                  {!historicoTruncado && ticket.historico.length > 0 && (
+                  {!historicoTruncado && historicoLimitado.length > 0 && (
                     <p className="text-xs text-muted-foreground mb-2">
-                      Total: <strong>{ticket.historico.length}</strong> {ticket.historico.length === 1 ? 'interação' : 'interações'}
+                      Total: <strong>{historicoLimitado.length}</strong> {historicoLimitado.length === 1 ? 'interação importante' : 'interações importantes'}
+                      {historicoOriginalLength > historicoLimitado.length && (
+                        <span> (de <strong>{historicoOriginalLength}</strong> totais - itens repetitivos ocultos)</span>
+                      )}
                     </p>
                   )}
                   <div className="space-y-3">

@@ -529,66 +529,38 @@ app.post('/tickets/:id/send-confirmation', async (req, res) => {
       results.whatsapp = { success: true, alreadySent: true };
     }
     
-    // Atualizar histórico do ticket com resultado dos envios
+    // Atualizar histórico do ticket com resultado dos envios (consolidado)
     const historico = ticket.historico || [];
     const now = new Date().toISOString();
     const timestamp = Date.now();
     const historicoLength = historico.length;
-    const newHistoricoItems = [];
     
-    if (results.email && results.email.success && !jaEnviouEmail) {
-      const uniqueId = `h-${timestamp}-${historicoLength}-${Math.random().toString(36).substr(2, 9)}-email-confirmation`;
-      newHistoricoItems.push({
+    // Verificar se ambos foram enviados para criar apenas 1 item consolidado
+    const emailEnviado = results.email && results.email.success && !jaEnviouEmail;
+    const whatsappEnviado = results.whatsapp && results.whatsapp.success && !jaEnviouWhatsApp;
+    
+    if (emailEnviado || whatsappEnviado) {
+      const uniqueId = `h-${timestamp}-${historicoLength}-${Math.random().toString(36).substr(2, 9)}-confirmation`;
+      
+      // Criar apenas 1 item consolidado
+      const historicoItem = {
         id: uniqueId,
         dataHora: now,
         autor: 'Sistema',
         statusAnterior: ticket.status,
         statusNovo: ticket.status,
-        mensagem: `Email de confirmação enviado para ${ticket.email}`,
-        enviouEmail: true,
-        enviouWhatsApp: false,
-        dataEnvioEmail: now,
-        dataEnvioWhatsApp: null
-      });
-    }
-    
-    if (results.whatsapp && results.whatsapp.success && !jaEnviouWhatsApp) {
-      const uniqueId = `h-${timestamp}-${historicoLength + newHistoricoItems.length}-${Math.random().toString(36).substr(2, 9)}-whatsapp-confirmation`;
-      newHistoricoItems.push({
-        id: uniqueId,
-        dataHora: now,
-        autor: 'Sistema',
-        statusAnterior: ticket.status,
-        statusNovo: ticket.status,
-        mensagem: `WhatsApp de confirmação enviado para ${ticket.telefone}`,
-        enviouEmail: false,
-        enviouWhatsApp: true,
-        dataEnvioEmail: null,
-        dataEnvioWhatsApp: now
-      });
-    }
-    
-    // Se ambos foram enviados, criar um item consolidado
-    if (newHistoricoItems.length === 2 || 
-        (results.email?.success && results.whatsapp?.success && !jaEnviouEmail && !jaEnviouWhatsApp)) {
-      const uniqueId = `h-${timestamp}-${historicoLength + newHistoricoItems.length}-${Math.random().toString(36).substr(2, 9)}-both-confirmation`;
-      newHistoricoItems.push({
-        id: uniqueId,
-        dataHora: now,
-        autor: 'Sistema',
-        statusAnterior: ticket.status,
-        statusNovo: ticket.status,
-        mensagem: 'Confirmação de pagamento enviada por email e WhatsApp',
-        enviouEmail: results.email?.success || false,
-        enviouWhatsApp: results.whatsapp?.success || false,
-        dataEnvioEmail: results.email?.success ? now : null,
-        dataEnvioWhatsApp: results.whatsapp?.success ? now : null
-      });
-    }
-    
-    // Adicionar ao histórico
-    if (newHistoricoItems.length > 0) {
-      tickets[ticketIndex].historico = [...historico, ...newHistoricoItems];
+        mensagem: emailEnviado && whatsappEnviado 
+          ? 'Confirmação de pagamento enviada por email e WhatsApp'
+          : emailEnviado 
+          ? 'Confirmação de pagamento enviada por email'
+          : 'Confirmação de pagamento enviada por WhatsApp',
+        enviouEmail: emailEnviado || false,
+        enviouWhatsApp: whatsappEnviado || false,
+        dataEnvioEmail: emailEnviado ? now : null,
+        dataEnvioWhatsApp: whatsappEnviado ? now : null
+      };
+      
+      tickets[ticketIndex].historico = [...historico, historicoItem];
       saveTickets(tickets);
     }
     
@@ -841,44 +813,33 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       const now = new Date().toISOString();
       const timestamp = Date.now();
       const historicoLength = historico.length;
-      const newHistoricoItems = [];
       
-      if (results.email && results.email.success && !results.email.alreadySent) {
-        // Gerar ID único usando timestamp + índice do histórico + random string
-        const uniqueId = `h-${timestamp}-${historicoLength}-${Math.random().toString(36).substr(2, 9)}-email-completion`;
-        newHistoricoItems.push({
+      // Verificar se email/WhatsApp foram enviados para criar apenas 1 item consolidado
+      const emailEnviado = results.email && results.email.success && !results.email.alreadySent;
+      const whatsappEnviado = results.whatsapp && results.whatsapp.success && !results.whatsapp.skipped && !results.whatsapp.alreadySent;
+      
+      if (emailEnviado || whatsappEnviado) {
+        const uniqueId = `h-${timestamp}-${historicoLength}-${Math.random().toString(36).substr(2, 9)}-completion`;
+        
+        // Criar apenas 1 item consolidado
+        const historicoItem = {
           id: uniqueId,
           dataHora: now,
           autor: 'Sistema',
           statusAnterior: ticket.status,
           statusNovo: ticket.status,
-          mensagem: `Email de conclusão enviado para ${ticket.email}`,
-          enviouEmail: true,
-          enviouWhatsApp: false,
-          dataEnvioEmail: now,
-          dataEnvioWhatsApp: null
-        });
-      }
-      
-      if (results.whatsapp && results.whatsapp.success && !results.whatsapp.skipped && !results.whatsapp.alreadySent) {
-        // Gerar ID único usando timestamp + índice do histórico + random string
-        const uniqueId = `h-${timestamp}-${historicoLength + newHistoricoItems.length}-${Math.random().toString(36).substr(2, 9)}-whatsapp-completion`;
-        newHistoricoItems.push({
-          id: uniqueId,
-          dataHora: now,
-          autor: 'Sistema',
-          statusAnterior: ticket.status,
-          statusNovo: ticket.status,
-          mensagem: `WhatsApp de conclusão enviado para ${ticket.telefone}`,
-          enviouEmail: false,
-          enviouWhatsApp: true,
-          dataEnvioEmail: null,
-          dataEnvioWhatsApp: now
-        });
-      }
-      
-      if (newHistoricoItems.length > 0) {
-        tickets[ticketIndex].historico = [...historico, ...newHistoricoItems];
+          mensagem: emailEnviado && whatsappEnviado 
+            ? 'Resultado enviado por email e WhatsApp'
+            : emailEnviado 
+            ? 'Resultado enviado por email'
+            : 'Resultado enviado por WhatsApp',
+          enviouEmail: emailEnviado || false,
+          enviouWhatsApp: whatsappEnviado || false,
+          dataEnvioEmail: emailEnviado ? now : null,
+          dataEnvioWhatsApp: whatsappEnviado ? now : null
+        };
+        
+        tickets[ticketIndex].historico = [...historico, historicoItem];
         saveTickets(tickets);
       }
       

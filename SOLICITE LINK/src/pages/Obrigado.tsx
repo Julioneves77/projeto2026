@@ -35,7 +35,7 @@ const Obrigado = () => {
         event: "conversion",
         eventCategory: "Pagamento",
         eventAction: "Confirmado",
-        eventLabel: tipoCertidao || "Certidão",
+        eventLabel: tipoCertidao || "Solicitação",
         ticketCodigo: ticketCodigo,
         plano: planoId,
         value: planoId === "premium" ? "premium" : planoId === "prioridade" ? "prioridade" : "padrao",
@@ -153,7 +153,7 @@ const Obrigado = () => {
             {email && (
               <div className="text-center mb-8 p-4 bg-accent/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">
-                  A certidão será enviada para:
+                  A solicitação será enviada para:
                 </p>
                 <p className="font-medium text-foreground">
                   {email}
@@ -180,7 +180,7 @@ const Obrigado = () => {
                     2
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Nossa equipe iniciará o processamento da sua certidão.
+                    Nossa equipe iniciará o processamento da sua solicitação.
                   </p>
                 </li>
                 <li className="flex items-start gap-3">
@@ -194,12 +194,6 @@ const Obrigado = () => {
               </ul>
             </div>
 
-            {/* Informações Adicionais */}
-            <div className="text-center p-4 bg-primary/5 rounded-lg mb-8">
-              <p className="text-sm text-muted-foreground">
-                Dúvidas? Acesse: <a href="https://www.portalcertidao.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">www.portalcertidao.org</a>
-              </p>
-            </div>
 
             {/* CTA */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
