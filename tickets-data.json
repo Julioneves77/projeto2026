@@ -1,0 +1,78 @@
+[
+  {
+    "id": "test-1",
+    "codigo": "TK-TEST",
+    "nomeCompleto": "Teste",
+    "status": "GERAL"
+  },
+  {
+    "id": "test-integration-1767234486",
+    "codigo": "TK-TEST-486",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "João Silva Teste",
+    "cpfSolicitante": "123.456.789-00",
+    "dataNascimento": "1990-01-15",
+    "genero": "Masculino",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "São Paulo",
+    "telefone": "(11) 99999-9999",
+    "email": "joao@teste.com",
+    "tipoCertidao": "Certidão Criminal Estadual",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T02:28:06.000Z",
+    "prioridade": "padrao",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      }
+    ]
+  },
+  {
+    "id": "test-create-1767234890",
+    "codigo": "TK-TEST-CREATE",
+    "nomeCompleto": "Teste Criação",
+    "status": "GERAL"
+  },
+  {
+    "id": "ticket-1767234964238-0qqoe0baf",
+    "codigo": "TK-004",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "JULIO CESAR NEVES DE SOUZA",
+    "cpfSolicitante": "695.589.901-59",
+    "dataNascimento": "",
+    "genero": "Não informado",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "",
+    "telefone": "(61) 99228-3372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Federal - CRIMINAL",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T02:36:04.238Z",
+    "prioridade": "premium",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-1767234984574",
+        "dataHora": "2026-01-01T02:36:24.574Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      }
+    ]
+  }
+]

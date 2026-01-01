@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { createTicket } from "@/lib/ticketService";
+import { createTicket, updateTicket, findTicket } from "@/lib/ticketService";
 
 // Mock data for testing
 const mockPlan = {
@@ -39,6 +39,7 @@ const Payment = () => {
   
   const [copied, setCopied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentTicketId, setCurrentTicketId] = useState<string | null>(null);
   const isTestMode = !locationState.formData;
 
   // Redirect if no formData or selectedPlan (unless in test mode which uses mock data)
@@ -48,6 +49,46 @@ const Payment = () => {
       navigate("/selecionar-servico", { replace: true });
     }
   }, [locationState.formData, locationState.selectedPlan, isTestMode, navigate]);
+
+  // Criar ticket ao carregar Payment (quando PIX é gerado)
+  useEffect(() => {
+    const createTicketOnMount = async () => {
+      // Criar identificador único baseado nos dados do formulário
+      const doc = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
+      const sessionKey = `payment_${doc}_${certificateType}_${selectedPlan.id}`;
+      
+      // Verificar se já existe ticket para esta sessão
+      const existingTicketId = sessionStorage.getItem(sessionKey);
+      
+      if (existingTicketId) {
+        const existingTicket = await findTicket(existingTicketId);
+        if (existingTicket && existingTicket.status === 'GERAL') {
+          console.log('🔵 [PORTAL Payment] Ticket já existe:', existingTicket.codigo);
+          setCurrentTicketId(existingTicketId);
+          return;
+        }
+      }
+
+      // Criar novo ticket com status GERAL
+      console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
+      const ticket = await createTicket(formData, certificateType, state, selectedPlan);
+      
+      if (ticket) {
+        console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
+        setCurrentTicketId(ticket.id);
+        sessionStorage.setItem(sessionKey, ticket.id);
+        toast({
+          title: "PIX gerado!",
+          description: `Ticket ${ticket.codigo} criado. Complete o pagamento para processar.`,
+        });
+      } else {
+        console.error('❌ [PORTAL Payment] Falha ao criar ticket ao gerar PIX');
+      }
+    };
+
+    createTicketOnMount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Executar apenas uma vez ao montar
 
   // Mock PIX key (in real app, this would be generated dynamically)
   const pixKey = "00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890-abcd-ef1234567890520400005303986540" + selectedPlan.price.toFixed(2).replace(".", "") + "5802BR5925PORTAL CERTIDOES LTDA6009SAO PAULO62070503***6304";
@@ -81,22 +122,83 @@ const Payment = () => {
   const handleTestPayment = async () => {
     setIsProcessing(true);
     
+    console.log('🔵 [PORTAL Payment] Iniciando pagamento...');
+    console.log('🔵 [PORTAL Payment] Ticket atual:', currentTicketId);
+    
     // Simulate payment processing
     await new Promise((resolve) => setTimeout(resolve, 2000));
     
-    // Criar ticket na PLATAFORMA após pagamento confirmado
-    try {
-      const ticket = createTicket(formData, certificateType, state, selectedPlan);
-      if (ticket) {
-        console.log('Ticket criado com sucesso:', ticket.codigo);
+    // Atualizar ticket existente para EM_OPERACAO
+    if (currentTicketId) {
+      try {
+        console.log('🔵 [PORTAL Payment] Atualizando ticket para EM_OPERACAO...');
+        // Buscar ticket atual para pegar histórico existente
+        const currentTicket = await findTicket(currentTicketId);
+        const existingHistorico = currentTicket?.historico || [];
+        
+        const newHistoricoItem = {
+          id: `h-${Date.now()}`,
+          dataHora: new Date().toISOString(),
+          autor: 'Sistema',
+          statusAnterior: 'GERAL' as const,
+          statusNovo: 'EM_OPERACAO' as const,
+          mensagem: 'Pagamento confirmado. Ticket em processamento.',
+          enviouEmail: false
+        };
+        
+        const success = await updateTicket(currentTicketId, {
+          status: 'EM_OPERACAO',
+          historico: [...existingHistorico, newHistoricoItem]
+        });
+        
+        if (success) {
+          const updatedTicket = await findTicket(currentTicketId);
+          console.log('✅ [PORTAL Payment] Ticket atualizado para EM_OPERACAO:', updatedTicket?.codigo);
+          toast({
+            title: "Pagamento confirmado!",
+            description: `Ticket ${updatedTicket?.codigo} está sendo processado.`,
+          });
+        } else {
+          console.error('❌ [PORTAL Payment] Falha ao atualizar ticket');
+          toast({
+            title: "Aviso",
+            description: "Ticket não foi atualizado. Verifique o console.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('❌ [PORTAL Payment] Erro ao atualizar ticket:', error);
         toast({
-          title: "Ticket criado!",
-          description: `Seu ticket ${ticket.codigo} foi criado e será processado em breve.`,
+          title: "Erro",
+          description: "Erro ao atualizar ticket. Verifique o console.",
+          variant: "destructive",
         });
       }
-    } catch (error) {
-      console.error('Erro ao criar ticket:', error);
-      // Não bloquear o fluxo se houver erro ao criar ticket
+    } else {
+      // Se não há ticket, criar um novo (fallback)
+      console.warn('⚠️ [PORTAL Payment] Nenhum ticket encontrado, criando novo...');
+      const ticket = await createTicket(formData, certificateType, state, selectedPlan);
+      if (ticket) {
+        const newHistoricoItem = {
+          id: `h-${Date.now()}`,
+          dataHora: new Date().toISOString(),
+          autor: 'Sistema',
+          statusAnterior: 'GERAL' as const,
+          statusNovo: 'EM_OPERACAO' as const,
+          mensagem: 'Pagamento confirmado. Ticket em processamento.',
+          enviouEmail: false
+        };
+        
+        await updateTicket(ticket.id, {
+          status: 'EM_OPERACAO',
+          historico: [newHistoricoItem]
+        });
+        setCurrentTicketId(ticket.id);
+        toast({
+          title: "Pagamento confirmado!",
+          description: `Ticket ${ticket.codigo} está sendo processado.`,
+        });
+      }
     }
     
     // Navigate to thank you page with all necessary data
