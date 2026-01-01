@@ -18837,5 +18837,338 @@
         "dataEnvioWhatsApp": "2026-01-01T15:42:53.340Z"
       }
     ]
+  },
+  {
+    "id": "test-fluxo-1767287936670",
+    "codigo": "TK-TEST-FLUXO-936670",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "Teste Fluxo Completo",
+    "cpfSolicitante": "123.456.789-00",
+    "dataNascimento": "1990-01-01",
+    "genero": "Masculino",
+    "estadoEmissao": "DF",
+    "cidadeEmissao": "Brasília",
+    "telefone": "61992283372",
+    "email": "teste@portalcertidao.org",
+    "tipoCertidao": "certidao_teste",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T17:18:56.670Z",
+    "prioridade": "prioridade",
+    "status": "CONCLUIDO",
+    "operador": "Operador Teste",
+    "dataAtribuicao": "2026-01-01T17:19:00.592Z",
+    "dataConclusao": "2026-01-01T17:19:00.604Z",
+    "historico": [
+      {
+        "id": "h-1767287936690-pagamento",
+        "dataHora": "2026-01-01T17:18:56.690Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287940588-1-q5klmav82-email-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para teste@portalcertidao.org",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T17:19:00.588Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767287940588-2-zykk09nz4-whatsapp-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para 61992283372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T17:19:00.588Z"
+      },
+      {
+        "id": "h-1767287940588-3-gfn7nvxdr-both-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T17:19:00.588Z",
+        "dataEnvioWhatsApp": "2026-01-01T17:19:00.588Z"
+      },
+      {
+        "id": "h-1767287936690-pagamento",
+        "dataHora": "2026-01-01T17:18:56.690Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287940592-atribuicao",
+        "dataHora": "2026-01-01T17:19:00.592Z",
+        "autor": "Operador Teste",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Operador Teste",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287936690-pagamento",
+        "dataHora": "2026-01-01T17:18:56.690Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287940588-1-q5klmav82-email-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para teste@portalcertidao.org",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T17:19:00.588Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767287940588-2-zykk09nz4-whatsapp-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para 61992283372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T17:19:00.588Z"
+      },
+      {
+        "id": "h-1767287940588-3-gfn7nvxdr-both-confirmation",
+        "dataHora": "2026-01-01T17:19:00.588Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T17:19:00.588Z",
+        "dataEnvioWhatsApp": "2026-01-01T17:19:00.588Z"
+      },
+      {
+        "id": "h-1767287936690-pagamento",
+        "dataHora": "2026-01-01T17:18:56.690Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287940592-atribuicao",
+        "dataHora": "2026-01-01T17:19:00.592Z",
+        "autor": "Operador Teste",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Operador Teste",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287940598-interacao",
+        "dataHora": "2026-01-01T17:19:00.598Z",
+        "autor": "Operador Teste",
+        "statusAnterior": "EM_ATENDIMENTO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Teste de interação no ticket. Verificando funcionamento do sistema.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767287947327-13-x586akhyb-email-completion",
+        "dataHora": "2026-01-01T17:19:07.327Z",
+        "autor": "Sistema",
+        "statusAnterior": "CONCLUIDO",
+        "statusNovo": "CONCLUIDO",
+        "mensagem": "Email de conclusão enviado para teste@portalcertidao.org",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T17:19:07.327Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767287947327-14-682uw7ac4-whatsapp-completion",
+        "dataHora": "2026-01-01T17:19:07.327Z",
+        "autor": "Sistema",
+        "statusAnterior": "CONCLUIDO",
+        "statusNovo": "CONCLUIDO",
+        "mensagem": "WhatsApp de conclusão enviado para 61992283372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T17:19:07.327Z"
+      }
+    ]
+  },
+  {
+    "id": "test-1767288888409-1",
+    "codigo": "TK-005",
+    "nomeCompleto": "Teste Duplicata 1",
+    "status": "GERAL",
+    "dataCadastro": "2026-01-01T17:34:48.409Z",
+    "historico": []
+  },
+  {
+    "id": "test-hist-1767288888439",
+    "codigo": "TK-006",
+    "nomeCompleto": "Teste Histórico",
+    "status": "EM_OPERACAO",
+    "dataCadastro": "2026-01-01T17:34:48.439Z",
+    "historico": [
+      {
+        "id": "h-1",
+        "dataHora": "2026-01-01T17:34:48.439Z",
+        "autor": "Sistema",
+        "mensagem": "Item 1"
+      },
+      {
+        "id": "h-2",
+        "dataHora": "2026-01-01T17:34:48.445Z",
+        "autor": "Sistema",
+        "mensagem": "Item 2"
+      }
+    ],
+    "dataAtribuicao": null,
+    "dataConclusao": null
+  },
+  {
+    "id": "test-1767288908683-1",
+    "codigo": "TK-009",
+    "nomeCompleto": "Teste Duplicata 1",
+    "status": "EM_OPERACAO",
+    "dataCadastro": "2026-01-01T17:35:08.683Z",
+    "historico": [
+      {
+        "dataHora": "2026-01-01T19:11:48.366Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Administrador",
+        "id": "h-1767294708366-0-8tufb3mqj"
+      }
+    ],
+    "dataAtribuicao": "2026-01-01T19:11:48.367Z",
+    "dataConclusao": null,
+    "operador": null
+  },
+  {
+    "id": "test-hist-1767288908703",
+    "codigo": "TK-010",
+    "nomeCompleto": "Teste Histórico",
+    "status": "EM_ATENDIMENTO",
+    "dataCadastro": "2026-01-01T17:35:08.703Z",
+    "historico": [
+      {
+        "id": "h-1",
+        "dataHora": "2026-01-01T17:35:08.703Z",
+        "autor": "Sistema",
+        "mensagem": "Item 1"
+      },
+      {
+        "id": "h-2",
+        "dataHora": "2026-01-01T17:35:08.709Z",
+        "autor": "Sistema",
+        "mensagem": "Item 2"
+      },
+      {
+        "dataHora": "2026-01-01T19:09:00.320Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Administrador",
+        "id": "h-1767294540320-2-s454q4hw6"
+      }
+    ],
+    "dataAtribuicao": "2026-01-01T19:09:00.320Z",
+    "dataConclusao": null,
+    "operador": "Administrador"
+  },
+  {
+    "id": "ticket-1767299678777-8aldrc531",
+    "codigo": "TK-012",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "JULIO CESAR NEVES DE SOUZAttttttt",
+    "cpfSolicitante": "695.589.901-59",
+    "dataNascimento": "",
+    "genero": "Não informado",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "",
+    "telefone": "(61) 99228-3372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Federal - CRIMINAL",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T20:34:38.777Z",
+    "prioridade": "premium",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-1767299694985",
+        "dataHora": "2026-01-01T20:34:54.985Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767299702784-1-mam2fns41-email-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para julionevesgestor@gmail.com",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T20:35:02.784Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767299702784-2-ln61eqfib-whatsapp-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para (61) 99228-3372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T20:35:02.784Z"
+      },
+      {
+        "id": "h-1767299702784-3-qfjs1y6ew-both-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T20:35:02.784Z",
+        "dataEnvioWhatsApp": "2026-01-01T20:35:02.784Z"
+      }
+    ]
   }
 ]

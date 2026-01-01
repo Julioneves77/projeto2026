@@ -161,11 +161,16 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
       try {
         const reader = new FileReader();
         anexoBase64 = await new Promise((resolve, reject) => {
-          // Timeout de 10 segundos para evitar travamento
+          // Calcular timeout baseado no tamanho do arquivo
+          // Mínimo: 5s, Máximo: 30s, Base: 1s por MB
+          const fileSizeMB = anexo.size / (1024 * 1024);
+          const calculatedTimeout = Math.max(5000, Math.min(30000, fileSizeMB * 1000));
+          console.log(`⏱️ [PLATAFORMA] Timeout calculado para arquivo de ${fileSizeMB.toFixed(2)}MB: ${calculatedTimeout}ms`);
+          
           const timeout = setTimeout(() => {
             reader.abort();
-            reject(new Error('Timeout ao converter arquivo. Arquivo muito grande ou corrompido.'));
-          }, 10000);
+            reject(new Error(`Timeout ao converter arquivo (${calculatedTimeout}ms). Arquivo muito grande ou corrompido.`));
+          }, calculatedTimeout);
           
           reader.onload = () => {
             clearTimeout(timeout);
@@ -252,11 +257,20 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
           anexoPresente: !!anexoPayload
         });
         
-        const response = await fetch(`http://localhost:3001/tickets/${ticket.id}/send-completion`, {
+        // Usar URL do sync-server configurável
+        const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+        const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+        
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (SYNC_SERVER_API_KEY) {
+          headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+        }
+        
+        const response = await fetch(`${SYNC_SERVER_URL}/tickets/${ticket.id}/send-completion`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify({
             mensagemInteracao: mensagem.trim(),
             anexo: anexoPayload
@@ -685,8 +699,21 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                     Histórico de Interações
                   </h3>
                   {historicoTruncado && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4">
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                        ⚠️ Histórico limitado para melhor performance
+                      </p>
+                      <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                        Exibindo as últimas <strong>{MAX_HISTORICO_RENDER}</strong> de <strong>{ticket.historico.length}</strong> interações.
+                        {ticket.historico.length - MAX_HISTORICO_RENDER > 0 && (
+                          <span> ({ticket.historico.length - MAX_HISTORICO_RENDER} itens anteriores ocultos)</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                  {!historicoTruncado && ticket.historico.length > 0 && (
                     <p className="text-xs text-muted-foreground mb-2">
-                      Exibindo as últimas {MAX_HISTORICO_RENDER} interações para evitar travamentos.
+                      Total: <strong>{ticket.historico.length}</strong> {ticket.historico.length === 1 ? 'interação' : 'interações'}
                     </p>
                   )}
                   <div className="space-y-3">

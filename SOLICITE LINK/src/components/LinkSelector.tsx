@@ -8,15 +8,51 @@ import {
 } from "@/components/ui/select";
 import { ChevronRight } from "lucide-react";
 
+// URL do PORTAL - configurável via variável de ambiente
+const PORTAL_URL = import.meta.env.VITE_PORTAL_URL || 'http://localhost:8083';
+
+// Mapeamento de serviços do SOLICITE LINK para tipos do PORTAL
 const linkOptions = [
-  { id: "criminal-federal", label: "Criminal Federal", url: "https://portal.stf.jus.br/" },
-  { id: "quitacao-eleitoral", label: "Quitação Eleitoral", url: "https://www.tse.jus.br/" },
-  { id: "antecedencia-pf", label: "Antecedência Criminal – PF", url: "https://www.pf.gov.br/" },
-  { id: "criminal-estadual", label: "Criminal Estadual", url: "https://www.tjsp.jus.br/" },
-  { id: "civel-federal", label: "Cível Federal", url: "https://www.cjf.jus.br/" },
-  { id: "civel-estadual", label: "Cível Estadual", url: "https://www.tjsp.jus.br/" },
-  { id: "cnd", label: "CND", url: "https://solucoes.receita.fazenda.gov.br/" },
-  { id: "cpf-regular", label: "CPF Regular", url: "https://servicos.receita.fazenda.gov.br/" },
+  { 
+    id: "criminal-federal", 
+    label: "Criminal Federal", 
+    portalPath: "/certidao/federais?type=criminal"
+  },
+  { 
+    id: "quitacao-eleitoral", 
+    label: "Quitação Eleitoral", 
+    portalPath: "/certidao/federais?type=eleitoral"
+  },
+  { 
+    id: "antecedencia-pf", 
+    label: "Antecedência Criminal – PF", 
+    portalPath: "/certidao/policia-federal"
+  },
+  { 
+    id: "criminal-estadual", 
+    label: "Criminal Estadual", 
+    portalPath: "/certidao/estaduais"
+  },
+  { 
+    id: "civel-federal", 
+    label: "Cível Federal", 
+    portalPath: "/certidao/federais?type=civel"
+  },
+  { 
+    id: "civel-estadual", 
+    label: "Cível Estadual", 
+    portalPath: "/certidao/estaduais?type=civel"
+  },
+  { 
+    id: "cnd", 
+    label: "CND", 
+    portalPath: "/certidao/cnd"
+  },
+  { 
+    id: "cpf-regular", 
+    label: "CPF Regular", 
+    portalPath: "/certidao/cpf-regular"
+  },
 ];
 
 const LinkSelector = () => {
@@ -26,7 +62,9 @@ const LinkSelector = () => {
 
   const handleAccessClick = () => {
     if (selectedOption) {
-      window.open(selectedOption.url, "_blank", "noopener,noreferrer");
+      // Redirecionar para PORTAL com o caminho correto
+      const portalFullUrl = `${PORTAL_URL}${selectedOption.portalPath}`;
+      window.location.href = portalFullUrl;
     }
   };
 

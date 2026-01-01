@@ -7,33 +7,190 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 const sendPulseService = require('./services/sendPulseService');
 const zapApiService = require('./services/zapApiService');
+const { validateEmail, validatePhone } = require('./utils/validators');
+const logger = require('./utils/logger');
+const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
+// Configuração de CORS
+const corsOptions = {
+  origin: process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+    : '*', // Em desenvolvimento permite tudo, em produção deve ser configurado
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+// Configuração de Rate Limiting
+// Limite geral: 100 requisições por minuto por IP
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 100, // máximo de 100 requisições por IP por minuto
+  message: {
+    error: 'Muitas requisições',
+    message: 'Limite de requisições excedido. Tente novamente em alguns instantes.'
+  },
+  standardHeaders: true, // Retorna informações de rate limit nos headers `RateLimit-*`
+  legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
+});
+
+// Limite para criação de tickets: 10 requisições por minuto por IP
+const createTicketLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 10, // máximo de 10 requisições por IP por minuto
+  message: {
+    error: 'Muitas requisições',
+    message: 'Limite de criação de tickets excedido. Tente novamente em alguns instantes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Limite para upload de arquivos: 5 requisições por minuto por IP
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 5, // máximo de 5 requisições por IP por minuto
+  message: {
+    error: 'Muitas requisições',
+    message: 'Limite de uploads excedido. Tente novamente em alguns instantes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Middleware de segurança (Helmet)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Permitir uploads de arquivos
+}));
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Middleware de logging de requisições
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  
+  // Log quando resposta terminar
+  res.on('finish', () => {
+    const responseTime = Date.now() - startTime;
+    logger.logRequest(req, res, responseTime);
+  });
+  
+  next();
+});
+
+// Aplicar rate limiting geral em todas as rotas (exceto health check e root)
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/') {
+    return next(); // Health check e root não têm rate limiting
+  }
+  generalLimiter(req, res, next);
+});
+
+// Middleware de autenticação básica (opcional via API Key)
+const authenticateRequest = (req, res, next) => {
+  // Se SYNC_SERVER_API_KEY não estiver configurado, permite todas as requisições (modo desenvolvimento)
+  if (!process.env.SYNC_SERVER_API_KEY) {
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('⚠️ [SYNC] SYNC_SERVER_API_KEY não configurado em produção! API está aberta.');
+    }
+    return next();
+  }
+
+  // Verificar API Key no header
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  
+  if (!apiKey || apiKey !== process.env.SYNC_SERVER_API_KEY) {
+    return res.status(401).json({ 
+      error: 'Não autorizado',
+      message: 'API Key inválida ou ausente. Configure o header X-API-Key ou Authorization: Bearer <key>'
+    });
+  }
+
+  next();
+};
+
+// Aplicar autenticação em todas as rotas exceto health check
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/') {
+    return next();
+  }
+  authenticateRequest(req, res, next);
+});
 // Servir arquivos enviados
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 app.use('/uploads', express.static(UPLOAD_DIR));
 
+// Health check endpoint (sem autenticação)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT
+  });
+});
+
+// Root endpoint (sem autenticação)
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Sync Server API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      tickets: '/tickets',
+      upload: '/upload'
+    }
+  });
+});
+
 /**
  * Upload de anexo em base64 e retorna URL local para uso no WhatsApp
  * Body: { fileName, base64, mimeType }
+ * Rate Limit: 5 requisições por minuto por IP
  */
-app.post('/upload', async (req, res) => {
+app.post('/upload', uploadLimiter, async (req, res) => {
   try {
     const { fileName, base64, mimeType } = req.body || {};
+    
+    // Validar dados de upload
+    const validation = validateUpload({ fileName, base64 });
+    if (!validation.isValid) {
+      logger.warn('Upload validation failed', { errors: validation.errors, ip: req.ip });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Dados de upload inválidos',
+        errors: validation.errors 
+      });
+    }
+    
     if (!base64 || !fileName) {
       return res.status(400).json({ success: false, error: 'fileName e base64 são obrigatórios' });
     }
@@ -53,7 +210,8 @@ app.post('/upload', async (req, res) => {
     const filePath = path.join(UPLOAD_DIR, safeName);
     fs.writeFileSync(filePath, buffer);
 
-    const url = `${process.env.PUBLIC_BASE_URL || 'http://localhost:3001'}/uploads/${safeName}`;
+    const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+    const url = `${PUBLIC_BASE_URL}/uploads/${safeName}`;
     res.json({ success: true, url, mimeType: mimeType || 'application/octet-stream', name: safeName });
   } catch (error) {
     console.error('❌ Erro ao fazer upload:', error);
@@ -84,7 +242,7 @@ function saveTickets(tickets) {
     fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2));
     return true;
   } catch (error) {
-    console.error('❌ Erro ao salvar tickets:', error);
+    logger.logError(error, { function: 'saveTickets', ticketsCount: tickets.length });
     return false;
   }
 }
@@ -97,46 +255,133 @@ app.get('/tickets', (req, res) => {
   res.json(tickets);
 });
 
+// GET /tickets/generate-code - Gerar próximo código disponível
+// Usa um contador simples em memória para evitar duplicatas em requisições simultâneas
+let lastGeneratedNumber = 0;
+
+app.get('/tickets/generate-code', (req, res) => {
+  logger.info('GET /tickets/generate-code - Gerando próximo código', { ip: req.ip });
+  try {
+    const tickets = readTickets();
+    
+    // Encontrar o maior número de código existente nos tickets salvos
+    let maxNumberInFile = 0;
+    tickets.forEach(ticket => {
+      if (ticket.codigo) {
+        const match = ticket.codigo.match(/TK-(\d+)/);
+        if (match) {
+          const number = parseInt(match[1], 10);
+          if (number > maxNumberInFile) {
+            maxNumberInFile = number;
+          }
+        }
+      }
+    });
+    
+    // Usar o maior entre o arquivo e o último gerado (para evitar duplicatas em requisições simultâneas)
+    const maxNumber = Math.max(maxNumberInFile, lastGeneratedNumber);
+    
+    // Gerar próximo código e atualizar contador
+    const nextNumber = maxNumber + 1;
+    lastGeneratedNumber = nextNumber; // Atualizar contador em memória
+    const codigo = `TK-${nextNumber.toString().padStart(3, '0')}`;
+    
+    console.log(`✅ [SYNC] Próximo código gerado: ${codigo} (último no arquivo: TK-${maxNumberInFile.toString().padStart(3, '0')}, último gerado: TK-${maxNumber.toString().padStart(3, '0')})`);
+    res.json({ codigo });
+  } catch (error) {
+    console.error('❌ [SYNC] Erro ao gerar código:', error);
+    res.status(500).json({ error: 'Erro ao gerar código de ticket' });
+  }
+});
+
 // GET /tickets/:id - Buscar ticket específico
 app.get('/tickets/:id', (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [SYNC] GET /tickets/${id} - Buscando ticket`);
+  logger.info(`GET /tickets/${id} - Buscando ticket`, { ip: req.ip });
   const tickets = readTickets();
   const ticket = tickets.find(t => t.id === id || t.codigo === id);
   
   if (ticket) {
     res.json(ticket);
   } else {
+    logger.warn(`Ticket não encontrado: ${id}`, { ip: req.ip });
     res.status(404).json({ error: 'Ticket não encontrado' });
   }
 });
 
 // POST /tickets - Criar novo ticket
-app.post('/tickets', (req, res) => {
-  console.log('📤 [SYNC] POST /tickets - Criando novo ticket');
+// Rate Limit: 10 requisições por minuto por IP
+app.post('/tickets', createTicketLimiter, (req, res) => {
+  logger.info('POST /tickets - Criando novo ticket', { ip: req.ip });
   const newTicket = req.body;
   
-  if (!newTicket.id || !newTicket.codigo) {
+  // Validar ticket
+  const validation = validateTicket(newTicket);
+  if (!validation.isValid) {
+    logger.warn('Ticket validation failed', { errors: validation.errors, ip: req.ip });
+    return res.status(400).json({ 
+      error: 'Dados do ticket inválidos',
+      errors: validation.errors 
+    });
+  }
+  
+  // Usar ticket sanitizado
+  const sanitizedTicket = validation.sanitized;
+  
+  if (!sanitizedTicket.id || !sanitizedTicket.codigo) {
     return res.status(400).json({ error: 'Ticket deve ter id e codigo' });
   }
   
   const tickets = readTickets();
   
   // Verificar se ticket já existe
-  const existingIndex = tickets.findIndex(t => t.id === newTicket.id || t.codigo === newTicket.codigo);
+  const existingByCode = tickets.find(t => t.codigo === sanitizedTicket.codigo);
+  const existingById = tickets.find(t => t.id === sanitizedTicket.id);
   
-  if (existingIndex !== -1) {
-    console.log(`⚠️ [SYNC] Ticket ${newTicket.codigo} já existe, atualizando...`);
-    tickets[existingIndex] = { ...tickets[existingIndex], ...newTicket };
-  } else {
-    console.log(`✅ [SYNC] Adicionando novo ticket ${newTicket.codigo}`);
-    tickets.push(newTicket);
+  // Se mesmo ID, é uma atualização do mesmo ticket (permitir)
+  if (existingById && existingById.id === sanitizedTicket.id) {
+    logger.info(`Ticket ${sanitizedTicket.codigo} (ID: ${sanitizedTicket.id}) já existe com mesmo ID, atualizando...`);
+    const existingIndex = tickets.findIndex(t => t.id === sanitizedTicket.id);
+    tickets[existingIndex] = { ...tickets[existingIndex], ...sanitizedTicket };
+    
+    if (saveTickets(tickets)) {
+      logger.info(`Ticket ${sanitizedTicket.codigo} atualizado com sucesso`);
+      res.json(sanitizedTicket);
+    } else {
+      logger.error('Erro ao salvar ticket', { codigo: sanitizedTicket.codigo });
+      res.status(500).json({ error: 'Erro ao salvar ticket' });
+    }
+    return;
   }
   
+  // Se código já existe mas ID é diferente, é uma duplicata (rejeitar)
+  if (existingByCode && existingByCode.id !== sanitizedTicket.id) {
+    logger.warn('Tentativa de criar ticket duplicado', { 
+      codigo: sanitizedTicket.codigo,
+      existingId: existingByCode.id,
+      newId: sanitizedTicket.id,
+      ip: req.ip
+    });
+    return res.status(409).json({ 
+      error: 'Código de ticket já existe',
+      conflict: {
+        codigo: sanitizedTicket.codigo,
+        existingId: existingByCode.id,
+        newId: sanitizedTicket.id,
+        message: 'Um ticket com este código já existe. Use um código diferente ou atualize o ticket existente.'
+      }
+    });
+  }
+  
+  // Ticket novo, adicionar
+  logger.info(`Adicionando novo ticket ${sanitizedTicket.codigo}`);
+  tickets.push(sanitizedTicket);
+  
   if (saveTickets(tickets)) {
-    console.log(`✅ [SYNC] Ticket ${newTicket.codigo} salvo com sucesso`);
-    res.json(newTicket);
+    logger.info(`Ticket ${sanitizedTicket.codigo} salvo com sucesso`);
+    res.json(sanitizedTicket);
   } else {
+    logger.error('Erro ao salvar ticket', { codigo: sanitizedTicket.codigo });
     res.status(500).json({ error: 'Erro ao salvar ticket' });
   }
 });
@@ -156,18 +401,40 @@ app.put('/tickets/:id', (req, res) => {
   
   const currentTicket = tickets[ticketIndex];
   
-  // Mesclar histórico se fornecido
+  // Mesclar histórico se fornecido (evitando duplicação baseado em IDs)
   if (updates.historico && Array.isArray(updates.historico)) {
     const existingHistorico = currentTicket.historico || [];
-    updates.historico = [...existingHistorico, ...updates.historico];
+    
+    // Criar Set com IDs existentes para verificação rápida
+    const existingIds = new Set(existingHistorico.map(h => h.id).filter(id => id));
+    
+    // Filtrar apenas itens novos (que não existem no histórico atual)
+    const newHistoricoItems = updates.historico.filter(item => {
+      // Se item não tem ID, sempre adicionar (será gerado depois)
+      if (!item.id) return true;
+      // Se ID já existe, não adicionar (evitar duplicação)
+      return !existingIds.has(item.id);
+    });
+    
+    // Se todos os itens já existem, não mesclar
+    if (newHistoricoItems.length === 0) {
+      console.log(`⚠️ [SYNC] Todos os itens do histórico já existem, ignorando mesclagem`);
+      // Remover histórico dos updates para não sobrescrever
+      delete updates.historico;
+    } else {
+      // Mesclar apenas itens novos
+      updates.historico = [...existingHistorico, ...newHistoricoItems];
+      console.log(`✅ [SYNC] Mesclando histórico: ${existingHistorico.length} existentes + ${newHistoricoItems.length} novos = ${updates.historico.length} total`);
+    }
   }
   
   tickets[ticketIndex] = { ...currentTicket, ...updates };
   
   if (saveTickets(tickets)) {
-    console.log(`✅ [SYNC] Ticket ${id} atualizado com sucesso`);
+    logger.info(`Ticket ${id} atualizado com sucesso`);
     res.json(tickets[ticketIndex]);
   } else {
+    logger.error('Erro ao atualizar ticket', { ticketId: id });
     res.status(500).json({ error: 'Erro ao atualizar ticket' });
   }
 });
@@ -175,7 +442,7 @@ app.put('/tickets/:id', (req, res) => {
 // POST /tickets/:id/send-confirmation - Enviar confirmação de pagamento (email e WhatsApp)
 app.post('/tickets/:id/send-confirmation', async (req, res) => {
   const { id } = req.params;
-  console.log(`📧 [SYNC] POST /tickets/${id}/send-confirmation - Enviando confirmação`);
+  logger.info(`POST /tickets/${id}/send-confirmation - Enviando confirmação`, { ip: req.ip });
   
   const tickets = readTickets();
   const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
@@ -218,13 +485,19 @@ app.post('/tickets/:id/send-confirmation', async (req, res) => {
   try {
     // Enviar email (se ainda não foi enviado)
     if (!jaEnviouEmail && ticket.email) {
-      console.log(`📧 [SYNC] Enviando email para ${ticket.email} (Ticket: ${ticket.codigo})`);
-      try {
-        results.email = await sendPulseService.sendConfirmationEmail(ticket);
-        console.log(`📧 [SYNC] Resultado do email:`, results.email);
-      } catch (error) {
-        console.error(`❌ [SYNC] Erro ao chamar sendPulseService:`, error);
-        results.email = { success: false, error: error.message || 'Erro ao enviar email' };
+      // Validar formato de email antes de enviar
+      if (!validateEmail(ticket.email)) {
+        console.error(`❌ [SYNC] Email inválido para ticket ${ticket.codigo}: ${ticket.email}`);
+        results.email = { success: false, error: `Formato de email inválido: ${ticket.email}` };
+      } else {
+        console.log(`📧 [SYNC] Enviando email para ${ticket.email} (Ticket: ${ticket.codigo})`);
+        try {
+          results.email = await sendPulseService.sendConfirmationEmail(ticket);
+          console.log(`📧 [SYNC] Resultado do email:`, results.email);
+        } catch (error) {
+          console.error(`❌ [SYNC] Erro ao chamar sendPulseService:`, error);
+          results.email = { success: false, error: error.message || 'Erro ao enviar email' };
+        }
       }
     } else if (!ticket.email) {
       console.log(`⚠️ [SYNC] Email não disponível para ticket ${ticket.codigo}`);
@@ -235,13 +508,19 @@ app.post('/tickets/:id/send-confirmation', async (req, res) => {
     
     // Enviar WhatsApp (se ainda não foi enviado)
     if (!jaEnviouWhatsApp && ticket.telefone) {
-      console.log(`📱 [SYNC] Enviando WhatsApp para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
-      try {
-        results.whatsapp = await zapApiService.sendWhatsAppMessage(ticket);
-        console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
-      } catch (error) {
-        console.error(`❌ [SYNC] Erro ao chamar zapApiService:`, error);
-        results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
+      // Validar formato de telefone antes de enviar
+      if (!validatePhone(ticket.telefone)) {
+        console.error(`❌ [SYNC] Telefone inválido para ticket ${ticket.codigo}: ${ticket.telefone}`);
+        results.whatsapp = { success: false, error: `Formato de telefone inválido: ${ticket.telefone}` };
+      } else {
+        console.log(`📱 [SYNC] Enviando WhatsApp para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
+        try {
+          results.whatsapp = await zapApiService.sendWhatsAppMessage(ticket);
+          console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
+        } catch (error) {
+          logger.logError(error, { service: 'zapApiService', ticketCodigo: ticket.codigo });
+          results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
+        }
       }
     } else if (!ticket.telefone) {
       console.log(`⚠️ [SYNC] Telefone não disponível para ticket ${ticket.codigo}`);
@@ -344,16 +623,26 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
   const { id } = req.params;
   const { mensagemInteracao, anexo } = req.body;
   
-  console.log(`📧 [SYNC] ========== POST /tickets/${id}/send-completion ==========`);
-  console.log(`📧 [SYNC] Enviando resultado de conclusão`);
-  console.log(`📧 [SYNC] Body recebido:`, { 
-    mensagemInteracao: mensagemInteracao ? `presente (${mensagemInteracao.length} chars)` : 'ausente', 
-    anexo: anexo ? `presente (nome: ${anexo.nome || 'não especificado'}, tipo: ${anexo.tipo || 'não especificado'}, base64: ${anexo.base64 ? anexo.base64.length + ' chars' : 'ausente'})` : 'ausente' 
+  logger.info(`POST /tickets/${id}/send-completion - Enviando resultado de conclusão`, {
+    ip: req.ip,
+    mensagemLength: mensagemInteracao ? mensagemInteracao.length : 0,
+    anexoPresente: !!anexo
   });
+  
+  // Validar mensagem de interação
+  const interactionValidation = validateInteraction({ mensagemInteracao });
+  if (!interactionValidation.isValid) {
+    logger.warn('Interaction validation failed', { errors: interactionValidation.errors, ip: req.ip });
+    return res.status(400).json({
+      success: false,
+      error: 'Dados de interação inválidos',
+      errors: interactionValidation.errors
+    });
+  }
   
   try {
     const tickets = readTickets();
-    console.log(`📧 [SYNC] Total de tickets no arquivo: ${tickets.length}`);
+    logger.debug(`Total de tickets no arquivo: ${tickets.length}`);
     
     const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
     
@@ -416,9 +705,9 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       !h.mensagem?.includes('falhou')
     );
     
-    // TEMPORARIAMENTE: Permitir reenvio sempre para testes e debug
-    // TODO: Reativar verificação de duplicatas após confirmar funcionamento
-    const FORCE_RESEND = true;
+    // Permitir reenvio forçado apenas se configurado via variável de ambiente
+    // Em produção, deixe FORCE_RESEND=false ou não defina a variável
+    const FORCE_RESEND = process.env.FORCE_RESEND === 'true' || process.env.FORCE_RESEND === '1';
     
     console.log(`📧 [SYNC] Verificação de duplicatas (últimas 24h):`);
     console.log(`📧 [SYNC]   Histórico total: ${historicoCompleto.length} itens`);
@@ -496,13 +785,19 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
     try {
       // Sempre enviar email (FORCE_RESEND ignora verificação de duplicatas)
       if ((FORCE_RESEND || !jaEnviouEmailCompleto) && ticket.email) {
-        console.log(`📧 [SYNC] Enviando email de conclusão para ${ticket.email} (Ticket: ${ticket.codigo})`);
-        try {
-          results.email = await sendPulseService.sendCompletionEmail(ticket, mensagemInteracao || '', anexoPreparado);
-          console.log(`📧 [SYNC] Resultado do email:`, results.email);
-        } catch (error) {
-          console.error(`❌ [SYNC] Erro ao chamar sendPulseService:`, error);
-          results.email = { success: false, error: error.message || 'Erro ao enviar email' };
+        // Validar formato de email antes de enviar
+        if (!validateEmail(ticket.email)) {
+          console.error(`❌ [SYNC] Email inválido para ticket ${ticket.codigo}: ${ticket.email}`);
+          results.email = { success: false, error: `Formato de email inválido: ${ticket.email}` };
+        } else {
+          console.log(`📧 [SYNC] Enviando email de conclusão para ${ticket.email} (Ticket: ${ticket.codigo})`);
+          try {
+            results.email = await sendPulseService.sendCompletionEmail(ticket, mensagemInteracao || '', anexoPreparado);
+            console.log(`📧 [SYNC] Resultado do email:`, results.email);
+          } catch (error) {
+            console.error(`❌ [SYNC] Erro ao chamar sendPulseService:`, error);
+            results.email = { success: false, error: error.message || 'Erro ao enviar email' };
+          }
         }
       } else if (jaEnviouEmailCompleto) {
         console.log(`ℹ️ [SYNC] Email já foi enviado anteriormente para ticket ${ticket.codigo}`);
@@ -515,13 +810,19 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       // Enviar WhatsApp apenas se for prioridade ou premium (FORCE_RESEND ignora verificação)
       if (shouldSendWhatsApp) {
         if ((FORCE_RESEND || !jaEnviouWhatsAppCompleto) && ticket.telefone && ticket.telefone.trim()) {
-          console.log(`📱 [SYNC] Enviando WhatsApp de conclusão para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
-          try {
-            results.whatsapp = await zapApiService.sendCompletionWhatsApp(ticket, mensagemInteracao || '', anexoPreparado);
-            console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
-          } catch (error) {
-            console.error(`❌ [SYNC] Erro ao chamar zapApiService:`, error);
-            results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
+          // Validar formato de telefone antes de enviar
+          if (!validatePhone(ticket.telefone)) {
+            console.error(`❌ [SYNC] Telefone inválido para ticket ${ticket.codigo}: ${ticket.telefone}`);
+            results.whatsapp = { success: false, error: `Formato de telefone inválido: ${ticket.telefone}` };
+          } else {
+            console.log(`📱 [SYNC] Enviando WhatsApp de conclusão para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
+            try {
+              results.whatsapp = await zapApiService.sendCompletionWhatsApp(ticket, mensagemInteracao || '', anexoPreparado);
+              console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
+            } catch (error) {
+              logger.logError(error, { service: 'zapApiService', ticketCodigo: ticket.codigo });
+              results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
+            }
           }
         } else if (jaEnviouWhatsAppCompleto) {
           console.log(`ℹ️ [SYNC] WhatsApp já foi enviado anteriormente para ticket ${ticket.codigo}`);
@@ -597,37 +898,82 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       });
       
     } catch (error) {
-      console.error(`❌ [SYNC] Erro ao enviar resultado de conclusão para ticket ${ticket?.codigo || id}:`, error);
-      console.error(`❌ [SYNC] Stack trace:`, error.stack);
+      logger.logError(error, { 
+        endpoint: `/tickets/${id}/send-completion`,
+        ticketCodigo: ticket?.codigo || id,
+        ip: req.ip
+      });
       res.status(500).json({
         success: false,
-        error: error.message || 'Erro desconhecido ao processar solicitação',
-        errorType: error.name || 'UnknownError',
+        error: process.env.NODE_ENV === 'production' 
+          ? 'Erro ao processar solicitação' 
+          : error.message || 'Erro desconhecido ao processar solicitação',
+        errorType: process.env.NODE_ENV === 'production' ? undefined : error.name,
         email: results.email,
         whatsapp: results.whatsapp,
         ticketCodigo: ticket?.codigo || id
       });
     }
   } catch (error) {
-    console.error(`❌ [SYNC] Erro geral ao processar requisição:`, error);
-    console.error(`❌ [SYNC] Stack trace:`, error.stack);
+    logger.logError(error, { 
+      endpoint: `/tickets/${id}/send-completion`,
+      ip: req.ip
+    });
     res.status(500).json({
       success: false,
-      error: error.message || 'Erro desconhecido ao processar solicitação',
-      errorType: error.name || 'UnknownError'
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Erro ao processar solicitação' 
+        : error.message || 'Erro desconhecido ao processar solicitação',
+      errorType: process.env.NODE_ENV === 'production' ? undefined : error.name
     });
   }
 });
 
-// GET /health - Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', tickets: readTickets().length });
+// Health check já está definido acima (linha ~160)
+
+// Middleware global de tratamento de erros (deve ser o último)
+app.use((error, req, res, next) => {
+  logger.logError(error, {
+    method: req.method,
+    path: req.path,
+    ip: req.ip
+  });
+  
+  res.status(error.status || 500).json({
+    error: process.env.NODE_ENV === 'production'
+      ? 'Erro interno do servidor'
+      : error.message || 'Erro desconhecido',
+    ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
+  });
 });
 
 // Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor de sincronização rodando em http://localhost:${PORT}`);
-  console.log(`📁 Arquivo de tickets: ${TICKETS_FILE}`);
-  console.log(`📊 Tickets atuais: ${readTickets().length}`);
+  logger.info(`🚀 Servidor de sincronização iniciado`, {
+    port: PORT,
+    environment: process.env.NODE_ENV || 'development',
+    authentication: process.env.SYNC_SERVER_API_KEY ? 'enabled' : 'disabled',
+    corsOrigins: process.env.CORS_ORIGINS || '* (todos permitidos)',
+    rateLimiting: 'enabled',
+    ticketsCount: readTickets().length
+  });
+  
+  // Log detalhado no console para desenvolvimento
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`🚀 Servidor de sincronização rodando em http://localhost:${PORT}`);
+    console.log(`📋 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔐 Autenticação: ${process.env.SYNC_SERVER_API_KEY ? '✅ Habilitada' : '⚠️ Desabilitada (modo desenvolvimento)'}`);
+    console.log(`🌐 CORS Origins: ${process.env.CORS_ORIGINS || '* (todos permitidos)'}`);
+    console.log(`🛡️ Rate Limiting: ✅ Ativo`);
+    console.log(`   - Geral: 100 req/min por IP`);
+    console.log(`   - Criação de tickets: 10 req/min por IP`);
+    console.log(`   - Upload: 5 req/min por IP`);
+    console.log(`🛡️ Headers de Segurança: ✅ Ativo (Helmet)`);
+    console.log(`📝 Logging: ✅ Estruturado (Winston)`);
+    const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+    console.log(`📁 Uploads públicos: ${PUBLIC_BASE_URL}/uploads`);
+    console.log(`📁 Arquivo de tickets: ${TICKETS_FILE}`);
+    console.log(`📊 Tickets atuais: ${readTickets().length}`);
+  }
 });
 

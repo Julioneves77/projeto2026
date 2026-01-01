@@ -7,7 +7,7 @@ interface TicketsContextType {
   updateTicket: (id: string, updates: Partial<Ticket>) => Promise<void>;
   addHistorico: (ticketId: string, item: Omit<HistoricoItem, 'id'>) => void;
   atribuirTicket: (ticketId: string, operador: string) => void;
-  createTicket: (ticket: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>) => Ticket;
+  createTicket: (ticket: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>) => Promise<Ticket>;
   pausePolling: () => void;
   resumePolling: () => void;
 }
@@ -15,7 +15,35 @@ interface TicketsContextType {
 const TicketsContext = createContext<TicketsContextType | undefined>(undefined);
 
 const TICKETS_KEY = 'av_tickets';
-const SYNC_SERVER_URL = 'http://localhost:3001';
+
+// URL do servidor de sincronização - configurável via variável de ambiente
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+
+// API Key para autenticação (opcional)
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+
+// Validação em desenvolvimento
+if (import.meta.env.DEV && !import.meta.env.VITE_SYNC_SERVER_URL) {
+  console.warn('⚠️ [PLATAFORMA] VITE_SYNC_SERVER_URL não está configurada. Usando padrão: http://localhost:3001');
+  console.warn('⚠️ [PLATAFORMA] Configure VITE_SYNC_SERVER_URL no arquivo .env.local para produção');
+}
+
+/**
+ * Helper para fazer requisições autenticadas ao sync-server
+ */
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  
+  // Adicionar API Key se configurada
+  if (SYNC_SERVER_API_KEY) {
+    headers.set('X-API-Key', SYNC_SERVER_API_KEY);
+  }
+  
+  return fetch(url, {
+    ...options,
+    headers,
+  });
+}
 
 export function TicketsProvider({ children }: { children: ReactNode }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -27,7 +55,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     
     // Tentar carregar do servidor de sincronização primeiro
     try {
-      const response = await fetch(`${SYNC_SERVER_URL}/tickets`);
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`);
       if (response.ok) {
         const serverTickets = await response.json();
         console.log(`🟢 [PLATAFORMA] Recebidos ${serverTickets.length} tickets do servidor`);
@@ -169,16 +197,23 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
   // Nota: loadTickets é estável (não muda entre renders), então não precisa estar nas dependências
   const resumePolling = useCallback(() => {
     isPollingPausedRef.current = false;
-    // Se não há intervalo ativo, criar um novo
-    if (!pollingIntervalRef.current) {
-      // Usar função loadTickets diretamente (ela é estável)
-      loadTickets(); // Carregar imediatamente
-      pollingIntervalRef.current = setInterval(() => {
-        if (!isPollingPausedRef.current) {
-          loadTickets();
-        }
-      }, 10000); // 10 segundos em vez de 2 segundos
+    
+    // Sempre limpar intervalo existente antes de criar novo (prevenir múltiplos intervalos)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
     }
+    
+    // Carregar imediatamente
+    loadTickets();
+    
+    // Criar novo intervalo
+    pollingIntervalRef.current = setInterval(() => {
+      if (!isPollingPausedRef.current) {
+        loadTickets();
+      }
+    }, 10000); // 10 segundos em vez de 2 segundos
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Dependências vazias - loadTickets é estável e não precisa estar aqui
 
@@ -274,7 +309,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
           }))
         };
         
-        const response = await fetch(`${SYNC_SERVER_URL}/tickets/${id}`, {
+        const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -363,16 +398,41 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const createTicket = (ticketData: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>): Ticket => {
+  const createTicket = async (ticketData: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>): Promise<Ticket> => {
     // Gerar ID único
     const id = `ticket-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Gerar código sequencial
-    const lastCode = tickets.length > 0 ? tickets[tickets.length - 1]?.codigo : 'TK-000';
-    const match = lastCode.match(/TK-(\d+)/);
-    const lastNumber = match ? parseInt(match[1], 10) : 0;
-    const nextNumber = lastNumber + 1;
-    const codigo = `TK-${nextNumber.toString().padStart(3, '0')}`;
+    // Tentar obter código do sync-server primeiro
+    let codigo: string;
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/generate-code`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.codigo) {
+          codigo = data.codigo;
+          console.log('✅ [PLATAFORMA] Código gerado pelo sync-server:', codigo);
+        } else {
+          throw new Error('Código não retornado pelo servidor');
+        }
+      } else {
+        throw new Error(`Erro HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.warn('⚠️ [PLATAFORMA] Sync-server não disponível, usando fallback local:', error);
+      // Fallback para geração local
+      const lastCode = tickets.length > 0 ? tickets[tickets.length - 1]?.codigo : 'TK-000';
+      const match = lastCode.match(/TK-(\d+)/);
+      const lastNumber = match ? parseInt(match[1], 10) : 0;
+      const nextNumber = lastNumber + 1;
+      codigo = `TK-${nextNumber.toString().padStart(3, '0')}`;
+      console.log('⚠️ [PLATAFORMA] Código gerado via fallback local:', codigo);
+    }
 
     const newTicket: Ticket = {
       ...ticketData,

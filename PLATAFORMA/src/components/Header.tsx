@@ -27,12 +27,16 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
   const systemStatus = useSystemStatus();
   const unreadEmails = useUnreadEmailsCount();
 
-  // Contar tickets em GERAL (sem operador atribuído)
-  const ticketsSemAtendimento = tickets.filter(t => t.status === 'GERAL' && !t.operador).length;
+  // Contar apenas tickets em operação (aba "Em Operação") que estão sem operador atribuído
+  // Status: EM_OPERACAO, EM_ATENDIMENTO, AGUARDANDO_INFO, FINANCEIRO
+  // Esses são os tickets que precisam ser atribuídos/atendidos
+  const ticketsEmOperacaoSemOperador = tickets.filter(t => 
+    ['EM_OPERACAO', 'EM_ATENDIMENTO', 'AGUARDANDO_INFO', 'FINANCEIRO'].includes(t.status) && !t.operador
+  ).length;
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'financeiro', 'atendente'] },
-    { id: 'tickets', label: 'Tickets', icon: Ticket, roles: ['admin', 'financeiro', 'atendente'], badge: ticketsSemAtendimento },
+    { id: 'tickets', label: 'Tickets', icon: Ticket, roles: ['admin', 'financeiro', 'atendente'], badge: ticketsEmOperacaoSemOperador },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3, roles: ['admin'] },
     { id: 'estatisticas', label: 'Estatísticas', icon: TrendingUp, roles: ['admin'] },
     { id: 'usuarios', label: 'Usuários', icon: Users, roles: ['admin'] },

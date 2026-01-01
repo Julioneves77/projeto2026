@@ -3,7 +3,34 @@
  * Usa servidor de sincronização para integração entre PORTAL e PLATAFORMA
  */
 
-const SYNC_SERVER_URL = 'http://localhost:3001';
+// URL do servidor de sincronização - configurável via variável de ambiente
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+
+// API Key para autenticação (opcional)
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+
+// Validação em desenvolvimento
+if (import.meta.env.DEV && !import.meta.env.VITE_SYNC_SERVER_URL) {
+  console.warn('⚠️ [PORTAL] VITE_SYNC_SERVER_URL não está configurada. Usando padrão: http://localhost:3001');
+  console.warn('⚠️ [PORTAL] Configure VITE_SYNC_SERVER_URL no arquivo .env.local para produção');
+}
+
+/**
+ * Helper para fazer requisições autenticadas ao sync-server
+ */
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  
+  // Adicionar API Key se configurada
+  if (SYNC_SERVER_API_KEY) {
+    headers.set('X-API-Key', SYNC_SERVER_API_KEY);
+  }
+  
+  return fetch(url, {
+    ...options,
+    headers,
+  });
+}
 
 export interface TicketData {
   id: string;
@@ -40,8 +67,30 @@ interface SelectedPlan {
 
 /**
  * Gera código único para ticket (TK-XXX)
+ * Tenta obter do sync-server primeiro, com fallback para localStorage
  */
-function generateTicketCode(): string {
+async function generateTicketCode(): Promise<string> {
+  // Tentar obter código do sync-server primeiro
+  try {
+    const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/generate-code`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.codigo) {
+        console.log('✅ [PORTAL] Código gerado pelo sync-server:', data.codigo);
+        return data.codigo;
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ [PORTAL] Sync-server não disponível, usando fallback localStorage:', error);
+  }
+  
+  // Fallback para localStorage se sync-server não estiver disponível
   const TICKETS_KEY = 'av_tickets';
   const stored = localStorage.getItem(TICKETS_KEY);
   
@@ -61,7 +110,9 @@ function generateTicketCode(): string {
     const lastNumber = match ? parseInt(match[1], 10) : 0;
     const nextNumber = lastNumber + 1;
     
-    return `TK-${nextNumber.toString().padStart(3, '0')}`;
+    const codigo = `TK-${nextNumber.toString().padStart(3, '0')}`;
+    console.log('⚠️ [PORTAL] Código gerado via fallback localStorage:', codigo);
+    return codigo;
   } catch {
     return 'TK-001';
   }
@@ -77,12 +128,12 @@ function generateTicketId(): string {
 /**
  * Mapeia dados do formulário PORTAL para estrutura Ticket da PLATAFORMA
  */
-function mapFormDataToTicket(
+async function mapFormDataToTicket(
   formData: PortalFormData,
   certificateType: string,
   state: string | undefined,
   selectedPlan: SelectedPlan
-): TicketData {
+): Promise<TicketData> {
   // Determinar tipo de pessoa (CPF ou CNPJ)
   const cpfOuCnpj = formData.cpf || formData.cnpj || formData.cpfOuCnpj || formData.documento || '';
   const cleanDoc = cpfOuCnpj.toString().replace(/\D/g, '');
@@ -195,9 +246,12 @@ function mapFormDataToTicket(
     tipoPessoa
   });
 
+  // Gerar código do ticket (aguardar se necessário)
+  const codigo = await generateTicketCode();
+  
   const ticket: TicketData = {
     id: generateTicketId(),
-    codigo: generateTicketCode(),
+    codigo: codigo,
     tipoPessoa,
     nomeCompleto: nomeCompleto || 'Não informado',
     cpfSolicitante: cpfSolicitante || '',
@@ -242,8 +296,8 @@ export async function createTicket(
       selectedPlan
     });
     
-    // Criar ticket
-    const newTicket = mapFormDataToTicket(formData, certificateType, state, selectedPlan);
+    // Criar ticket (aguardar geração de código)
+    const newTicket = await mapFormDataToTicket(formData, certificateType, state, selectedPlan);
     
     console.log('🔵 [PORTAL] Ticket criado:', newTicket);
 
@@ -282,7 +336,7 @@ export async function createTicket(
       console.log('📤 [PORTAL] Enviando ticket para servidor de sincronização...');
       console.log('📤 [PORTAL] Dados do ticket:', { id: newTicket.id, codigo: newTicket.codigo });
       
-      const response = await fetch(`${SYNC_SERVER_URL}/tickets`, {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -380,7 +434,7 @@ export async function updateTicket(
       let serverTicketId = ticketId;
       
       try {
-        const getResponse = await fetch(`${SYNC_SERVER_URL}/tickets/${ticketId}`);
+        const getResponse = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${ticketId}`);
         if (getResponse.ok) {
           ticketExists = true;
           console.log(`✅ [PORTAL] Ticket ${ticketId} encontrado no servidor`);
@@ -389,7 +443,7 @@ export async function updateTicket(
           const ticket = tickets.find((t: any) => t.id === ticketId || t.codigo === ticketId);
           if (ticket && ticket.codigo) {
             console.log(`🔄 [PORTAL] Tentando buscar por código ${ticket.codigo}...`);
-            const getByCodeResponse = await fetch(`${SYNC_SERVER_URL}/tickets/${ticket.codigo}`);
+            const getByCodeResponse = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${ticket.codigo}`);
             if (getByCodeResponse.ok) {
               ticketExists = true;
               serverTicketId = ticket.codigo;
@@ -400,7 +454,7 @@ export async function updateTicket(
           // Se ainda não existe, criar no servidor primeiro
           if (!ticketExists && currentTicket) {
             console.log(`📤 [PORTAL] Ticket não existe no servidor, criando primeiro...`);
-            const createResponse = await fetch(`${SYNC_SERVER_URL}/tickets`, {
+            const createResponse = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -424,7 +478,7 @@ export async function updateTicket(
       // Agora tentar atualizar
       if (ticketExists) {
         console.log(`📤 [PORTAL] Enviando atualização do ticket ${serverTicketId} para servidor...`);
-        const updateResponse = await fetch(`${SYNC_SERVER_URL}/tickets/${serverTicketId}`, {
+        const updateResponse = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${serverTicketId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -466,7 +520,7 @@ export async function sendPaymentConfirmation(ticketId: string): Promise<{
   try {
     console.log(`📧 [PORTAL] Enviando confirmação de pagamento para ticket ${ticketId}...`);
     
-    const response = await fetch(`${SYNC_SERVER_URL}/tickets/${ticketId}/send-confirmation`, {
+    const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${ticketId}/send-confirmation`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -500,7 +554,7 @@ export async function sendPaymentConfirmation(ticketId: string): Promise<{
 export async function findTicket(ticketId: string): Promise<TicketData | null> {
   // Tentar buscar no servidor primeiro
   try {
-    const response = await fetch(`${SYNC_SERVER_URL}/tickets/${ticketId}`);
+    const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${ticketId}`);
     if (response.ok) {
       const ticket = await response.json();
       console.log(`✅ [PORTAL] Ticket ${ticketId} encontrado no servidor`);

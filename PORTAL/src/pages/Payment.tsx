@@ -280,16 +280,33 @@ const Payment = () => {
       }
     }
     
-    // Navigate to thank you page with all necessary data
-    navigate("/obrigado", {
-      state: {
-        formData,
-        certificateType,
-        state,
-        selectedPlan,
-      },
-      replace: false,
-    });
+    // URL do SOLICITE LINK - configurável via variável de ambiente
+    const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
+    
+    // Preparar dados para passar via URL params
+    const ticket = currentTicketId ? await findTicket(currentTicketId) : null;
+    const ticketCodigo = ticket?.codigo || '';
+    const planoNome = selectedPlan.name || '';
+    const planoId = selectedPlan.id || 'padrao';
+    const email = formData.email || '';
+    
+    // Construir URL do SOLICITE LINK com parâmetros
+    const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
+    obrigadoUrl.searchParams.set('codigo', ticketCodigo);
+    obrigadoUrl.searchParams.set('plano', planoNome);
+    obrigadoUrl.searchParams.set('planoId', planoId);
+    obrigadoUrl.searchParams.set('email', email);
+    obrigadoUrl.searchParams.set('tipo', certificateType);
+    
+    // Também salvar no localStorage como fallback
+    if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
+    if (planoNome) localStorage.setItem('planoNome', planoNome);
+    if (planoId) localStorage.setItem('planoId', planoId);
+    if (email) localStorage.setItem('ticketEmail', email);
+    if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
+    
+    // Redirecionar para SOLICITE LINK
+    window.location.href = obrigadoUrl.toString();
   };
 
   const handleChangePlan = () => {

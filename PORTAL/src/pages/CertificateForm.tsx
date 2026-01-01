@@ -46,9 +46,9 @@ const CertificateForm = () => {
   const [selectedState, setSelectedState] = useState<string>("");
   const [currentStep, setCurrentStep] = useState(0);
   
-  // Pre-fill tipoCertidao based on URL type parameter for federais
+  // Pre-fill tipoCertidao based on URL type parameter for federais and estaduais
   const getInitialFormData = (): Record<string, string | boolean> => {
-    if (category === "federais" && type) {
+    if (type) {
       const typeMapping: Record<string, string> = {
         "criminal": "Criminal",
         "civel": "Cível",
@@ -77,7 +77,15 @@ const CertificateForm = () => {
   const formConfig = useMemo(() => {
     if (category === "estaduais") {
       if (!selectedState) return null;
-      return getFormConfig(category, selectedState);
+      const config = getFormConfig(category, selectedState);
+      if (config && type === "civel") {
+        // Modificar título para Cível quando type=civel
+        return {
+          ...config,
+          title: config.title.replace("Criminal", "Cível"),
+        };
+      }
+      return config;
     }
     return getFormConfig(category || "", type);
   }, [category, type, selectedState]);
@@ -85,6 +93,10 @@ const CertificateForm = () => {
   const getCertificateTitle = () => {
     switch (category) {
       case "estaduais":
+        // Se type=civel, retornar Cível Estadual, senão Criminal Estadual
+        if (type === "civel") {
+          return "Certidão Cível Estadual";
+        }
         return "Certidão Criminal Estadual";
       case "federais":
         return `Certidão Federal - ${type?.toUpperCase() || ""}`;
@@ -194,12 +206,13 @@ const CertificateForm = () => {
     const newErrors: Record<string, string> = {};
     const stepFields = currentStepConfig.fields;
 
-    stepFields.forEach((field) => {
+    // Usar for...of ao invés de forEach para permitir controle de fluxo correto
+    for (const field of stepFields) {
       // Skip validation for hidden conditional fields
       if (field.showWhen) {
         const conditionValue = formData[field.showWhen.field];
         if (conditionValue !== field.showWhen.value) {
-          return; // Skip this field, it's not visible
+          continue; // Skip this field, it's not visible
         }
       }
 
@@ -207,7 +220,7 @@ const CertificateForm = () => {
 
       if (field.required && (!value || (typeof value === "string" && !value.trim()))) {
         newErrors[field.name] = `${field.label} é obrigatório`;
-        return;
+        continue; // Continue para próximo campo
       }
 
       if (value && typeof value === "string" && value.trim()) {
@@ -238,7 +251,7 @@ const CertificateForm = () => {
             break;
         }
       }
-    });
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -267,10 +280,19 @@ const CertificateForm = () => {
       return;
     }
 
+    // Construir tipo de certidão completo para passar adiante
+    // Se for estadual com type=civel, garantir que tipoCertidao está definido
+    const finalFormData = { ...formData };
+    if (category === "estaduais" && type === "civel" && !finalFormData.tipoCertidao) {
+      finalFormData.tipoCertidao = "Cível";
+    } else if (category === "estaduais" && type !== "civel" && !finalFormData.tipoCertidao) {
+      finalFormData.tipoCertidao = "Criminal";
+    }
+
     // Navigate to service selection
     navigate("/selecionar-servico", {
       state: {
-        formData,
+        formData: finalFormData,
         certificateType: getCertificateTitle(),
         state: selectedState,
       },

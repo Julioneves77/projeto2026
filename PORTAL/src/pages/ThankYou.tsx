@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,40 @@ import { CheckCircle, Mail, MessageCircle, Clock, ArrowRight, Home } from "lucid
 
 const ThankYou = () => {
   const location = useLocation();
-  const { formData, selectedPlan } = location.state || {};
+  const { formData, selectedPlan, certificateType } = location.state || {};
+  
+  // URL do SOLICITE LINK - configurável via variável de ambiente
+  const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
+
+  // Redirecionar automaticamente para SOLICITE LINK após 3 segundos
+  useEffect(() => {
+    if (formData && selectedPlan) {
+      // Preparar dados para passar via URL params
+      const planoNome = selectedPlan.name || '';
+      const planoId = selectedPlan.id || 'padrao';
+      const email = formData.email || '';
+      
+      // Construir URL do SOLICITE LINK com parâmetros
+      const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
+      obrigadoUrl.searchParams.set('plano', planoNome);
+      obrigadoUrl.searchParams.set('planoId', planoId);
+      obrigadoUrl.searchParams.set('email', email);
+      if (certificateType) obrigadoUrl.searchParams.set('tipo', certificateType);
+      
+      // Também salvar no localStorage como fallback
+      if (planoNome) localStorage.setItem('planoNome', planoNome);
+      if (planoId) localStorage.setItem('planoId', planoId);
+      if (email) localStorage.setItem('ticketEmail', email);
+      if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
+      
+      // Redirecionar após 3 segundos
+      const timer = setTimeout(() => {
+        window.location.href = obrigadoUrl.toString();
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [formData, selectedPlan, certificateType, SOLICITE_LINK_URL]);
 
   if (!formData || !selectedPlan) {
     return (
@@ -158,13 +192,33 @@ const ThankYou = () => {
               </ul>
             </div>
 
+            {/* Mensagem de Redirecionamento */}
+            <div className="text-center mb-6 p-4 bg-primary/10 rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Você será redirecionado automaticamente em alguns instantes...
+              </p>
+            </div>
+
             {/* CTA */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button asChild size="lg">
-                <Link to="/">
-                  <Home className="h-4 w-4 mr-2" />
-                  Voltar ao Início
-                </Link>
+              <Button 
+                size="lg"
+                onClick={() => {
+                  const planoNome = selectedPlan.name || '';
+                  const planoId = selectedPlan.id || 'padrao';
+                  const email = formData.email || '';
+                  
+                  const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
+                  obrigadoUrl.searchParams.set('plano', planoNome);
+                  obrigadoUrl.searchParams.set('planoId', planoId);
+                  obrigadoUrl.searchParams.set('email', email);
+                  if (certificateType) obrigadoUrl.searchParams.set('tipo', certificateType);
+                  
+                  window.location.href = obrigadoUrl.toString();
+                }}
+              >
+                Continuar
+                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link to="/contato">
