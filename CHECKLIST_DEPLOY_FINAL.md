@@ -1,213 +1,144 @@
-# Checklist Final de Deploy ✅
+# ✅ Checklist Final de Deploy
 
-## Status: ⚠️ QUASE PRONTO (Ajustes Finais Necessários)
-
----
-
-## ✅ 1. Funcionalidades Testadas e Funcionando
-
-- ✅ **Sync-Server**: Rodando e respondendo corretamente
-- ✅ **Health Check**: Funcionando com informações detalhadas
-- ✅ **Geração de Código**: Funcionando (testado: TK-011)
-- ✅ **Listagem de Tickets**: Funcionando (11 tickets encontrados)
-- ✅ **Rate Limiting**: Implementado e ativo
-- ✅ **Headers de Segurança**: Implementado (Helmet)
-- ✅ **Validação de Inputs**: Implementada
-- ✅ **Logging Estruturado**: Funcionando (Winston)
-- ✅ **Tratamento de Erros**: Implementado
+## Status: 🟢 PRONTO PARA DEPLOY
 
 ---
 
-## ✅ 2. Proteções Implementadas
+## ✅ Preparação Local (CONCLUÍDO)
 
-- ✅ Rate Limiting (100/10/5 req/min)
-- ✅ Headers de Segurança (Helmet)
-- ✅ Validação e Sanitização de Inputs
-- ✅ Logging Estruturado
-- ✅ Health Check Expandido
-- ✅ Tratamento de Erros Global
-- ✅ Autenticação via API Key (opcional)
+- [x] ✅ Variáveis de ambiente configuradas (`.env` e `.env.local`)
+- [x] ✅ API Key gerada e configurada
+- [x] ✅ Builds de produção concluídos:
+  - [x] ✅ PORTAL/dist/
+  - [x] ✅ PLATAFORMA/dist/
+  - [x] ✅ SOLICITE LINK/dist/
+- [x] ✅ Scripts de deploy criados
+- [x] ✅ Documentação completa
 
 ---
 
-## ⚠️ 3. Ajustes Necessários ANTES de Deploy
+## 📋 Checklist de Deploy no Servidor
 
-### 3.1. Configuração de Variáveis de Ambiente
+### Fase 1: Preparação do Servidor
+- [ ] Conectar ao servidor via SSH
+- [ ] Instalar Node.js 18+
+- [ ] Instalar PM2
+- [ ] Instalar Nginx
+- [ ] Criar estrutura de diretórios
+- [ ] Configurar permissões
 
-#### Sync-Server (.env)
-```env
-NODE_ENV=production
-PORT=3001
-PUBLIC_BASE_URL=https://api.portalcertidao.org
-SYNC_SERVER_API_KEY=sua-chave-secreta-forte-aqui
-CORS_ORIGINS=https://portalcertidao.org,https://plataforma.portalcertidao.org
-FORCE_RESEND=false
+### Fase 2: Upload dos Arquivos
+- [ ] Upload PORTAL/dist/ → /var/www/portal/dist/
+- [ ] Upload PLATAFORMA/dist/ → /var/www/plataforma/dist/
+- [ ] Upload SOLICITE LINK/dist/ → /var/www/solicite-link/dist/
+- [ ] Upload sync-server.js → /var/www/portal-certidao/
+- [ ] Upload services/ → /var/www/portal-certidao/
+- [ ] Upload utils/ → /var/www/portal-certidao/
+- [ ] Upload package.json → /var/www/portal-certidao/
+- [ ] Upload .env → /var/www/portal-certidao/
 
-# SendPulse
-SENDPULSE_CLIENT_ID=add9a5c88271d94ec87d6016fa01d58e
-SENDPULSE_CLIENT_SECRET=33a983c762b866c6c6074abefc8f71c1
-SENDPULSE_SENDER_EMAIL=contato@portalcertidao.org
-SENDPULSE_SENDER_NAME=Portal Certidão
+### Fase 3: Configuração do Nginx
+- [ ] Configurar portalcertidao.org
+- [ ] Configurar plataforma.portalcertidao.org
+- [ ] Configurar solicite.link
+- [ ] Configurar api.portalcertidao.org
+- [ ] Testar configuração do Nginx
+- [ ] Recarregar Nginx
 
-# Zap API
-ZAP_API_URL=https://api.z-api.io/v1
-ZAP_API_KEY=3EAB7866FE55B1BEB70D52B01C4B842D
-ZAP_CLIENT_TOKEN=F8337947b89a14ae78d92f6365523269bS
+### Fase 4: Configuração SSL/HTTPS
+- [ ] Instalar Certbot
+- [ ] Obter certificado para www.portalcertidao.org
+- [ ] Obter certificado para plataforma.portalcertidao.org
+- [ ] Obter certificado para www.solicite.link
+- [ ] Obter certificado para api.portalcertidao.org
+- [ ] Verificar renovação automática
+
+### Fase 5: Iniciar Serviços
+- [ ] Instalar dependências do sync-server (npm install)
+- [ ] Iniciar sync-server com PM2
+- [ ] Configurar PM2 para iniciar no boot
+- [ ] Verificar se sync-server está rodando
+
+### Fase 6: Configurar Webhook Pagar.me
+- [ ] Acessar dashboard do Pagar.me
+- [ ] Criar webhook com URL: https://api.portalcertidao.org/webhooks/pagarme
+- [ ] Selecionar eventos: transaction.paid, transaction.refunded
+- [ ] Salvar webhook
+
+### Fase 7: Testes
+- [ ] Testar Health Check: `curl https://api.portalcertidao.org/health`
+- [ ] Testar acesso ao PORTAL: https://www.portalcertidao.org
+- [ ] Testar acesso à PLATAFORMA: https://plataforma.portalcertidao.org
+- [ ] Testar acesso ao SOLICITE LINK: https://www.solicite.link
+- [ ] Testar criação de ticket no PORTAL
+- [ ] Testar geração de QR Code PIX
+- [ ] Testar webhook do Pagar.me (fazer pagamento de teste)
+- [ ] Verificar se ticket aparece na PLATAFORMA
+- [ ] Verificar se confirmações (email/WhatsApp) são enviadas
+
+---
+
+## 🔑 Informações Importantes
+
+### API Key
+```
+6071d071d03a7a595ab3c1cd3477404f68995bfc3c030ff09065a80c2f96d59c
 ```
 
-#### PORTAL (.env.local)
-```env
-VITE_SYNC_SERVER_URL=https://api.portalcertidao.org
-VITE_SYNC_SERVER_API_KEY=sua-chave-secreta-forte-aqui
-VITE_RECAPTCHA_SITE_KEY=6Ld13bsrAAAAACyH9-lzVqe6e-NV5eXEkUlU-Q_w
+### Domínios
+- **SOLICITE LINK**: www.solicite.link
+- **PORTAL**: www.portalcertidao.org
+- **PLATAFORMA**: plataforma.portalcertidao.org
+- **API**: api.portalcertidao.org
+
+### Credenciais Pagar.me (Teste)
+- **Public Key**: `pk_test_lopqddXFGcRjqmKG`
+- **Secret Key**: `sk_test_ec07154a6cb541fd9c3540af3e6b1efb`
+- **Account ID**: `acc_rOZzALlImU3VqkvD`
+
+### Webhook URL
+```
+https://api.portalcertidao.org/webhooks/pagarme
 ```
 
-#### PLATAFORMA (.env.local)
-```env
-VITE_SYNC_SERVER_URL=https://api.portalcertidao.org
-VITE_SYNC_SERVER_API_KEY=sua-chave-secreta-forte-aqui
+---
+
+## 📚 Documentação de Referência
+
+- `DEPLOY.md` - Guia completo de deploy
+- `DEPLOY_RAPIDO.md` - Deploy rápido passo a passo
+- `GUIA_PROXIMOS_PASSOS.md` - Guia detalhado
+- `INTEGRACAO_PAGARME_RESUMO.md` - Resumo da integração Pagar.me
+- `RESUMO_FINAL_PREPARACAO.md` - Resumo do que foi preparado
+
+---
+
+## 🚀 Comandos Rápidos
+
+### No Servidor:
+```bash
+# Ver status do sync-server
+pm2 status
+
+# Ver logs do sync-server
+pm2 logs sync-server
+
+# Reiniciar sync-server
+pm2 restart sync-server
+
+# Ver logs do Nginx
+sudo tail -f /var/log/nginx/error.log
+sudo tail -f /var/log/nginx/access.log
+
+# Testar configuração do Nginx
+sudo nginx -t
+
+# Recarregar Nginx
+sudo systemctl reload nginx
 ```
 
-### 3.2. Correções Aplicadas
-
-- ✅ **FORCE_RESEND**: Agora configurável via `FORCE_RESEND` no `.env`
-- ✅ **URLs Hardcoded**: Já substituídas por variáveis de ambiente
-- ✅ **Console.log**: Maioria substituída por logger (alguns restam para debug)
-
 ---
 
-## 📋 4. Checklist de Deploy
+## ✅ Tudo Pronto!
 
-### 4.1. Antes de Deploy
-
-- [ ] **Configurar variáveis de ambiente** em todos os projetos
-- [ ] **Definir FORCE_RESEND=false** no `.env` do sync-server
-- [ ] **Configurar CORS_ORIGINS** com domínios reais
-- [ ] **Configurar SYNC_SERVER_API_KEY** forte e única
-- [ ] **Configurar PUBLIC_BASE_URL** com URL pública (não localhost)
-- [ ] **Testar fluxo completo** (PORTAL → PLATAFORMA → Notificações)
-- [ ] **Fazer build de produção** de PORTAL e PLATAFORMA
-- [ ] **Testar builds** localmente antes de deploy
-
-### 4.2. Durante Deploy
-
-- [ ] **Deploy do Sync-Server** (PM2 ou systemd)
-- [ ] **Deploy do PORTAL** (Nginx ou similar)
-- [ ] **Deploy da PLATAFORMA** (Nginx ou similar)
-- [ ] **Configurar SSL/HTTPS** para todos os domínios
-- [ ] **Configurar Nginx** como proxy reverso para API
-- [ ] **Verificar permissões** de arquivos e diretórios
-
-### 4.3. Após Deploy
-
-- [ ] **Testar Health Check**: `curl https://api.portalcertidao.org/health`
-- [ ] **Testar criação de ticket** no PORTAL
-- [ ] **Verificar ticket na PLATAFORMA**
-- [ ] **Testar atribuição de ticket**
-- [ ] **Testar conclusão de ticket**
-- [ ] **Verificar notificações** (Email e WhatsApp)
-- [ ] **Monitorar logs** (`pm2 logs sync-server` ou `tail -f logs/combined.log`)
-- [ ] **Verificar métricas** (tempo de resposta, erros, etc.)
-
----
-
-## 🚨 5. Bloqueadores Críticos
-
-### ⚠️ DEVEM ser resolvidos antes de deploy:
-
-1. **Variáveis de Ambiente**
-   - ⚠️ Configurar todas as variáveis necessárias
-   - ⚠️ Usar valores de produção (não desenvolvimento)
-
-2. **FORCE_RESEND**
-   - ✅ Corrigido: Agora configurável via env
-   - ⚠️ Definir como `false` em produção
-
-3. **CORS**
-   - ⚠️ Configurar `CORS_ORIGINS` com domínios reais
-   - ⚠️ Não deixar como `*` em produção
-
-4. **API Key**
-   - ⚠️ Gerar chave forte e única
-   - ⚠️ Configurar em sync-server e frontends
-
-5. **PUBLIC_BASE_URL**
-   - ⚠️ Configurar com URL pública (não localhost)
-   - ⚠️ Necessário para WhatsApp attachments funcionarem
-
----
-
-## ✅ 6. O que está Pronto
-
-- ✅ **Código**: Protegido e otimizado
-- ✅ **Estrutura**: Organizada e escalável
-- ✅ **Documentação**: Completa (DEPLOY.md, etc.)
-- ✅ **Proteções**: Implementadas e testadas
-- ✅ **Logging**: Estruturado e funcionando
-- ✅ **Validação**: Robusta e testada
-- ✅ **Health Check**: Expandido e funcional
-
----
-
-## 📊 7. Status Final
-
-### Pronto para Deploy?
-**⚠️ QUASE PRONTO** - Apenas ajustes de configuração necessários
-
-### O que falta:
-1. ⚠️ Configurar variáveis de ambiente para produção
-2. ⚠️ Definir FORCE_RESEND=false
-3. ⚠️ Configurar CORS para domínios reais
-4. ⚠️ Configurar API Key
-5. ⚠️ Fazer build de produção
-6. ⚠️ Testar fluxo completo em ambiente similar à produção
-
-### Tempo estimado para ajustes:
-**30-60 minutos** (apenas configuração)
-
----
-
-## 🎯 8. Próximos Passos Recomendados
-
-### Imediato (Antes de Deploy):
-1. ✅ Configurar todas as variáveis de ambiente
-2. ✅ Definir FORCE_RESEND=false
-3. ✅ Fazer build de produção
-4. ✅ Testar builds localmente
-
-### Durante Deploy:
-1. ✅ Seguir DEPLOY.md
-2. ✅ Deploy em ordem: Sync-Server → PORTAL → PLATAFORMA
-3. ✅ Configurar SSL/HTTPS
-4. ✅ Configurar Nginx
-
-### Após Deploy:
-1. ✅ Testar todas as funcionalidades
-2. ✅ Monitorar logs
-3. ✅ Verificar métricas
-4. ✅ Coletar feedback
-
----
-
-## 📝 9. Observações Finais
-
-- ✅ Sistema está **bem protegido** e **otimizado**
-- ✅ Estrutura está **preparada para produção**
-- ✅ Documentação está **completa**
-- ⚠️ Apenas **ajustes de configuração** necessários
-- ✅ Após configuração, sistema estará **100% pronto para deploy**
-
----
-
-## ✅ 10. Conclusão
-
-**Status:** ⚠️ **QUASE PRONTO**
-
-**Ações Necessárias:** Apenas configuração de variáveis de ambiente e builds de produção.
-
-**Tempo Estimado:** 30-60 minutos
-
-**Risco:** Baixo (apenas configuração, código está pronto)
-
-**Recomendação:** ✅ **Pode fazer deploy após configurar variáveis de ambiente**
-
+Todos os arquivos estão preparados e buildados. Siga o `DEPLOY_RAPIDO.md` para fazer o deploy no servidor.

@@ -135,9 +135,10 @@ const authenticateRequest = (req, res, next) => {
   next();
 };
 
-// Aplicar autenticação em todas as rotas exceto health check
+// Aplicar autenticação em todas as rotas exceto health check e webhooks externos
 app.use((req, res, next) => {
-  if (req.path === '/health' || req.path === '/') {
+  // Endpoints públicos (sem autenticação)
+  if (req.path === '/health' || req.path === '/' || req.path === '/webhooks/pagarme') {
     return next();
   }
   authenticateRequest(req, res, next);
@@ -892,7 +893,213 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
 
 // Health check já está definido acima (linha ~160)
 
-// Middleware global de tratamento de erros (deve ser o último)
+// POST /webhooks/pagarme - Webhook do Pagar.me para notificações de pagamento
+app.post('/webhooks/pagarme', express.json(), async (req, res) => {
+  logger.info('POST /webhooks/pagarme - Webhook recebido do Pagar.me', { ip: req.ip });
+  
+  try {
+    // Pagar.me envia eventos como JSON
+    const event = req.body;
+    
+    // Log completo do payload para debug
+    console.log('📦 [Pagar.me Webhook] Payload completo recebido:', JSON.stringify(event, null, 2));
+    
+    const eventType = event.type || event.event || 'unknown';
+    console.log('📦 [Pagar.me Webhook] Tipo de evento:', eventType);
+    
+    // Verificar se é evento de pagamento confirmado
+    // Pagar.me pode enviar: order.paid, transaction.paid, ou order com status paid
+    const isPaidEvent = 
+      eventType === 'order.paid' ||
+      eventType === 'transaction.paid' ||
+      event.order?.status === 'paid' ||
+      event.transaction?.status === 'paid' ||
+      event.status === 'paid';
+    
+    if (!isPaidEvent) {
+      console.log('⚠️ [Pagar.me Webhook] Evento ignorado (não é pagamento confirmado):', eventType);
+      return res.status(200).json({ received: true, processed: false, reason: 'Evento não é pagamento confirmado' });
+    }
+    
+    // Extrair informações - Pagar.me pode enviar order ou transaction
+    let orderOrTransaction = null;
+    let orderOrTransactionId = null;
+    let metadata = {};
+    
+    if (event.order) {
+      // Evento order.paid - estrutura com order
+      orderOrTransaction = event.order;
+      orderOrTransactionId = orderOrTransaction.id?.toString();
+      metadata = orderOrTransaction.metadata || {};
+      
+      // Se metadata não estiver no order, verificar nos items
+      if (!metadata.ticket_id && orderOrTransaction.items && Array.isArray(orderOrTransaction.items)) {
+        for (const item of orderOrTransaction.items) {
+          if (item.metadata && item.metadata.ticket_id) {
+            metadata = item.metadata;
+            break;
+          }
+        }
+      }
+    } else if (event.transaction) {
+      // Evento transaction.paid - estrutura com transaction
+      orderOrTransaction = event.transaction;
+      orderOrTransactionId = orderOrTransaction.id?.toString();
+      metadata = orderOrTransaction.metadata || {};
+    } else {
+      // Fallback - tentar usar o próprio event
+      orderOrTransaction = event;
+      orderOrTransactionId = event.id?.toString();
+      metadata = event.metadata || {};
+    }
+    
+    const ticketId = metadata.ticket_id;
+    
+    console.log('📦 [Pagar.me Webhook] Dados extraídos:', {
+      orderOrTransactionId,
+      ticketId,
+      metadata
+    });
+    
+    if (!ticketId) {
+      console.warn('⚠️ [Pagar.me Webhook] Ticket ID não encontrado no metadata:', metadata);
+      return res.status(200).json({ received: true, processed: false, reason: 'Ticket ID não encontrado' });
+    }
+    
+    // Buscar ticket
+    const tickets = readTickets();
+    const ticketIndex = tickets.findIndex(t => t.id === ticketId || t.codigo === ticketId);
+    
+    if (ticketIndex === -1) {
+      console.warn('⚠️ [Pagar.me Webhook] Ticket não encontrado:', ticketId);
+      return res.status(200).json({ received: true, processed: false, reason: 'Ticket não encontrado' });
+    }
+    
+    const ticket = tickets[ticketIndex];
+    
+    // Verificar se ticket já está em operação (evitar processar duas vezes)
+    if (ticket.status === 'EM_OPERACAO') {
+      console.log('ℹ️ [Pagar.me Webhook] Ticket já está em operação:', ticket.codigo);
+      return res.status(200).json({ received: true, processed: false, reason: 'Ticket já processado' });
+    }
+    
+    // Atualizar ticket para EM_OPERACAO
+    const historico = ticket.historico || [];
+    const now = new Date().toISOString();
+    const timestamp = Date.now();
+    const historicoLength = historico.length;
+    const uniqueId = `h-${timestamp}-${historicoLength}-${Math.random().toString(36).substr(2, 9)}-pagarme-webhook`;
+    
+    const historicoItem = {
+      id: uniqueId,
+      dataHora: now,
+      autor: 'Sistema',
+      statusAnterior: ticket.status,
+      statusNovo: 'EM_OPERACAO',
+      mensagem: `Pagamento confirmado via Pagar.me (Pedido: ${orderOrTransactionId || 'N/A'}). Ticket em processamento.`,
+      enviouEmail: false,
+      enviouWhatsApp: false
+    };
+    
+    tickets[ticketIndex] = {
+      ...ticket,
+      status: 'EM_OPERACAO',
+      historico: [...historico, historicoItem]
+    };
+    
+    saveTickets(tickets);
+    console.log('✅ [Pagar.me Webhook] Ticket atualizado para EM_OPERACAO:', ticket.codigo);
+    
+    // Enviar confirmação de pagamento (email e WhatsApp)
+    try {
+      const results = {
+        email: null,
+        whatsapp: null
+      };
+      
+      // Enviar email
+      if (ticket.email && validateEmail(ticket.email)) {
+        try {
+          results.email = await sendPulseService.sendConfirmationEmail(ticket);
+          console.log('📧 [Pagar.me Webhook] Email enviado:', results.email.success ? '✅' : '❌');
+        } catch (error) {
+          console.error('❌ [Pagar.me Webhook] Erro ao enviar email:', error);
+          results.email = { success: false, error: error.message };
+        }
+      }
+      
+      // Enviar WhatsApp
+      if (ticket.telefone && validatePhone(ticket.telefone)) {
+        try {
+          results.whatsapp = await zapApiService.sendWhatsAppMessage(ticket);
+          console.log('📱 [Pagar.me Webhook] WhatsApp enviado:', results.whatsapp.success ? '✅' : '❌');
+        } catch (error) {
+          console.error('❌ [Pagar.me Webhook] Erro ao enviar WhatsApp:', error);
+          results.whatsapp = { success: false, error: error.message };
+        }
+      }
+      
+      // Atualizar histórico com resultado dos envios
+      const historicoLengthAfter = tickets[ticketIndex].historico.length;
+      const confirmationHistoricoItem = {
+        id: `h-${Date.now()}-${historicoLengthAfter}-${Math.random().toString(36).substr(2, 9)}-confirmation`,
+        dataHora: new Date().toISOString(),
+        autor: 'Sistema',
+        statusAnterior: 'EM_OPERACAO',
+        statusNovo: 'EM_OPERACAO',
+        mensagem: results.email?.success && results.whatsapp?.success
+          ? 'Confirmação de pagamento enviada por email e WhatsApp'
+          : results.email?.success
+          ? 'Confirmação de pagamento enviada por email'
+          : results.whatsapp?.success
+          ? 'Confirmação de pagamento enviada por WhatsApp'
+          : 'Confirmação de pagamento não enviada',
+        enviouEmail: results.email?.success || false,
+        enviouWhatsApp: results.whatsapp?.success || false,
+        dataEnvioEmail: results.email?.success ? new Date().toISOString() : null,
+        dataEnvioWhatsApp: results.whatsapp?.success ? new Date().toISOString() : null
+      };
+      
+      tickets[ticketIndex].historico = [...tickets[ticketIndex].historico, confirmationHistoricoItem];
+      saveTickets(tickets);
+      
+    } catch (confirmationError) {
+      console.error('❌ [Pagar.me Webhook] Erro ao enviar confirmações:', confirmationError);
+      // Não bloquear o webhook se a confirmação falhar
+    }
+    
+    logger.info('✅ [Pagar.me Webhook] Webhook processado com sucesso', {
+      ticketCodigo: ticket.codigo,
+      orderOrTransactionId: orderOrTransactionId,
+      eventType: eventType
+    });
+    
+    res.status(200).json({
+      received: true,
+      processed: true,
+      ticketCodigo: ticket.codigo,
+      status: 'EM_OPERACAO'
+    });
+    
+  } catch (error) {
+    logger.logError(error, {
+      endpoint: '/webhooks/pagarme',
+      ip: req.ip
+    });
+    
+    console.error('❌ [Pagar.me Webhook] Erro ao processar webhook:', error);
+    
+    // Sempre retornar 200 para o Pagar.me (evitar reenvios)
+    res.status(200).json({
+      received: true,
+      processed: false,
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Erro ao processar webhook' 
+        : error.message
+    });
+  }
+});
+
 app.use((error, req, res, next) => {
   logger.logError(error, {
     method: req.method,

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpar Cache - Portal Certidão</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        .step {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .step h2 {
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .step p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        .shortcut {
+            background: #333;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            display: inline-block;
+            margin: 5px 0;
+        }
+        .button {
+            background: #667eea;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+        .button:hover {
+            background: #5568d3;
+        }
+        .links {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        .links a {
+            display: block;
+            padding: 12px;
+            margin: 8px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #667eea;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        .links a:hover {
+            background: #e9ecef;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpar Cache do Navegador</h1>
+        
+        <div class="step">
+            <h2>Método 1: Hard Refresh (Mais Rápido)</h2>
+            <p>1. Abra o site que quer ver atualizado</p>
+            <p>2. Pressione:</p>
+            <div class="shortcut">Ctrl + Shift + R</div>
+            <p style="margin-top: 10px; font-size: 14px; color: #999;">(Mac: Cmd + Shift + R)</p>
+        </div>
+
+        <div class="step">
+            <h2>Método 2: Com DevTools</h2>
+            <p>1. Pressione <span class="shortcut">F12</span> para abrir DevTools</p>
+            <p>2. Clique com botão direito no botão de <strong>Recarregar</strong></p>
+            <p>3. Selecione: <strong>"Limpar cache e atualizar forçadamente"</strong></p>
+        </div>
+
+        <div class="step">
+            <h2>Método 3: Desabilitar Cache Permanentemente</h2>
+            <p>1. Abra DevTools (<span class="shortcut">F12</span>)</p>
+            <p>2. Vá na aba <strong>"Network"</strong> (Rede)</p>
+            <p>3. Marque <strong>"Disable cache"</strong> ✅</p>
+            <p>4. Mantenha DevTools aberto enquanto navega</p>
+        </div>
+
+        <button class="button" onclick="window.location.reload(true)">
+            🔄 Recarregar Esta Página (Forçar)
+        </button>
+
+        <div class="warning">
+            ⚠️ <strong>Importante:</strong> Este botão recarrega apenas esta página. Para limpar o cache dos sites, use os métodos acima!
+        </div>
+
+        <div class="links">
+            <h3 style="margin-bottom: 15px; color: #333;">🔗 Testar Sites:</h3>
+            <a href="https://www.portalcertidao.org" target="_blank">www.portalcertidao.org</a>
+            <a href="https://plataforma.portalcertidao.org" target="_blank">plataforma.portalcertidao.org</a>
+            <a href="https://www.solicite.link" target="_blank">www.solicite.link</a>
+            <a href="https://api.portalcertidao.org/health" target="_blank">api.portalcertidao.org/health</a>
+        </div>
+    </div>
+
+    <script>
+        // Forçar reload sem cache quando a página carregar
+        if (performance.navigation.type === 1) {
+            console.log('Página recarregada - cache pode estar ativo');
+        }
+        
+        // Adicionar listener para Ctrl+Shift+R
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+                console.log('Hard refresh detectado!');
+            }
+        });
+    </script>
+</body>
+</html>
+

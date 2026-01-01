@@ -32,13 +32,24 @@ cp .env.example .env
 NODE_ENV=production
 PORT=3001
 PUBLIC_BASE_URL=https://api.portalcertidao.org
-SENDPULSE_CLIENT_ID=seu_client_id
-SENDPULSE_CLIENT_SECRET=seu_client_secret
+SYNC_SERVER_API_KEY=sua_api_key_secreta_forte_aqui
+CORS_ORIGINS=https://www.portalcertidao.org,https://plataforma.portalcertidao.org,https://www.solicite.link
+FORCE_RESEND=false
+
+# SendPulse
+SENDPULSE_CLIENT_ID=add9a5c88271d94ec87d6016fa01d58e
+SENDPULSE_CLIENT_SECRET=33a983c762b866c6c6074abefc8f71c1
 SENDPULSE_SENDER_EMAIL=contato@portalcertidao.org
+SENDPULSE_SENDER_NAME=Portal Certidão
+
+# Zap API
 ZAP_API_URL=https://api.z-api.io/v1
-ZAP_API_KEY=sua_api_key
-SYNC_SERVER_API_KEY=sua_api_key_secreta
-CORS_ORIGINS=https://portalcertidao.org,https://plataforma.portalcertidao.org
+ZAP_API_KEY=3EAB7866FE55B1BEB70D52B01C4B842D
+ZAP_CLIENT_TOKEN=F8337947b89a14ae78d92f6365523269bS
+
+# Pagar.me
+PAGARME_ACCOUNT_ID=acc_rOZzALlImU3VqkvD
+PAGARME_SECRET_KEY=sk_test_ec07154a6cb541fd9c3540af3e6b1efb
 ```
 
 ### 2. PORTAL (Frontend)
@@ -52,7 +63,10 @@ cp .env.example .env.local
 2. Configure as variáveis:
 ```env
 VITE_SYNC_SERVER_URL=https://api.portalcertidao.org
-VITE_RECAPTCHA_SITE_KEY=sua_chave_recaptcha
+VITE_SYNC_SERVER_API_KEY=sua_api_key_secreta_forte_aqui
+VITE_RECAPTCHA_SITE_KEY=6Ld13bsrAAAAACyH9-lzVqe6e-NV5eXEkUlU-Q_w
+VITE_PAGARME_PUBLIC_KEY=pk_test_lopqddXFGcRjqmKG
+VITE_SOLICITE_LINK_URL=https://www.solicite.link
 ```
 
 3. Build de produção:
@@ -73,6 +87,7 @@ cp .env.example .env.local
 2. Configure as variáveis:
 ```env
 VITE_SYNC_SERVER_URL=https://api.portalcertidao.org
+VITE_SYNC_SERVER_API_KEY=sua_api_key_secreta_forte_aqui
 ```
 
 3. Build de produção:
@@ -198,6 +213,28 @@ server {
 }
 ```
 
+## Configuração do Pagar.me
+
+### 1. Configurar Webhook
+
+1. Acesse o dashboard do Pagar.me (https://dashboard.pagar.me)
+2. Vá em **Configurações** > **Webhooks**
+3. Adicione um novo webhook:
+   - **URL**: `https://api.portalcertidao.org/webhooks/pagarme`
+   - **Eventos**: Selecione `transaction.paid` e `transaction.refunded`
+   - **Método**: POST
+
+### 2. Credenciais
+
+- **Public Key** (`pk_test_...`): Usada no frontend (PORTAL) - pode ser exposta
+- **Secret Key** (`sk_test_...`): Usada apenas no backend (sync-server) - NUNCA exponha
+- **Account ID**: Usado para identificação da conta
+
+### 3. Ambiente de Teste vs Produção
+
+- **Teste**: Use `pk_test_` e `sk_test_` (fornecido)
+- **Produção**: Substitua por `pk_live_` e `sk_live_` após homologação no Pagar.me
+
 ## Verificação Pós-Deploy
 
 1. **Health Check:**
@@ -206,11 +243,19 @@ curl https://api.portalcertidao.org/health
 ```
 
 2. **Testar criação de ticket:**
-- Acesse o PORTAL
+- Acesse o PORTAL (https://www.portalcertidao.org)
 - Preencha um formulário de certidão
-- Verifique se o ticket aparece na PLATAFORMA
+- Selecione um plano
+- Verifique se o QR Code PIX é gerado corretamente
 
-3. **Verificar logs:**
+3. **Testar pagamento:**
+- Use o ambiente de teste do Pagar.me
+- Faça um pagamento PIX de teste
+- Verifique se o webhook é recebido (logs do sync-server)
+- Verifique se o ticket é atualizado para EM_OPERACAO
+- Verifique se as confirmações (email/WhatsApp) são enviadas
+
+4. **Verificar logs:**
 ```bash
 # PM2
 pm2 logs sync-server
@@ -237,6 +282,30 @@ sudo journalctl -u sync-server -f
 - Configure `PUBLIC_BASE_URL` com URL pública (não localhost)
 - Use ngrok em desenvolvimento ou domínio próprio em produção
 - Verifique se a URL é acessível publicamente
+
+### Webhook do Pagar.me não está funcionando
+- Verifique se a URL do webhook está correta: `https://api.portalcertidao.org/webhooks/pagarme`
+- Verifique se o SSL/HTTPS está configurado corretamente
+- Verifique os logs do sync-server para ver se o webhook está sendo recebido
+- Certifique-se de que o evento `transaction.paid` está selecionado no dashboard do Pagar.me
+- O webhook sempre retorna 200 para evitar reenvios do Pagar.me
+
+### QR Code PIX não está sendo gerado
+- Verifique se `VITE_PAGARME_PUBLIC_KEY` está configurada no `.env.local` do PORTAL
+- Verifique o console do navegador para erros
+- Certifique-se de que a API Key está correta e ativa
+- Verifique se a conta do Pagar.me está ativa e habilitada para PIX
+
+### Webhook do Pagar.me não está funcionando
+- Verifique se a URL do webhook está correta: `https://api.portalcertidao.org/webhooks/pagarme`
+- Verifique se o SSL/HTTPS está configurado corretamente
+- Verifique os logs do sync-server para ver se o webhook está sendo recebido
+- Certifique-se de que o evento `transaction.paid` está selecionado no dashboard do Pagar.me
+
+### QR Code PIX não está sendo gerado
+- Verifique se `VITE_PAGARME_PUBLIC_KEY` está configurada no `.env.local` do PORTAL
+- Verifique o console do navegador para erros
+- Certifique-se de que a API Key está correta e ativa
 
 ## Backup
 

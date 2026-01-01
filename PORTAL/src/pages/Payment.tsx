@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,13 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
+import { 
+  createPixTransaction, 
+  getTransactionStatus, 
+  formatAmountToCents,
+  parsePhoneNumber,
+  type PagarmeTransaction 
+} from "@/lib/pagarmeService";
 
 // Mock data for testing
 const mockPlan = {
@@ -40,6 +47,10 @@ const Payment = () => {
   const [copied, setCopied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null);
+  const [pixTransaction, setPixTransaction] = useState<PagarmeTransaction | null>(null);
+  const [pixQrCode, setPixQrCode] = useState<string | null>(null);
+  const [isLoadingPix, setIsLoadingPix] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isTestMode = !locationState.formData;
 
   // Redirect if no formData or selectedPlan (unless in test mode which uses mock data)
@@ -50,49 +61,247 @@ const Payment = () => {
     }
   }, [locationState.formData, locationState.selectedPlan, isTestMode, navigate]);
 
-  // Criar ticket ao carregar Payment (quando PIX é gerado)
+  // Criar ticket e transação PIX ao carregar Payment
   useEffect(() => {
-    const createTicketOnMount = async () => {
-      // Criar identificador único baseado nos dados do formulário
-      const doc = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
-      const sessionKey = `payment_${doc}_${certificateType}_${selectedPlan.id}`;
-      
-      // Verificar se já existe ticket para esta sessão
-      const existingTicketId = sessionStorage.getItem(sessionKey);
-      
-      if (existingTicketId) {
-        const existingTicket = await findTicket(existingTicketId);
-        if (existingTicket && existingTicket.status === 'GERAL') {
-          console.log('🔵 [PORTAL Payment] Ticket já existe:', existingTicket.codigo);
-          setCurrentTicketId(existingTicketId);
-          return;
+    const initializePayment = async () => {
+      try {
+        // Criar identificador único baseado nos dados do formulário
+        const doc = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
+        const sessionKey = `payment_${doc}_${certificateType}_${selectedPlan.id}`;
+        
+        // Verificar se já existe ticket para esta sessão
+        const existingTicketId = sessionStorage.getItem(sessionKey);
+        let ticketId = existingTicketId;
+        
+        if (existingTicketId) {
+          const existingTicket = await findTicket(existingTicketId);
+          if (existingTicket && existingTicket.status === 'GERAL') {
+            console.log('🔵 [PORTAL Payment] Ticket já existe:', existingTicket.codigo);
+            setCurrentTicketId(existingTicketId);
+            ticketId = existingTicketId;
+          }
         }
-      }
 
-      // Criar novo ticket com status GERAL
-      console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
-      const ticket = await createTicket(formData, certificateType, state, selectedPlan);
-      
-      if (ticket) {
-        console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
-        setCurrentTicketId(ticket.id);
-        sessionStorage.setItem(sessionKey, ticket.id);
-        toast({
-          title: "PIX gerado!",
-          description: `Ticket ${ticket.codigo} criado. Complete o pagamento para processar.`,
-        });
-      } else {
-        console.error('❌ [PORTAL Payment] Falha ao criar ticket ao gerar PIX');
+        // Criar novo ticket se não existir
+        if (!ticketId) {
+          console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
+          const ticket = await createTicket(formData, certificateType, state, selectedPlan);
+          
+          if (ticket) {
+            console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
+            setCurrentTicketId(ticket.id);
+            sessionStorage.setItem(sessionKey, ticket.id);
+            ticketId = ticket.id;
+            toast({
+              title: "PIX sendo gerado!",
+              description: `Ticket ${ticket.codigo} criado. Aguarde...`,
+            });
+          } else {
+            console.error('❌ [PORTAL Payment] Falha ao criar ticket ao gerar PIX');
+            return;
+          }
+        }
+
+        // Criar transação PIX via Pagar.me
+        if (ticketId && !isTestMode) {
+          setIsLoadingPix(true);
+          try {
+            const docNumber = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
+            const phone = parsePhoneNumber(formData.telefone || '');
+            
+            const transaction = await createPixTransaction({
+              amount: formatAmountToCents(selectedPlan.price),
+              customer: {
+                name: formData.nomeCompleto || formData.nome || 'Cliente',
+                email: formData.email || '',
+                document_number: docNumber,
+                ...(phone && { phone }),
+              },
+              metadata: {
+                ticket_id: ticketId,
+                certificate_type: certificateType,
+                plan_id: selectedPlan.id,
+              },
+            });
+
+            console.log('✅ [PORTAL Payment] Transação PIX criada:', transaction.id);
+            setPixTransaction(transaction);
+            setPixQrCode(transaction.pix_qr_code || null);
+            
+            // Iniciar polling para verificar status do pagamento
+            startPolling(transaction.id, ticketId);
+            
+            toast({
+              title: "QR Code PIX gerado!",
+              description: "Escaneie o QR Code ou copie a chave PIX para pagar.",
+            });
+          } catch (error) {
+            console.error('❌ [PORTAL Payment] Erro ao criar transação PIX:', error);
+            toast({
+              title: "Erro ao gerar PIX",
+              description: error instanceof Error ? error.message : "Tente novamente ou use o botão de teste.",
+              variant: "destructive",
+            });
+          } finally {
+            setIsLoadingPix(false);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [PORTAL Payment] Erro ao inicializar pagamento:', error);
       }
     };
 
-    createTicketOnMount();
+    initializePayment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Executar apenas uma vez ao montar
 
-  // Mock PIX key (in real app, this would be generated dynamically)
-  const pixKey = "00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890-abcd-ef1234567890520400005303986540" + selectedPlan.price.toFixed(2).replace(".", "") + "5802BR5925PORTAL CERTIDOES LTDA6009SAO PAULO62070503***6304";
-  const pixKeySimple = "certidoes@portalpix.com.br";
+  // Limpar polling ao desmontar
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Função para iniciar polling do status do pagamento
+  const startPolling = (transactionId: string, ticketId: string) => {
+    // Limpar intervalo anterior se existir
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    // Verificar status a cada 5 segundos
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await getTransactionStatus(transactionId);
+        console.log('🔍 [PORTAL Payment] Status do pagamento:', status.status);
+
+        if (status.status === 'paid') {
+          // Pagamento confirmado!
+          console.log('✅ [PORTAL Payment] Pagamento confirmado!');
+          
+          // Parar polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+
+          // Atualizar ticket e redirecionar
+          await handlePaymentConfirmed(ticketId);
+        } else if (status.status === 'refused' || status.status === 'refunded') {
+          // Pagamento recusado ou estornado
+          console.warn('⚠️ [PORTAL Payment] Pagamento recusado ou estornado:', status.status);
+          
+          // Parar polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+
+          toast({
+            title: "Pagamento não confirmado",
+            description: "O pagamento foi recusado ou estornado. Tente novamente.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('❌ [PORTAL Payment] Erro ao verificar status:', error);
+      }
+    }, 5000); // Verificar a cada 5 segundos
+  };
+
+  // Função para processar pagamento confirmado
+  const handlePaymentConfirmed = async (ticketId: string) => {
+    setIsProcessing(true);
+    
+    try {
+      // Buscar ticket atual
+      const currentTicket = await findTicket(ticketId);
+      const existingHistorico = currentTicket?.historico || [];
+      
+      const newHistoricoItem = {
+        id: `h-${Date.now()}`,
+        dataHora: new Date().toISOString(),
+        autor: 'Sistema',
+        statusAnterior: 'GERAL' as const,
+        statusNovo: 'EM_OPERACAO' as const,
+        mensagem: 'Pagamento confirmado via Pagar.me. Ticket em processamento.',
+        enviouEmail: false
+      };
+      
+      const success = await updateTicket(ticketId, {
+        status: 'EM_OPERACAO',
+        historico: [...existingHistorico, newHistoricoItem]
+      });
+      
+      if (success) {
+        const updatedTicket = await findTicket(ticketId);
+        console.log('✅ [PORTAL Payment] Ticket atualizado para EM_OPERACAO:', updatedTicket?.codigo);
+        
+        // Enviar confirmação de pagamento (email e WhatsApp)
+        try {
+          const confirmationResult = await sendPaymentConfirmation(ticketId);
+          
+          const emailSuccess = confirmationResult.email?.success || confirmationResult.email?.alreadySent;
+          const whatsappSuccess = confirmationResult.whatsapp?.success || confirmationResult.whatsapp?.alreadySent;
+          
+          if (emailSuccess && whatsappSuccess) {
+            toast({
+              title: "Pagamento confirmado!",
+              description: `Ticket ${updatedTicket?.codigo} está sendo processado. Confirmação enviada por email e WhatsApp.`,
+            });
+          } else {
+            toast({
+              title: "Pagamento confirmado!",
+              description: `Ticket ${updatedTicket?.codigo} está sendo processado.`,
+            });
+          }
+        } catch (confirmationError) {
+          console.error('❌ [PORTAL Payment] Erro ao enviar confirmação:', confirmationError);
+        }
+
+        // Redirecionar para página de obrigado
+        redirectToThankYou(updatedTicket);
+      }
+    } catch (error) {
+      console.error('❌ [PORTAL Payment] Erro ao processar pagamento confirmado:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao processar pagamento. Verifique o console.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Função para redirecionar para página de obrigado
+  const redirectToThankYou = async (ticket: any) => {
+    const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
+    
+    const ticketCodigo = ticket?.codigo || '';
+    const planoNome = selectedPlan.name || '';
+    const planoId = selectedPlan.id || 'padrao';
+    const email = formData.email || '';
+    
+    const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
+    obrigadoUrl.searchParams.set('codigo', ticketCodigo);
+    obrigadoUrl.searchParams.set('plano', planoNome);
+    obrigadoUrl.searchParams.set('planoId', planoId);
+    obrigadoUrl.searchParams.set('email', email);
+    obrigadoUrl.searchParams.set('tipo', certificateType);
+    
+    // Salvar no localStorage como fallback
+    if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
+    if (planoNome) localStorage.setItem('planoNome', planoNome);
+    if (planoId) localStorage.setItem('planoId', planoId);
+    if (email) localStorage.setItem('ticketEmail', email);
+    if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
+    
+    // Redirecionar para SOLICITE LINK
+    window.location.href = obrigadoUrl.toString();
+  };
 
   const formatPrice = (price: number) => {
     return price.toLocaleString("pt-BR", {
@@ -102,8 +311,19 @@ const Payment = () => {
   };
 
   const handleCopyPix = async () => {
+    const pixKeyToCopy = pixQrCode || pixTransaction?.pix_qr_code || '';
+    
+    if (!pixKeyToCopy) {
+      toast({
+        title: "QR Code não disponível",
+        description: "Aguarde o QR Code ser gerado.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      await navigator.clipboard.writeText(pixKeySimple);
+      await navigator.clipboard.writeText(pixKeyToCopy);
       setCopied(true);
       toast({
         title: "Chave PIX copiada!",
@@ -280,33 +500,11 @@ const Payment = () => {
       }
     }
     
-    // URL do SOLICITE LINK - configurável via variável de ambiente
-    const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
-    
-    // Preparar dados para passar via URL params
+    // Redirecionar para página de obrigado
     const ticket = currentTicketId ? await findTicket(currentTicketId) : null;
-    const ticketCodigo = ticket?.codigo || '';
-    const planoNome = selectedPlan.name || '';
-    const planoId = selectedPlan.id || 'padrao';
-    const email = formData.email || '';
-    
-    // Construir URL do SOLICITE LINK com parâmetros
-    const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
-    obrigadoUrl.searchParams.set('codigo', ticketCodigo);
-    obrigadoUrl.searchParams.set('plano', planoNome);
-    obrigadoUrl.searchParams.set('planoId', planoId);
-    obrigadoUrl.searchParams.set('email', email);
-    obrigadoUrl.searchParams.set('tipo', certificateType);
-    
-    // Também salvar no localStorage como fallback
-    if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
-    if (planoNome) localStorage.setItem('planoNome', planoNome);
-    if (planoId) localStorage.setItem('planoId', planoId);
-    if (email) localStorage.setItem('ticketEmail', email);
-    if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
-    
-    // Redirecionar para SOLICITE LINK
-    window.location.href = obrigadoUrl.toString();
+    if (ticket) {
+      redirectToThankYou(ticket);
+    }
   };
 
   const handleChangePlan = () => {
@@ -395,38 +593,63 @@ const Payment = () => {
                   QR Code PIX
                 </h2>
                 
-                {/* Mock QR Code */}
-                <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
-                  <div className="w-40 h-40 bg-foreground/5 rounded-lg flex items-center justify-center">
-                    <QrCode className="h-28 w-28 text-foreground/40" />
+                {/* QR Code PIX */}
+                {isLoadingPix ? (
+                  <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
+                    <div className="w-40 h-40 bg-foreground/5 rounded-lg flex items-center justify-center">
+                      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
                   </div>
-                </div>
-
-                <p className="text-xs text-muted-foreground mb-3">
-                  Aponte a câmera do seu celular para o QR Code
-                </p>
+                ) : pixQrCode ? (
+                  <>
+                    <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(pixQrCode)}`}
+                        alt="QR Code PIX"
+                        className="w-40 h-40 mx-auto"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Aponte a câmera do seu celular para o QR Code
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
+                      <div className="w-40 h-40 bg-foreground/5 rounded-lg flex items-center justify-center">
+                        <QrCode className="h-28 w-28 text-foreground/40" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {isTestMode ? 'Modo de teste - Use o botão abaixo para simular pagamento' : 'Aguarde o QR Code ser gerado...'}
+                    </p>
+                  </>
+                )}
 
                 {/* PIX Key */}
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-sm bg-background rounded px-3 py-2 font-mono truncate">
-                      {pixKeySimple}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopyPix}
-                      className="flex-shrink-0"
-                    >
-                      {copied ? (
-                        <Check className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
+                {(pixQrCode || isTestMode) && (
+                  <div className="bg-muted rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-sm bg-background rounded px-3 py-2 font-mono truncate">
+                        {pixQrCode || 'Aguardando geração...'}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCopyPix}
+                        className="flex-shrink-0"
+                        disabled={!pixQrCode}
+                      >
+                        {copied ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </Card>
 
@@ -463,10 +686,14 @@ const Payment = () => {
                 </div>
 
                 {/* Timer Notice */}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/50 rounded-lg p-2">
-                  <Clock className="h-3 w-3 flex-shrink-0" />
-                  <span>O PIX expira em 30 minutos</span>
-                </div>
+                {pixTransaction?.pix_expiration_date && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/50 rounded-lg p-2">
+                    <Clock className="h-3 w-3 flex-shrink-0" />
+                    <span>
+                      O PIX expira em {new Date(pixTransaction.pix_expiration_date).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                )}
 
                 {/* Security Notice */}
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
