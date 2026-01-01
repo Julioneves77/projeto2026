@@ -23,7 +23,10 @@ export interface HistoricoItem {
   statusAnterior: TicketStatus;
   statusNovo: TicketStatus;
   mensagem: string;
-  enviouEmail: boolean;
+  enviouEmail?: boolean;
+  enviouWhatsApp?: boolean;
+  dataEnvioEmail?: string | null;
+  dataEnvioWhatsApp?: string | null;
   anexo?: {
     nome: string;
     url: string;

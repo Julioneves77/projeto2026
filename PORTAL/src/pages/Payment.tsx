@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { createTicket, updateTicket, findTicket } from "@/lib/ticketService";
+import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
 
 // Mock data for testing
 const mockPlan = {
@@ -154,10 +154,63 @@ const Payment = () => {
         if (success) {
           const updatedTicket = await findTicket(currentTicketId);
           console.log('✅ [PORTAL Payment] Ticket atualizado para EM_OPERACAO:', updatedTicket?.codigo);
-          toast({
-            title: "Pagamento confirmado!",
-            description: `Ticket ${updatedTicket?.codigo} está sendo processado.`,
-          });
+          
+          // Enviar confirmação de pagamento (email e WhatsApp)
+          try {
+            console.log('📧 [PORTAL Payment] Enviando confirmação de pagamento...');
+            const confirmationResult = await sendPaymentConfirmation(currentTicketId);
+            
+            // Log detalhado do resultado
+            console.log('📧 [PORTAL Payment] Resultado completo da confirmação:', JSON.stringify(confirmationResult, null, 2));
+            
+            const emailSuccess = confirmationResult.email?.success || confirmationResult.email?.alreadySent;
+            const whatsappSuccess = confirmationResult.whatsapp?.success || confirmationResult.whatsapp?.alreadySent;
+            const emailError = confirmationResult.email?.error;
+            const whatsappError = confirmationResult.whatsapp?.error;
+            
+            console.log(`📧 [PORTAL Payment] Status - Email: ${emailSuccess ? '✅' : '❌'} WhatsApp: ${whatsappSuccess ? '✅' : '❌'}`);
+            if (emailError) console.error('❌ [PORTAL Payment] Erro no email:', emailError);
+            if (whatsappError) console.error('❌ [PORTAL Payment] Erro no WhatsApp:', whatsappError);
+            
+            if (emailSuccess && whatsappSuccess) {
+              toast({
+                title: "Pagamento confirmado!",
+                description: `Ticket ${updatedTicket?.codigo} está sendo processado. Confirmação enviada por email e WhatsApp.`,
+              });
+            } else if (emailSuccess || whatsappSuccess) {
+              const channels = [];
+              if (emailSuccess) channels.push('email');
+              if (whatsappSuccess) channels.push('WhatsApp');
+              const errors = [];
+              if (emailError) errors.push(`Email: ${emailError}`);
+              if (whatsappError) errors.push(`WhatsApp: ${whatsappError}`);
+              
+              toast({
+                title: "Pagamento confirmado!",
+                description: `Ticket ${updatedTicket?.codigo} está sendo processado. Confirmação enviada por ${channels.join(' e ')}. ${errors.length > 0 ? 'Erros: ' + errors.join(', ') : ''}`,
+                variant: "default",
+              });
+            } else {
+              const errors = [];
+              if (emailError) errors.push(`Email: ${emailError}`);
+              if (whatsappError) errors.push(`WhatsApp: ${whatsappError}`);
+              const errorMsg = errors.length > 0 ? errors.join(', ') : (confirmationResult.error || 'Erro desconhecido');
+              
+              console.error('❌ [PORTAL Payment] Falha ao enviar confirmações:', errorMsg);
+              toast({
+                title: "Pagamento confirmado!",
+                description: `Ticket ${updatedTicket?.codigo} está sendo processado. Aviso: Não foi possível enviar confirmações. ${errorMsg}`,
+                variant: "destructive",
+              });
+            }
+          } catch (confirmationError) {
+            console.error('❌ [PORTAL Payment] Erro ao enviar confirmação:', confirmationError);
+            // Não bloquear o fluxo se a confirmação falhar
+            toast({
+              title: "Pagamento confirmado!",
+              description: `Ticket ${updatedTicket?.codigo} está sendo processado.`,
+            });
+          }
         } else {
           console.error('❌ [PORTAL Payment] Falha ao atualizar ticket');
           toast({
@@ -194,10 +247,36 @@ const Payment = () => {
           historico: [newHistoricoItem]
         });
         setCurrentTicketId(ticket.id);
-        toast({
-          title: "Pagamento confirmado!",
-          description: `Ticket ${ticket.codigo} está sendo processado.`,
-        });
+        
+        // Enviar confirmação de pagamento (email e WhatsApp)
+        try {
+          console.log('📧 [PORTAL Payment] Enviando confirmação de pagamento...');
+          const confirmationResult = await sendPaymentConfirmation(ticket.id);
+          
+          if (confirmationResult.success) {
+            const emailStatus = confirmationResult.email?.success ? '✅' : '❌';
+            const whatsappStatus = confirmationResult.whatsapp?.success ? '✅' : '❌';
+            console.log(`📧 [PORTAL Payment] Confirmação enviada - Email: ${emailStatus} WhatsApp: ${whatsappStatus}`);
+            
+            toast({
+              title: "Pagamento confirmado!",
+              description: `Ticket ${ticket.codigo} está sendo processado. Confirmação enviada por ${confirmationResult.email?.success ? 'email' : ''}${confirmationResult.email?.success && confirmationResult.whatsapp?.success ? ' e ' : ''}${confirmationResult.whatsapp?.success ? 'WhatsApp' : ''}.`,
+            });
+          } else {
+            console.warn('⚠️ [PORTAL Payment] Erro ao enviar confirmação:', confirmationResult.error);
+            toast({
+              title: "Pagamento confirmado!",
+              description: `Ticket ${ticket.codigo} está sendo processado. ${confirmationResult.error ? 'Aviso: ' + confirmationResult.error : ''}`,
+            });
+          }
+        } catch (confirmationError) {
+          console.error('❌ [PORTAL Payment] Erro ao enviar confirmação:', confirmationError);
+          // Não bloquear o fluxo se a confirmação falhar
+          toast({
+            title: "Pagamento confirmado!",
+            description: `Ticket ${ticket.codigo} está sendo processado.`,
+          });
+        }
       }
     }
     

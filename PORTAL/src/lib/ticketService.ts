@@ -455,6 +455,46 @@ export async function updateTicket(
 }
 
 /**
+ * Envia confirmação de pagamento (email e WhatsApp) via servidor de sincronização
+ */
+export async function sendPaymentConfirmation(ticketId: string): Promise<{
+  success: boolean;
+  email?: { success: boolean; error?: string; alreadySent?: boolean };
+  whatsapp?: { success: boolean; error?: string; alreadySent?: boolean };
+  error?: string;
+}> {
+  try {
+    console.log(`📧 [PORTAL] Enviando confirmação de pagamento para ticket ${ticketId}...`);
+    
+    const response = await fetch(`${SYNC_SERVER_URL}/tickets/${ticketId}/send-confirmation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log('✅ [PORTAL] Confirmação enviada com sucesso:', result);
+      return result;
+    } else {
+      const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+      console.error('❌ [PORTAL] Erro ao enviar confirmação:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Erro ${response.status} ao enviar confirmação`
+      };
+    }
+  } catch (error) {
+    console.error('❌ [PORTAL] Erro ao conectar com servidor para enviar confirmação:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido ao enviar confirmação'
+    };
+  }
+}
+
+/**
  * Busca um ticket por ID ou código
  */
 export async function findTicket(ticketId: string): Promise<TicketData | null> {
