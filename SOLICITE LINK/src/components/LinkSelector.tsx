@@ -77,7 +77,7 @@ const LinkSelector = () => {
         <h2 className="text-2xl font-bold text-gray-800 mb-3">
           Selecione a Opção
         </h2>
-        <p className="text-gray-500">Escolha o tipo de certidão desejada</p>
+        <p className="text-gray-500">Escolha o tipo de solicitação desejada</p>
       </div>
 
       <Select value={selectedLink} onValueChange={setSelectedLink}>
