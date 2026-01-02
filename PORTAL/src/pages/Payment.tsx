@@ -533,7 +533,7 @@ const Payment = () => {
                 {/* Security Notice */}
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Shield className="h-3 w-3 flex-shrink-0" />
-                  <span>Pagamento 100% seguro e criptografado</span>
+                  <span>Pagamento seguro e criptografado</span>
                 </div>
               </div>
             </Card>
@@ -545,3 +545,4 @@ const Payment = () => {
 };
 
 export default Payment;
+
