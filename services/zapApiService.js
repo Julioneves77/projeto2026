@@ -457,59 +457,22 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
       
       successFormat = 'Z-API';
       
-      // Se tem anexo, enviar arquivo como documento anexado (não link)
-      if (anexo) {
-        console.log(`📎 [Zap API] Enviando anexo via Z-API como arquivo...`);
-        console.log(`📎 [Zap API] Nome do arquivo: ${anexo.nome || 'sem-nome'}`);
-        if (anexo.base64) {
-          console.log(`📎 [Zap API] Tamanho base64: ${anexo.base64.length} caracteres`);
-        } else if (anexo.url) {
-          console.log(`📎 [Zap API] URL do anexo: ${anexo.url}`);
-        }
+      // Se tem anexo, enviar arquivo como documento anexado (base64 direto, não link)
+      if (anexo && anexo.base64) {
+        console.log(`📎 [Zap API] Enviando anexo via Z-API como ARQUIVO (base64 direto)...`);
+        console.log(`📎 [Zap API] Nome do arquivo: ${anexo.nome || 'certidao.pdf'}`);
+        console.log(`📎 [Zap API] Tamanho base64: ${anexo.base64.length} caracteres`);
         
         // Derivar extensão pelo tipo ou nome do arquivo
-        const mime = anexo.tipo || 'application/octet-stream';
-        const extFromMime = mime.split('/')[1] || 'bin';
+        const mime = anexo.tipo || 'application/pdf';
+        const extFromMime = mime.split('/')[1] || 'pdf';
         const extFromName = (anexo.nome && anexo.nome.includes('.')) ? anexo.nome.split('.').pop() : null;
-        const ext = (extFromName || extFromMime || 'bin').toLowerCase();
+        const ext = (extFromName || extFromMime || 'pdf').toLowerCase();
+        const fileName = anexo.nome || `certidao-${codigo}.${ext}`;
 
-        // Se não houver URL, subir para o sync-server e obter uma URL local
-        if (!anexo.url && anexo.base64) {
-          try {
-            console.log('📤 [Zap API] Subindo anexo para servidor local...');
-            const uploadResp = await axios.post(
-              process.env.UPLOAD_URL || 'http://localhost:3001/upload',
-              {
-                fileName: anexo.nome || `arquivo.${ext}`,
-                base64: anexo.base64,
-                mimeType: mime
-              },
-              { timeout: 30000 }
-            );
-            if (uploadResp.data?.success && uploadResp.data.url) {
-              anexo.url = uploadResp.data.url;
-              console.log('✅ [Zap API] Upload local concluído. URL:', anexo.url);
-            } else {
-              throw new Error('Upload local falhou');
-            }
-          } catch (upErr) {
-            console.error('❌ [Zap API] Falha no upload local:', upErr.message);
-            throw upErr;
-          }
-        }
-
-        // Endpoints conforme coleção: /send-document/{ext}
-        const documentEndpoint = `${baseUrl}/instances/${instance}/token/${token}/send-document/${ext}`;
-        const documentEndpointNoExt = `${baseUrl}/instances/${instance}/token/${token}/send-document`;
-        const endpointsToTry = [
-          documentEndpoint,
-          documentEndpointNoExt
-        ];
-        console.log(`📎 [Zap API] Endpoints para tentar (send-document):`, endpointsToTry);
-        
         // Limpar base64 se tiver prefixo data URI
-        let base64Content = anexo.base64 || '';
-        if (base64Content && base64Content.startsWith('data:')) {
+        let base64Content = anexo.base64;
+        if (base64Content.startsWith('data:')) {
           const prefixMatch = base64Content.match(/^data:([^;]+);base64,(.+)$/);
           if (prefixMatch) {
             base64Content = prefixMatch[2];
@@ -520,44 +483,121 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
           }
         }
 
-        // Primeiro tentar multipart/binário (file) – sem link
-        const FormData = require('form-data');
-        const buffer = base64Content ? Buffer.from(base64Content, 'base64') : null;
-        let sent = false;
+        // Validar que temos conteúdo base64 válido
+        if (!base64Content || base64Content.length < 100) {
+          console.error(`❌ [Zap API] Base64 inválido ou muito pequeno: ${base64Content?.length || 0} caracteres`);
+          throw new Error('Conteúdo base64 do anexo inválido');
+        }
 
-        // Apenas URL (upload já feito), enviar em JSON conforme doc
-        if (anexo.url) {
-          for (const url of endpointsToTry) {
-            try {
-              const resp = await axios.post(
-                url,
-                {
-                  phone: phoneNumber,
-                  document: anexo.url,
-                  fileName: anexo.nome || `arquivo.${ext}`,
-                  mimeType: mime
-                },
-                {
-                  headers: headers,
-                  timeout: 30000
-                }
-              );
-              if (resp.data && (resp.data.error || resp.data.message?.includes('NOT_FOUND'))) {
-                throw new Error(resp.data.error || resp.data.message);
+        console.log(`📎 [Zap API] Base64 limpo, tamanho: ${base64Content.length} caracteres`);
+
+        // Endpoint para envio de documento com base64
+        // Z-API aceita base64 no campo "document" diretamente
+        const documentEndpoint = `${baseUrl}/instances/${instance}/token/${token}/send-document/${ext}`;
+        
+        console.log(`📎 [Zap API] Endpoint: ${documentEndpoint}`);
+        
+        // Tentar enviar com base64 diretamente (conforme documentação Z-API)
+        let sent = false;
+        let lastError = null;
+
+        // Formato 1: document com base64 direto (preferido - envia arquivo real)
+        try {
+          console.log(`📎 [Zap API] Tentando formato: base64 direto no campo document...`);
+          const resp = await axios.post(
+            documentEndpoint,
+            {
+              phone: phoneNumber,
+              document: base64Content,
+              fileName: fileName
+            },
+            {
+              headers: headers,
+              timeout: 60000 // 60 segundos para arquivos grandes
+            }
+          );
+          
+          if (resp.data && !resp.data.error) {
+            console.log(`✅ [Zap API] Documento enviado com sucesso (base64 direto)`);
+            console.log(`📎 [Zap API] Resposta:`, JSON.stringify(resp.data, null, 2));
+            sent = true;
+          } else if (resp.data?.error) {
+            throw new Error(resp.data.error);
+          }
+        } catch (err) {
+          lastError = err;
+          console.log(`⚠️ [Zap API] Falha no formato base64 direto: ${err.message}`);
+        }
+
+        // Formato 2: Fallback com data URI completo
+        if (!sent) {
+          try {
+            console.log(`📎 [Zap API] Tentando formato: data URI completo...`);
+            const dataUri = `data:${mime};base64,${base64Content}`;
+            const resp = await axios.post(
+              documentEndpoint,
+              {
+                phone: phoneNumber,
+                document: dataUri,
+                fileName: fileName
+              },
+              {
+                headers: headers,
+                timeout: 60000
               }
-              console.log(`✅ [Zap API] Documento enviado com sucesso via ${url}`);
+            );
+            
+            if (resp.data && !resp.data.error) {
+              console.log(`✅ [Zap API] Documento enviado com sucesso (data URI)`);
               console.log(`📎 [Zap API] Resposta:`, JSON.stringify(resp.data, null, 2));
               sent = true;
-              break;
-            } catch (err) {
-              console.log(`⚠️ [Zap API] Falha em ${url}: ${err.message}`);
+            } else if (resp.data?.error) {
+              throw new Error(resp.data.error);
             }
+          } catch (err) {
+            lastError = err;
+            console.log(`⚠️ [Zap API] Falha no formato data URI: ${err.message}`);
+          }
+        }
+
+        // Formato 3: Endpoint genérico sem extensão
+        if (!sent) {
+          try {
+            console.log(`📎 [Zap API] Tentando endpoint genérico /send-document...`);
+            const genericEndpoint = `${baseUrl}/instances/${instance}/token/${token}/send-document`;
+            const resp = await axios.post(
+              genericEndpoint,
+              {
+                phone: phoneNumber,
+                document: base64Content,
+                fileName: fileName,
+                extension: ext
+              },
+              {
+                headers: headers,
+                timeout: 60000
+              }
+            );
+            
+            if (resp.data && !resp.data.error) {
+              console.log(`✅ [Zap API] Documento enviado com sucesso (endpoint genérico)`);
+              console.log(`📎 [Zap API] Resposta:`, JSON.stringify(resp.data, null, 2));
+              sent = true;
+            } else if (resp.data?.error) {
+              throw new Error(resp.data.error);
+            }
+          } catch (err) {
+            lastError = err;
+            console.log(`⚠️ [Zap API] Falha no endpoint genérico: ${err.message}`);
           }
         }
 
         if (!sent) {
-          throw new Error('Anexo não enviado: send-document falhou em todos os formatos (multipart/URL)');
+          console.error(`❌ [Zap API] Todas as tentativas de envio de documento falharam`);
+          throw new Error(`Anexo não enviado: ${lastError?.message || 'Todos os formatos falharam'}`);
         }
+      } else if (anexo && !anexo.base64) {
+        console.log(`⚠️ [Zap API] Anexo presente mas sem base64 - não é possível enviar arquivo`);
       } else {
         console.log(`⚠️ [Zap API] Nenhum anexo disponível para enviar`);
       }

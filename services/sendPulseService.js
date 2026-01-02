@@ -353,12 +353,13 @@ Portal Certidão
     };
 
     // Adicionar anexo se disponível (formato correto para SendPulse)
-    // SendPulse pode ter problemas com anexos muito grandes ou formato incorreto
+    // O ARQUIVO É ENVIADO COMO ANEXO REAL, NÃO COMO LINK
     if (anexo && anexo.base64) {
-      console.log(`📎 [SendPulse] Preparando anexo para envio: ${anexo.nome}`);
+      const fileName = anexo.nome || `certidao-${codigo}.pdf`;
+      console.log(`📎 [SendPulse] Preparando ARQUIVO para envio como anexo: ${fileName}`);
       console.log(`📎 [SendPulse] Tamanho base64: ${anexo.base64.length} caracteres`);
       
-      // Verificar tamanho do anexo (SendPulse geralmente aceita até 10MB por anexo)
+      // Verificar tamanho do anexo (SendPulse aceita até 10MB por anexo)
       const base64SizeInMB = (anexo.base64.length * 3) / 4 / 1024 / 1024;
       console.log(`📎 [SendPulse] Tamanho estimado do arquivo: ${base64SizeInMB.toFixed(2)} MB`);
       
@@ -366,10 +367,6 @@ Portal Certidão
         console.warn(`⚠️ [SendPulse] Anexo muito grande (${base64SizeInMB.toFixed(2)} MB). SendPulse pode rejeitar.`);
       }
       
-      // SendPulse API oficial espera attachments_binary como objeto onde:
-      // - Chave: nome do arquivo
-      // - Valor: conteúdo em base64 (sem prefixo data:type;base64,)
-      // OU attachments como objeto com nome do arquivo como chave
       try {
         // Limpar base64 se tiver prefixo data URI
         let base64Content = anexo.base64;
@@ -384,18 +381,25 @@ Portal Certidão
           }
         }
         
-        console.log(`📎 [SendPulse] Tamanho base64 após limpeza: ${base64Content.length} caracteres`);
-        console.log(`📎 [SendPulse] Primeiros 50 caracteres: ${base64Content.substring(0, 50)}...`);
+        // Validar que temos conteúdo base64 válido
+        if (!base64Content || base64Content.length < 100) {
+          console.error(`❌ [SendPulse] Base64 inválido ou muito pequeno: ${base64Content?.length || 0} caracteres`);
+          throw new Error('Conteúdo base64 do anexo inválido');
+        }
         
-        // Formato correto segundo documentação SendPulse: attachments_binary é um objeto
+        console.log(`📎 [SendPulse] Base64 validado, tamanho: ${base64Content.length} caracteres`);
+        
+        // SendPulse API: attachments_binary com nome do arquivo como chave
+        // O ARQUIVO SERÁ ENVIADO COMO ANEXO REAL NO EMAIL
         emailData.attachments_binary = {
-          [anexo.nome]: base64Content // Base64 sem prefixo data:type;base64,
+          [fileName]: base64Content
         };
-        console.log(`📎 [SendPulse] Anexo adicionado ao emailData:`, {
-          name: anexo.nome,
+        
+        console.log(`✅ [SendPulse] Anexo preparado para envio:`, {
+          fileName: fileName,
           type: anexo.tipo || 'application/pdf',
-          contentLength: anexo.base64.length,
-          estimatedSizeMB: base64SizeInMB.toFixed(2)
+          sizeBytes: Math.round(base64Content.length * 0.75),
+          sizeMB: base64SizeInMB.toFixed(2)
         });
       } catch (error) {
         console.error(`❌ [SendPulse] Erro ao preparar anexo:`, error);
