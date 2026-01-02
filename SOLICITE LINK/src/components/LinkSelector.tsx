@@ -69,12 +69,15 @@ const LinkSelector = () => {
   };
 
   return (
-    <div className="card-main max-w-lg w-full mx-auto animate-fade-in-up bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl border border-white/50">
+    <div className="max-w-lg w-full mx-auto animate-fade-in-up p-10 rounded-3xl border-2 border-primary/20" style={{
+      background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(240,245,255,0.9) 100%)',
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.5) inset'
+    }}>
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">
+        <h2 className="text-2xl font-bold text-gray-800 mb-3">
           Selecione a Opção
         </h2>
-        <p className="text-gray-500 text-sm">Escolha o tipo de certidão desejada</p>
+        <p className="text-gray-500">Escolha o tipo de certidão desejada</p>
       </div>
 
       <Select value={selectedLink} onValueChange={setSelectedLink}>
