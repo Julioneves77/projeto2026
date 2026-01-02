@@ -69,23 +69,24 @@ const LinkSelector = () => {
   };
 
   return (
-    <div className="card-main max-w-md w-full mx-auto animate-fade-in-up">
-      <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-foreground mt-1">
+    <div className="card-main max-w-lg w-full mx-auto animate-fade-in-up bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl border border-white/50">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">
           Selecione a Opção
         </h2>
+        <p className="text-gray-500 text-sm">Escolha o tipo de certidão desejada</p>
       </div>
 
       <Select value={selectedLink} onValueChange={setSelectedLink}>
-        <SelectTrigger className="w-full h-14 text-base bg-background border-border hover:border-primary/50 transition-colors">
+        <SelectTrigger className="w-full h-16 text-lg font-medium bg-white border-2 border-primary/30 hover:border-primary shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl focus:ring-4 focus:ring-primary/20">
           <SelectValue placeholder="Selecione uma opção na lista" />
         </SelectTrigger>
-        <SelectContent className="bg-popover border-border z-50">
+        <SelectContent className="bg-white border-2 border-primary/20 shadow-2xl rounded-xl z-50 max-h-80">
           {linkOptions.map((option) => (
             <SelectItem
               key={option.id}
               value={option.id}
-              className="text-base py-3 cursor-pointer focus:bg-secondary"
+              className="text-base py-4 cursor-pointer hover:bg-primary/10 focus:bg-primary/10 transition-colors font-medium"
             >
               {option.label}
             </SelectItem>
