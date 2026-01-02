@@ -113,12 +113,12 @@ export function Tickets() {
       );
     })
     .sort((a, b) => {
-      // Na aba Geral: ordenar apenas por data (mais recente primeiro)
-      if (activeTab === 'geral') {
+      // Nas abas Geral e Concluídos: ordenar apenas por data (mais recente primeiro)
+      if (activeTab === 'geral' || activeTab === 'concluidos') {
         return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
       }
       
-      // Nas outras abas: primeiro por prioridade, depois por data
+      // Na aba Em Operação: primeiro por prioridade, depois por data
       const prioridadeDiff = getPrioridadeOrder(a.prioridade) - getPrioridadeOrder(b.prioridade);
       if (prioridadeDiff !== 0) return prioridadeDiff;
       return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
