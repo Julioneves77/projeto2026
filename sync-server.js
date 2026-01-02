@@ -1404,7 +1404,7 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
 // ============================================
 
 const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6Ld13bsrAAAAABUMthIcj7Fj42GxTFGexiE5uC-s';
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6LemYqorAAAAACIgB-Wv3TCak7n3N7JVFogR66BW';
 
 // Funções auxiliares para mensagens de contato
 function readContactMessages() {

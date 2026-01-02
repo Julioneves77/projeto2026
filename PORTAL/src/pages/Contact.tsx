@@ -54,8 +54,7 @@ const Contact = () => {
     else if (!validatePhone(form.telefone)) newErrors.telefone = "Telefone inválido";
     if (!form.mensagem.trim()) newErrors.mensagem = "Mensagem é obrigatória";
     else if (form.mensagem.length < 10) newErrors.mensagem = "Mensagem deve ter pelo menos 10 caracteres";
-    // reCAPTCHA é opcional se houver erro de configuração (chave incorreta)
-    // if (!recaptchaToken) newErrors.captcha = "Por favor, complete a verificação reCAPTCHA";
+    if (!recaptchaToken) newErrors.captcha = "Por favor, complete a verificação reCAPTCHA";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
