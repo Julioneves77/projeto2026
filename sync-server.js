@@ -1399,6 +1399,366 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
   }
 });
 
+// ============================================
+// Endpoints de Mensagens de Contato (Suporte Email)
+// ============================================
+
+const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6Ld13bsrAAAAABUMthIcj7Fj42GxTFGexiE5uC-s';
+
+// Funções auxiliares para mensagens de contato
+function readContactMessages() {
+  try {
+    if (fs.existsSync(CONTACT_MESSAGES_FILE)) {
+      return JSON.parse(fs.readFileSync(CONTACT_MESSAGES_FILE, 'utf8'));
+    }
+  } catch (error) {
+    console.error('Erro ao ler mensagens de contato:', error);
+  }
+  return [];
+}
+
+function saveContactMessages(messages) {
+  try {
+    fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify(messages, null, 2));
+  } catch (error) {
+    console.error('Erro ao salvar mensagens de contato:', error);
+  }
+}
+
+// Validar reCAPTCHA
+async function validateRecaptcha(token) {
+  try {
+    const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `secret=${RECAPTCHA_SECRET_KEY}&response=${token}`
+    });
+    const data = await response.json();
+    return data.success === true;
+  } catch (error) {
+    console.error('Erro ao validar reCAPTCHA:', error);
+    return false;
+  }
+}
+
+// GET /contact-messages - Listar todas as mensagens de contato
+app.get('/contact-messages', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const { folder = 'inbox', starred, read } = req.query;
+    
+    let filtered = messages.filter(m => !m.deleted);
+    
+    // Filtrar por pasta
+    if (folder === 'inbox') {
+      filtered = filtered.filter(m => !m.archived);
+    } else if (folder === 'starred') {
+      filtered = filtered.filter(m => m.starred && !m.archived);
+    } else if (folder === 'archive') {
+      filtered = filtered.filter(m => m.archived);
+    } else if (folder === 'sent') {
+      filtered = filtered.filter(m => m.type === 'sent');
+    } else if (folder === 'trash') {
+      filtered = messages.filter(m => m.deleted);
+    }
+    
+    // Filtros adicionais
+    if (starred !== undefined) {
+      filtered = filtered.filter(m => m.starred === (starred === 'true'));
+    }
+    if (read !== undefined) {
+      filtered = filtered.filter(m => m.read === (read === 'true'));
+    }
+    
+    // Ordenar por data (mais recentes primeiro)
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    res.json(filtered);
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /contact-messages' });
+    res.status(500).json({ error: 'Erro ao listar mensagens' });
+  }
+});
+
+// GET /contact-messages/stats - Estatísticas das mensagens
+app.get('/contact-messages/stats', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const active = messages.filter(m => !m.deleted);
+    
+    res.json({
+      inbox: active.filter(m => !m.archived && m.type !== 'sent').length,
+      unread: active.filter(m => !m.read && !m.archived && m.type !== 'sent').length,
+      starred: active.filter(m => m.starred && !m.archived).length,
+      sent: active.filter(m => m.type === 'sent').length,
+      archive: active.filter(m => m.archived).length,
+      trash: messages.filter(m => m.deleted).length
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /contact-messages/stats' });
+    res.status(500).json({ error: 'Erro ao obter estatísticas' });
+  }
+});
+
+// POST /contact-messages - Receber nova mensagem do formulário de contato (PORTAL)
+app.post('/contact-messages', createTicketLimiter, async (req, res) => {
+  try {
+    const { nome, email, telefone, mensagem, recaptchaToken } = req.body;
+    
+    // Validar campos obrigatórios
+    if (!nome || !email || !mensagem) {
+      return res.status(400).json({ error: 'Campos obrigatórios: nome, email, mensagem' });
+    }
+    
+    // Validar email
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+    
+    // Validar reCAPTCHA (se fornecido)
+    if (recaptchaToken) {
+      const isValidRecaptcha = await validateRecaptcha(recaptchaToken);
+      if (!isValidRecaptcha) {
+        return res.status(400).json({ error: 'Verificação reCAPTCHA falhou' });
+      }
+    }
+    
+    const messages = readContactMessages();
+    
+    // Gerar ID único
+    const id = `MSG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const newMessage = {
+      id,
+      type: 'received', // received = recebida do cliente, sent = enviada pelo operador
+      from: nome,
+      fromEmail: email,
+      phone: telefone || null,
+      subject: `Contato via Portal - ${nome}`,
+      preview: mensagem.substring(0, 100) + (mensagem.length > 100 ? '...' : ''),
+      content: mensagem,
+      read: false,
+      starred: false,
+      archived: false,
+      deleted: false,
+      hasAttachment: false,
+      createdAt: new Date().toISOString(),
+      replies: []
+    };
+    
+    messages.push(newMessage);
+    saveContactMessages(messages);
+    
+    logger.info('Nova mensagem de contato recebida', { id, from: nome, email });
+    
+    // Enviar notificação por email para o suporte (opcional)
+    try {
+      await sendPulseService.sendEmail({
+        to: process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org',
+        subject: `[Portal Certidão] Nova mensagem de contato - ${nome}`,
+        html: `
+          <h2>Nova mensagem de contato</h2>
+          <p><strong>Nome:</strong> ${nome}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Telefone:</strong> ${telefone || 'Não informado'}</p>
+          <hr>
+          <p><strong>Mensagem:</strong></p>
+          <p>${mensagem.replace(/\n/g, '<br>')}</p>
+          <hr>
+          <p><small>Acesse a plataforma para responder.</small></p>
+        `
+      });
+      logger.info('Email de notificação enviado para suporte', { id });
+    } catch (emailError) {
+      console.error('Erro ao enviar email de notificação:', emailError);
+      // Não bloquear se o email falhar
+    }
+    
+    res.status(201).json({
+      success: true,
+      message: 'Mensagem enviada com sucesso',
+      id
+    });
+    
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /contact-messages' });
+    res.status(500).json({ error: 'Erro ao enviar mensagem' });
+  }
+});
+
+// GET /contact-messages/:id - Obter mensagem específica
+app.get('/contact-messages/:id', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const message = messages.find(m => m.id === req.params.id);
+    
+    if (!message) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    res.json(message);
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /contact-messages/:id' });
+    res.status(500).json({ error: 'Erro ao obter mensagem' });
+  }
+});
+
+// PUT /contact-messages/:id - Atualizar mensagem (marcar como lida, favoritar, arquivar, etc)
+app.put('/contact-messages/:id', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const index = messages.findIndex(m => m.id === req.params.id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    const { read, starred, archived, deleted } = req.body;
+    
+    if (read !== undefined) messages[index].read = read;
+    if (starred !== undefined) messages[index].starred = starred;
+    if (archived !== undefined) messages[index].archived = archived;
+    if (deleted !== undefined) messages[index].deleted = deleted;
+    
+    messages[index].updatedAt = new Date().toISOString();
+    
+    saveContactMessages(messages);
+    
+    res.json(messages[index]);
+  } catch (error) {
+    logger.logError(error, { endpoint: 'PUT /contact-messages/:id' });
+    res.status(500).json({ error: 'Erro ao atualizar mensagem' });
+  }
+});
+
+// POST /contact-messages/:id/reply - Responder mensagem (envia email real via SendPulse)
+app.post('/contact-messages/:id/reply', authenticateRequest, async (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const message = messages.find(m => m.id === req.params.id);
+    
+    if (!message) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    const { subject, content, operador } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Conteúdo da resposta é obrigatório' });
+    }
+    
+    // Enviar email real via SendPulse
+    const emailResult = await sendPulseService.sendEmail({
+      to: message.fromEmail,
+      subject: subject || `Re: ${message.subject}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #1a365d;">Portal Certidão - Resposta ao seu contato</h2>
+          <p>Olá <strong>${message.from}</strong>,</p>
+          <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            ${content.replace(/\n/g, '<br>')}
+          </div>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+          <p style="color: #718096; font-size: 12px;">
+            Esta é uma resposta à sua mensagem enviada em ${new Date(message.createdAt).toLocaleString('pt-BR')}.
+          </p>
+          <p style="color: #718096; font-size: 12px;">
+            Atenciosamente,<br>
+            Equipe Portal Certidão
+          </p>
+        </div>
+      `
+    });
+    
+    if (!emailResult.success) {
+      return res.status(500).json({ error: 'Erro ao enviar email', details: emailResult.error });
+    }
+    
+    // Salvar resposta no histórico da mensagem
+    const reply = {
+      id: `REPLY-${Date.now()}`,
+      content,
+      subject: subject || `Re: ${message.subject}`,
+      operador: operador || 'Sistema',
+      sentAt: new Date().toISOString(),
+      emailSent: true
+    };
+    
+    const index = messages.findIndex(m => m.id === req.params.id);
+    messages[index].replies = [...(messages[index].replies || []), reply];
+    messages[index].read = true;
+    messages[index].lastReplyAt = new Date().toISOString();
+    
+    // Criar cópia na pasta "Enviados"
+    const sentMessage = {
+      id: `SENT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'sent',
+      from: 'Portal Certidão',
+      fromEmail: process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org',
+      to: message.from,
+      toEmail: message.fromEmail,
+      subject: subject || `Re: ${message.subject}`,
+      preview: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+      content,
+      read: true,
+      starred: false,
+      archived: false,
+      deleted: false,
+      hasAttachment: false,
+      createdAt: new Date().toISOString(),
+      replyTo: message.id
+    };
+    
+    messages.push(sentMessage);
+    saveContactMessages(messages);
+    
+    logger.info('Resposta enviada por email', { 
+      originalId: message.id, 
+      to: message.fromEmail,
+      operador: operador || 'Sistema'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Resposta enviada com sucesso',
+      reply
+    });
+    
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /contact-messages/:id/reply' });
+    res.status(500).json({ error: 'Erro ao enviar resposta' });
+  }
+});
+
+// DELETE /contact-messages/:id - Excluir mensagem permanentemente
+app.delete('/contact-messages/:id', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    const index = messages.findIndex(m => m.id === req.params.id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    // Se já está na lixeira, excluir permanentemente
+    if (messages[index].deleted) {
+      messages.splice(index, 1);
+    } else {
+      // Mover para lixeira
+      messages[index].deleted = true;
+      messages[index].deletedAt = new Date().toISOString();
+    }
+    
+    saveContactMessages(messages);
+    
+    res.json({ success: true, message: 'Mensagem excluída' });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'DELETE /contact-messages/:id' });
+    res.status(500).json({ error: 'Erro ao excluir mensagem' });
+  }
+});
+
 app.use((error, req, res, next) => {
   logger.logError(error, {
     method: req.method,

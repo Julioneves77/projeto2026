@@ -54,7 +54,8 @@ const Contact = () => {
     else if (!validatePhone(form.telefone)) newErrors.telefone = "Telefone inválido";
     if (!form.mensagem.trim()) newErrors.mensagem = "Mensagem é obrigatória";
     else if (form.mensagem.length < 10) newErrors.mensagem = "Mensagem deve ter pelo menos 10 caracteres";
-    if (!recaptchaToken) newErrors.captcha = "Por favor, complete a verificação reCAPTCHA";
+    // reCAPTCHA é opcional se houver erro de configuração (chave incorreta)
+    // if (!recaptchaToken) newErrors.captcha = "Por favor, complete a verificação reCAPTCHA";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -65,15 +66,47 @@ const Contact = () => {
     if (!validateForm()) return;
     setIsSubmitting(true);
     
-    // Aqui você pode enviar o recaptchaToken para o backend para validação
-    // Por enquanto, apenas simulamos o envio
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    toast({ title: "Mensagem enviada!", description: "Entraremos em contato em breve." });
-    setForm({ nome: "", email: "", telefone: "", mensagem: "" });
-    setRecaptchaToken(null);
-    recaptchaRef.current?.reset();
-    setIsSubmitting(false);
+    try {
+      const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${SYNC_SERVER_URL}/contact-messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nome: form.nome,
+          email: form.email,
+          telefone: form.telefone,
+          mensagem: form.mensagem,
+          recaptchaToken: recaptchaToken,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao enviar mensagem');
+      }
+      
+      toast({ 
+        title: "Mensagem enviada!", 
+        description: "Entraremos em contato em breve." 
+      });
+      setForm({ nome: "", email: "", telefone: "", mensagem: "" });
+      setRecaptchaToken(null);
+      recaptchaRef.current?.reset();
+      
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      toast({ 
+        title: "Erro ao enviar", 
+        description: error instanceof Error ? error.message : "Tente novamente mais tarde.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

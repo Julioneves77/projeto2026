@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Mail, 
   Inbox, 
@@ -10,171 +10,331 @@ import {
   Plus,
   Paperclip,
   Clock,
-  ChevronRight
+  ChevronRight,
+  RefreshCw,
+  X,
+  Loader2
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/hooks/use-toast';
 
-interface Email {
-  id: number;
+// URL do servidor de sincronização
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+
+interface ContactMessage {
+  id: string;
+  type: 'received' | 'sent';
   from: string;
   fromEmail: string;
+  to?: string;
+  toEmail?: string;
+  phone?: string;
   subject: string;
   preview: string;
   content: string;
-  date: string;
   read: boolean;
   starred: boolean;
+  archived: boolean;
+  deleted: boolean;
   hasAttachment: boolean;
-  folder: string;
+  createdAt: string;
+  replies?: Reply[];
+  lastReplyAt?: string;
+  replyTo?: string;
 }
 
-const mockEmails: Email[] = [
-  {
-    id: 1,
-    from: 'João Silva',
-    fromEmail: 'joao@cliente.com',
-    subject: 'Dúvida sobre certidão criminal',
-    preview: 'Olá, gostaria de saber sobre o prazo de entrega da minha certidão...',
-    content: `Olá,
+interface Reply {
+  id: string;
+  content: string;
+  subject: string;
+  operador: string;
+  sentAt: string;
+  emailSent: boolean;
+}
 
-Gostaria de saber sobre o prazo de entrega da minha certidão criminal federal que solicitei há 2 dias.
-
-O código do meu pedido é #TK001.
-
-Aguardo retorno.
-
-Atenciosamente,
-João Silva`,
-    date: '10:30',
-    read: false,
-    starred: true,
-    hasAttachment: false,
-    folder: 'inbox'
-  },
-  {
-    id: 2,
-    from: 'Maria Oliveira',
-    fromEmail: 'maria@empresa.com.br',
-    subject: 'Re: Certidão entregue com sucesso',
-    preview: 'Muito obrigada pelo atendimento rápido e eficiente...',
-    content: `Muito obrigada pelo atendimento rápido e eficiente!
-
-Recebi a certidão no prazo informado e já consegui dar entrada no processo.
-
-Vocês estão de parabéns!
-
-Maria Oliveira`,
-    date: '09:15',
-    read: true,
-    starred: false,
-    hasAttachment: true,
-    folder: 'inbox'
-  },
-  {
-    id: 3,
-    from: 'SendPulse',
-    fromEmail: 'noreply@sendpulse.com',
-    subject: 'Relatório de envios - Dezembro 2024',
-    preview: 'Seu relatório mensal de envios está disponível...',
-    content: `Olá,
-
-Seu relatório mensal de envios está disponível.
-
-Total de emails enviados: 1.523
-Taxa de entrega: 98.5%
-Taxa de abertura: 45.2%
-
-Acesse o painel para mais detalhes.
-
-Equipe SendPulse`,
-    date: 'Ontem',
-    read: true,
-    starred: false,
-    hasAttachment: true,
-    folder: 'inbox'
-  },
-  {
-    id: 4,
-    from: 'Carlos Mendes',
-    fromEmail: 'carlos@gmail.com',
-    subject: 'Urgente: Problema no pagamento',
-    preview: 'Fiz o pagamento via PIX mas ainda não recebi confirmação...',
-    content: `Olá,
-
-Fiz o pagamento via PIX há 3 horas mas ainda não recebi a confirmação.
-
-Segue o comprovante em anexo.
-
-Por favor, verificar com urgência.
-
-Carlos Mendes
-(11) 99999-8888`,
-    date: 'Ontem',
-    read: false,
-    starred: true,
-    hasAttachment: true,
-    folder: 'inbox'
-  },
-  {
-    id: 5,
-    from: 'Suporte Interno',
-    fromEmail: 'suporte@empresasvirtuais.com',
-    subject: 'Atualização do sistema agendada',
-    preview: 'Informamos que haverá uma atualização do sistema...',
-    content: `Prezados,
-
-Informamos que haverá uma atualização do sistema no próximo domingo, das 02h às 06h.
-
-Durante este período, o sistema poderá apresentar instabilidades.
-
-Atenciosamente,
-Equipe de Suporte`,
-    date: '25/12',
-    read: true,
-    starred: false,
-    hasAttachment: false,
-    folder: 'inbox'
-  }
-];
+interface Stats {
+  inbox: number;
+  unread: number;
+  starred: number;
+  sent: number;
+  archive: number;
+  trash: number;
+}
 
 const menuItems = [
-  { id: 'inbox', label: 'Caixa de Entrada', icon: Inbox, count: 12 },
-  { id: 'starred', label: 'Favoritos', icon: Star, count: 3 },
-  { id: 'sent', label: 'Enviados', icon: Send, count: 0 },
-  { id: 'archive', label: 'Arquivados', icon: Archive, count: 0 },
-  { id: 'trash', label: 'Lixeira', icon: Trash2, count: 0 },
+  { id: 'inbox', label: 'Caixa de Entrada', icon: Inbox },
+  { id: 'starred', label: 'Favoritos', icon: Star },
+  { id: 'sent', label: 'Enviados', icon: Send },
+  { id: 'archive', label: 'Arquivados', icon: Archive },
+  { id: 'trash', label: 'Lixeira', icon: Trash2 },
 ];
 
-// Exportar contagem de emails não lidos
+// Helper para fazer requisições autenticadas
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (SYNC_SERVER_API_KEY) {
+    headers.set('X-API-Key', SYNC_SERVER_API_KEY);
+  }
+  headers.set('Content-Type', 'application/json');
+  return fetch(url, { ...options, headers });
+}
+
+// Hook para contagem de emails não lidos (exportado para o Header)
 export function useUnreadEmailsCount() {
-  // Em produção, isso viria de uma API real
-  const unreadCount = mockEmails.filter(e => !e.read).length;
-  return unreadCount;
+  const [count, setCount] = useState(0);
+  
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/stats`);
+        if (response.ok) {
+          const stats = await response.json();
+          setCount(stats.unread || 0);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar estatísticas:', error);
+      }
+    };
+    
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000); // Atualizar a cada 30 segundos
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  return count;
 }
 
 export function EmailSupport() {
   const [selectedFolder, setSelectedFolder] = useState('inbox');
-  const [selectedEmail, setSelectedEmail] = useState<Email | null>(mockEmails[0]);
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [stats, setStats] = useState<Stats>({ inbox: 0, unread: 0, starred: 0, sent: 0, archive: 0, trash: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyContent, setReplyContent] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const [showComposeModal, setShowComposeModal] = useState(false);
 
-  const filteredEmails = mockEmails.filter(email => 
-    email.folder === selectedFolder &&
-    (email.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     email.from.toLowerCase().includes(searchTerm.toLowerCase()))
+  // Buscar mensagens
+  const fetchMessages = useCallback(async () => {
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages?folder=${selectedFolder}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar mensagens:', error);
+    }
+  }, [selectedFolder]);
+
+  // Buscar estatísticas
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/stats`);
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas:', error);
+    }
+  }, []);
+
+  // Carregar dados iniciais
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      await Promise.all([fetchMessages(), fetchStats()]);
+      setIsLoading(false);
+    };
+    loadData();
+  }, [fetchMessages, fetchStats]);
+
+  // Polling para atualizar mensagens
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchMessages();
+      fetchStats();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchMessages, fetchStats]);
+
+  // Marcar como lida ao selecionar
+  const handleSelectMessage = async (message: ContactMessage) => {
+    setSelectedMessage(message);
+    setIsReplying(false);
+    setReplyContent('');
+    
+    if (!message.read) {
+      try {
+        await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/${message.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ read: true }),
+        });
+        setMessages(prev => prev.map(m => m.id === message.id ? { ...m, read: true } : m));
+        fetchStats();
+      } catch (error) {
+        console.error('Erro ao marcar como lida:', error);
+      }
+    }
+  };
+
+  // Toggle favorito
+  const handleToggleStar = async (message: ContactMessage, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/${message.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ starred: !message.starred }),
+      });
+      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, starred: !m.starred } : m));
+      if (selectedMessage?.id === message.id) {
+        setSelectedMessage({ ...message, starred: !message.starred });
+      }
+      fetchStats();
+    } catch (error) {
+      console.error('Erro ao favoritar:', error);
+      toast({ title: 'Erro', description: 'Não foi possível favoritar a mensagem', variant: 'destructive' });
+    }
+  };
+
+  // Arquivar
+  const handleArchive = async (message: ContactMessage) => {
+    try {
+      await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/${message.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ archived: true }),
+      });
+      setMessages(prev => prev.filter(m => m.id !== message.id));
+      setSelectedMessage(null);
+      fetchStats();
+      toast({ title: 'Arquivado', description: 'Mensagem arquivada com sucesso' });
+    } catch (error) {
+      console.error('Erro ao arquivar:', error);
+      toast({ title: 'Erro', description: 'Não foi possível arquivar a mensagem', variant: 'destructive' });
+    }
+  };
+
+  // Excluir (mover para lixeira)
+  const handleDelete = async (message: ContactMessage) => {
+    try {
+      await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/${message.id}`, {
+        method: message.deleted ? 'DELETE' : 'PUT',
+        body: message.deleted ? undefined : JSON.stringify({ deleted: true }),
+      });
+      setMessages(prev => prev.filter(m => m.id !== message.id));
+      setSelectedMessage(null);
+      fetchStats();
+      toast({ 
+        title: message.deleted ? 'Excluído permanentemente' : 'Movido para lixeira', 
+        description: message.deleted ? 'Mensagem excluída permanentemente' : 'Mensagem movida para a lixeira'
+      });
+    } catch (error) {
+      console.error('Erro ao excluir:', error);
+      toast({ title: 'Erro', description: 'Não foi possível excluir a mensagem', variant: 'destructive' });
+    }
+  };
+
+  // Enviar resposta
+  const handleSendReply = async () => {
+    if (!selectedMessage || !replyContent.trim()) return;
+    
+    setIsSendingReply(true);
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/${selectedMessage.id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: replyContent,
+          subject: `Re: ${selectedMessage.subject}`,
+          operador: 'Administrador', // TODO: pegar do contexto de auth
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erro ao enviar resposta');
+      }
+      
+      const result = await response.json();
+      
+      // Atualizar mensagem local com a resposta
+      setMessages(prev => prev.map(m => 
+        m.id === selectedMessage.id 
+          ? { ...m, replies: [...(m.replies || []), result.reply], read: true }
+          : m
+      ));
+      
+      setSelectedMessage(prev => prev ? {
+        ...prev,
+        replies: [...(prev.replies || []), result.reply],
+        read: true
+      } : null);
+      
+      setReplyContent('');
+      setIsReplying(false);
+      fetchMessages();
+      fetchStats();
+      
+      toast({ title: 'Resposta enviada', description: 'Email enviado com sucesso para o cliente' });
+      
+    } catch (error) {
+      console.error('Erro ao enviar resposta:', error);
+      toast({ 
+        title: 'Erro ao enviar', 
+        description: error instanceof Error ? error.message : 'Tente novamente',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  // Filtrar mensagens por busca
+  const filteredMessages = messages.filter(message =>
+    message.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    message.from.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    message.content.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Formatar data
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    
+    if (isToday) {
+      return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+      return 'Ontem';
+    }
+    
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
 
   return (
     <div className="flex h-[calc(100vh-8rem)] bg-card rounded-xl border border-border overflow-hidden">
       {/* Coluna 1: Menu de Pastas */}
       <div className="w-56 border-r border-border bg-muted/30 flex flex-col">
         <div className="p-4">
-          <Button className="w-full gap-2" size="sm">
-            <Plus className="w-4 h-4" />
-            Novo Email
+          <Button 
+            className="w-full gap-2" 
+            size="sm"
+            onClick={() => fetchMessages()}
+          >
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
           </Button>
         </div>
         
@@ -182,10 +342,14 @@ export function EmailSupport() {
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = selectedFolder === item.id;
+            const count = stats[item.id as keyof Stats] || 0;
             return (
               <button
                 key={item.id}
-                onClick={() => setSelectedFolder(item.id)}
+                onClick={() => {
+                  setSelectedFolder(item.id);
+                  setSelectedMessage(null);
+                }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${
                   isActive 
                     ? 'bg-primary text-primary-foreground' 
@@ -196,12 +360,12 @@ export function EmailSupport() {
                   <Icon className="w-4 h-4" />
                   <span>{item.label}</span>
                 </div>
-                {item.count > 0 && (
+                {count > 0 && (
                   <Badge 
                     variant={isActive ? "secondary" : "outline"} 
                     className="text-xs h-5 min-w-[20px] justify-center"
                   >
-                    {item.count}
+                    {count}
                   </Badge>
                 )}
               </button>
@@ -211,11 +375,10 @@ export function EmailSupport() {
 
         <div className="p-4 border-t border-border">
           <div className="text-xs text-muted-foreground">
-            <p>Armazenamento</p>
-            <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full w-1/3 bg-primary rounded-full" />
-            </div>
-            <p className="mt-1">2.3 GB de 15 GB</p>
+            <p>Total de mensagens</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">
+              {stats.inbox + stats.sent + stats.archive}
+            </p>
           </div>
         </div>
       </div>
@@ -226,7 +389,7 @@ export function EmailSupport() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar emails..."
+              placeholder="Buscar mensagens..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 h-9"
@@ -235,44 +398,52 @@ export function EmailSupport() {
         </div>
 
         <ScrollArea className="flex-1">
-          {filteredEmails.length === 0 ? (
+          {isLoading ? (
+            <div className="p-6 text-center text-muted-foreground">
+              <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+              <p className="text-sm">Carregando...</p>
+            </div>
+          ) : filteredMessages.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground">
               <Mail className="w-10 h-10 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Nenhum email encontrado</p>
+              <p className="text-sm">Nenhuma mensagem encontrada</p>
             </div>
           ) : (
-            filteredEmails.map((email) => (
+            filteredMessages.map((message) => (
               <button
-                key={email.id}
-                onClick={() => setSelectedEmail(email)}
+                key={message.id}
+                onClick={() => handleSelectMessage(message)}
                 className={`w-full text-left p-3 border-b border-border transition-colors ${
-                  selectedEmail?.id === email.id
+                  selectedMessage?.id === message.id
                     ? 'bg-primary/10 border-l-2 border-l-primary'
                     : 'hover:bg-muted/50'
-                } ${!email.read ? 'bg-muted/30' : ''}`}
+                } ${!message.read ? 'bg-muted/30' : ''}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      {email.starred && (
-                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />
-                      )}
-                      <span className={`text-sm truncate ${!email.read ? 'font-semibold text-foreground' : 'text-foreground'}`}>
-                        {email.from}
+                      <button
+                        onClick={(e) => handleToggleStar(message, e)}
+                        className="flex-shrink-0"
+                      >
+                        <Star className={`w-3 h-3 ${message.starred ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
+                      </button>
+                      <span className={`text-sm truncate ${!message.read ? 'font-semibold text-foreground' : 'text-foreground'}`}>
+                        {message.type === 'sent' ? `Para: ${message.to}` : message.from}
                       </span>
                     </div>
-                    <p className={`text-sm truncate mt-0.5 ${!email.read ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-                      {email.subject}
+                    <p className={`text-sm truncate mt-0.5 ${!message.read ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                      {message.subject}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {email.preview}
+                      {message.preview}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {email.date}
+                      {formatDate(message.createdAt)}
                     </span>
-                    {email.hasAttachment && (
+                    {message.hasAttachment && (
                       <Paperclip className="w-3 h-3 text-muted-foreground" />
                     )}
                   </div>
@@ -285,26 +456,27 @@ export function EmailSupport() {
 
       {/* Coluna 3: Conteúdo do Email */}
       <div className="flex-1 flex flex-col">
-        {selectedEmail ? (
+        {selectedMessage ? (
           <>
             <div className="p-4 border-b border-border">
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">
-                    {selectedEmail.subject}
+                    {selectedMessage.subject}
                   </h2>
                   <div className="flex items-center gap-2 mt-1">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                       <span className="text-sm font-semibold text-primary">
-                        {selectedEmail.from.charAt(0)}
+                        {selectedMessage.from.charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {selectedEmail.from}
+                        {selectedMessage.type === 'sent' ? `Para: ${selectedMessage.to}` : selectedMessage.from}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {selectedEmail.fromEmail}
+                        {selectedMessage.type === 'sent' ? selectedMessage.toEmail : selectedMessage.fromEmail}
+                        {selectedMessage.phone && ` • ${selectedMessage.phone}`}
                       </p>
                     </div>
                   </div>
@@ -312,10 +484,15 @@ export function EmailSupport() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    {selectedEmail.date}
+                    {new Date(selectedMessage.createdAt).toLocaleString('pt-BR')}
                   </span>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Star className={`w-4 h-4 ${selectedEmail.starred ? 'text-yellow-500 fill-yellow-500' : ''}`} />
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8"
+                    onClick={() => handleToggleStar(selectedMessage)}
+                  >
+                    <Star className={`w-4 h-4 ${selectedMessage.starred ? 'text-yellow-500 fill-yellow-500' : ''}`} />
                   </Button>
                 </div>
               </div>
@@ -324,25 +501,67 @@ export function EmailSupport() {
             <ScrollArea className="flex-1 p-6">
               <div className="prose prose-sm max-w-none">
                 <pre className="whitespace-pre-wrap font-sans text-sm text-foreground bg-transparent p-0">
-                  {selectedEmail.content}
+                  {selectedMessage.content}
                 </pre>
               </div>
 
-              {selectedEmail.hasAttachment && (
+              {/* Histórico de respostas */}
+              {selectedMessage.replies && selectedMessage.replies.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-border space-y-4">
+                  <p className="text-sm font-medium text-muted-foreground">Respostas anteriores:</p>
+                  {selectedMessage.replies.map((reply) => (
+                    <div key={reply.id} className="bg-muted/50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-foreground">{reply.operador}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(reply.sentAt).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <pre className="whitespace-pre-wrap font-sans text-sm text-foreground">
+                        {reply.content}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Formulário de resposta */}
+              {isReplying && selectedMessage.type !== 'sent' && (
                 <div className="mt-6 pt-4 border-t border-border">
-                  <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-                    <Paperclip className="w-4 h-4" />
-                    Anexos
-                  </p>
-                  <div className="flex gap-2">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg border border-border">
-                      <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center">
-                        <span className="text-xs font-semibold text-red-600">PDF</span>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">documento.pdf</p>
-                        <p className="text-xs text-muted-foreground">245 KB</p>
-                      </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-foreground">Responder para: {selectedMessage.fromEmail}</p>
+                      <Button variant="ghost" size="sm" onClick={() => setIsReplying(false)}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <Textarea
+                      placeholder="Digite sua resposta..."
+                      value={replyContent}
+                      onChange={(e) => setReplyContent(e.target.value)}
+                      rows={6}
+                      className="resize-none"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setIsReplying(false)}>
+                        Cancelar
+                      </Button>
+                      <Button 
+                        onClick={handleSendReply}
+                        disabled={!replyContent.trim() || isSendingReply}
+                      >
+                        {isSendingReply ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4 mr-2" />
+                            Enviar Resposta
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -351,21 +570,31 @@ export function EmailSupport() {
 
             <div className="p-4 border-t border-border">
               <div className="flex gap-2">
-                <Button className="gap-2">
-                  <Send className="w-4 h-4" />
-                  Responder
-                </Button>
-                <Button variant="outline" className="gap-2">
-                  <ChevronRight className="w-4 h-4" />
-                  Encaminhar
-                </Button>
-                <Button variant="outline" className="gap-2 ml-auto">
+                {selectedMessage.type !== 'sent' && (
+                  <Button 
+                    className="gap-2"
+                    onClick={() => setIsReplying(true)}
+                    disabled={isReplying}
+                  >
+                    <Send className="w-4 h-4" />
+                    Responder
+                  </Button>
+                )}
+                <Button 
+                  variant="outline" 
+                  className="gap-2 ml-auto"
+                  onClick={() => handleArchive(selectedMessage)}
+                >
                   <Archive className="w-4 h-4" />
                   Arquivar
                 </Button>
-                <Button variant="outline" className="gap-2 text-destructive hover:text-destructive">
+                <Button 
+                  variant="outline" 
+                  className="gap-2 text-destructive hover:text-destructive"
+                  onClick={() => handleDelete(selectedMessage)}
+                >
                   <Trash2 className="w-4 h-4" />
-                  Excluir
+                  {selectedMessage.deleted ? 'Excluir' : 'Lixeira'}
                 </Button>
               </div>
             </div>
@@ -374,8 +603,8 @@ export function EmailSupport() {
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
               <Mail className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p className="text-lg font-medium">Selecione um email</p>
-              <p className="text-sm">Escolha um email da lista para visualizar</p>
+              <p className="text-lg font-medium">Selecione uma mensagem</p>
+              <p className="text-sm">Escolha uma mensagem da lista para visualizar</p>
             </div>
           </div>
         )}
