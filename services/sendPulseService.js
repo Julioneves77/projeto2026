@@ -503,8 +503,80 @@ Portal Certidão
   }
 }
 
+/**
+ * Enviar email genérico via SendPulse
+ * @param {Object} options - Opções do email
+ * @param {string|string[]} options.to - Email(s) destinatário(s)
+ * @param {string} options.subject - Assunto do email
+ * @param {string} options.html - Conteúdo HTML do email
+ * @param {Object} options.from - Remetente { name, email }
+ * @param {string|string[]} [options.cc] - Email(s) em cópia
+ * @param {string|string[]} [options.bcc] - Email(s) em cópia oculta
+ * @returns {Promise<Object>} Resultado do envio
+ */
+async function sendEmail({ to, subject, html, from, cc, bcc }) {
+  await initializeSendPulse();
+  
+  // Normalizar destinatários para array
+  const toArray = Array.isArray(to) ? to : [to];
+  const ccArray = cc ? (Array.isArray(cc) ? cc : [cc]) : [];
+  const bccArray = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
+  
+  // Remetente padrão
+  const fromEmail = from?.email || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
+  const fromName = from?.name || 'Portal Certidão';
+  
+  const emailData = {
+    subject: subject,
+    html: html,
+    from: {
+      name: fromName,
+      email: fromEmail
+    },
+    to: toArray.map(email => ({ email: email.trim() })),
+    ...(ccArray.length > 0 && {
+      cc: ccArray.map(email => ({ email: email.trim() }))
+    }),
+    ...(bccArray.length > 0 && {
+      bcc: bccArray.map(email => ({ email: email.trim() }))
+    })
+  };
+  
+  console.log(`📧 [SendPulse] Enviando email genérico para: ${toArray.join(', ')}`);
+  
+  return new Promise((resolve, reject) => {
+    sendpulse.smtpSendMail((response) => {
+      const hasError = response?.is_error || 
+                      response?.error_code || 
+                      (response?.error_code && response.error_code !== 200 && response.error_code !== 0) ||
+                      (response?.message && (
+                        response.message.includes('not valid') ||
+                        response.message.includes('error') ||
+                        response.message.includes('Error')
+                      ));
+      
+      if (hasError) {
+        const errorMessage = response.message || response.error || 'Erro desconhecido ao enviar email';
+        console.error(`❌ [SendPulse] Erro ao enviar email:`, errorMessage);
+        resolve({
+          success: false,
+          error: errorMessage,
+          errorCode: response.error_code
+        });
+      } else {
+        console.log(`✅ [SendPulse] Email enviado com sucesso`);
+        resolve({
+          success: true,
+          messageId: response?.id || 'N/A'
+        });
+      }
+    }, emailData);
+  });
+}
+
 module.exports = {
   sendConfirmationEmail,
   sendCompletionEmail,
+  sendEmail,
   initializeSendPulse
 };

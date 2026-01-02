@@ -196,3 +196,4 @@ Todas as proteções da **Opção 3 (Proteção Completa)** foram implementadas 
 
 **Sistema pronto para produção com proteções completas!**
 
+

@@ -91,3 +91,4 @@ Este arquivo contém **TODOS** os comandos prontos para você copiar e colar.
 
 Todos os comandos estão prontos para copiar e colar. 🚀
 
+

@@ -116,3 +116,4 @@ systemctl reload nginx
 
 echo "✅ Nginx configurado com sucesso!"
 
+

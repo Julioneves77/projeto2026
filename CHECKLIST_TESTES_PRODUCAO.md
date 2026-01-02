@@ -81,3 +81,4 @@
 - Scripts de teste estão disponíveis em `test-*.js`
 - Documentação completa em `RESUMO_FINAL_TESTES.md`
 
+

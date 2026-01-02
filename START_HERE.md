@@ -67,3 +67,4 @@ Depois, copie e cole os comandos do arquivo `COMANDOS_PARA_COPIAR_COLAR.md` na o
 
 Boa sorte! 🚀
 
+

@@ -83,3 +83,4 @@ echo "   cd /var/www/portal-certidao"
 echo "   sudo bash configurar-servidor.sh"
 echo ""
 
+

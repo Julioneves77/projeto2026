@@ -60,3 +60,4 @@
 - Verificar se `VITE_SYNC_SERVER_URL` está configurado corretamente no build de produção
 - Verificar se `SYNC_SERVER_API_KEY` está configurado em ambos os lados
 
+

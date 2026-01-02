@@ -13,14 +13,18 @@ import {
   ChevronRight,
   RefreshCw,
   X,
-  Loader2
+  Loader2,
+  HardDrive
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
+import { EmailComposeModal } from './EmailComposeModal';
 
 // URL do servidor de sincronização
 const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
@@ -64,6 +68,18 @@ interface Stats {
   sent: number;
   archive: number;
   trash: number;
+}
+
+interface StorageStats {
+  used: number;
+  capacity: number;
+  percentage: number;
+  messagesCount: number;
+  formatted: {
+    used: string;
+    capacity: string;
+    available: string;
+  };
 }
 
 const menuItems = [
@@ -121,6 +137,7 @@ export function EmailSupport() {
   const [replyContent, setReplyContent] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [showComposeModal, setShowComposeModal] = useState(false);
+  const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
 
   // Buscar mensagens
   const fetchMessages = useCallback(async () => {
@@ -148,24 +165,38 @@ export function EmailSupport() {
     }
   }, []);
 
+  // Buscar estatísticas de armazenamento
+  const fetchStorageStats = useCallback(async () => {
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/contact-messages/storage-stats`);
+      if (response.ok) {
+        const data = await response.json();
+        setStorageStats(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas de armazenamento:', error);
+    }
+  }, []);
+
   // Carregar dados iniciais
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      await Promise.all([fetchMessages(), fetchStats()]);
+      await Promise.all([fetchMessages(), fetchStats(), fetchStorageStats()]);
       setIsLoading(false);
     };
     loadData();
-  }, [fetchMessages, fetchStats]);
+  }, [fetchMessages, fetchStats, fetchStorageStats]);
 
   // Polling para atualizar mensagens
   useEffect(() => {
     const interval = setInterval(() => {
       fetchMessages();
       fetchStats();
+      fetchStorageStats();
     }, 30000);
     return () => clearInterval(interval);
-  }, [fetchMessages, fetchStats]);
+  }, [fetchMessages, fetchStats, fetchStorageStats]);
 
   // Marcar como lida ao selecionar
   const handleSelectMessage = async (message: ContactMessage) => {
@@ -323,15 +354,42 @@ export function EmailSupport() {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Carregando mensagens...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-8rem)] bg-card rounded-xl border border-border overflow-hidden">
       {/* Coluna 1: Menu de Pastas */}
       <div className="w-56 border-r border-border bg-muted/30 flex flex-col">
-        <div className="p-4">
+        <div className="p-4 space-y-2">
+          <Button 
+            className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90" 
+            size="sm"
+            onClick={() => {
+              console.log('🟢 [EmailSupport] Clicou em Novo Email');
+              setShowComposeModal(true);
+            }}
+          >
+            <Plus className="w-4 h-4" />
+            Novo Email
+          </Button>
           <Button 
             className="w-full gap-2" 
             size="sm"
-            onClick={() => fetchMessages()}
+            variant="outline"
+            onClick={() => {
+              fetchMessages();
+              fetchStats();
+              fetchStorageStats();
+            }}
           >
             <RefreshCw className="w-4 h-4" />
             Atualizar
@@ -373,15 +431,70 @@ export function EmailSupport() {
           })}
         </nav>
 
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-border space-y-4">
           <div className="text-xs text-muted-foreground">
             <p>Total de mensagens</p>
             <p className="mt-1 text-lg font-semibold text-foreground">
               {stats.inbox + stats.sent + stats.archive}
             </p>
           </div>
+          
+          {/* Controle de Espaço Usado */}
+          {storageStats && (
+            <div className="pt-4 border-t border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <HardDrive className="w-4 h-4 text-muted-foreground" />
+                <p className="text-xs font-medium text-foreground">Armazenamento</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">
+                    {storageStats.formatted.used} / {storageStats.formatted.capacity}
+                  </span>
+                  <span className={`font-semibold ${
+                    storageStats.percentage >= 80 
+                      ? 'text-destructive' 
+                      : storageStats.percentage >= 60 
+                      ? 'text-yellow-600' 
+                      : 'text-foreground'
+                  }`}>
+                    {storageStats.percentage}%
+                  </span>
+                </div>
+                <Progress 
+                  value={storageStats.percentage} 
+                  className={`h-2 ${
+                    storageStats.percentage >= 80 
+                      ? '[&>div]:bg-destructive' 
+                      : storageStats.percentage >= 60 
+                      ? '[&>div]:bg-yellow-600' 
+                      : ''
+                  }`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {storageStats.formatted.available} disponível
+                </p>
+                {storageStats.percentage >= 80 && (
+                  <p className="text-xs text-destructive font-medium">
+                    ⚠️ Espaço quase esgotado
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal de Composição */}
+      <EmailComposeModal
+        open={showComposeModal}
+        onClose={() => setShowComposeModal(false)}
+        onSent={() => {
+          fetchMessages();
+          fetchStats();
+          fetchStorageStats();
+        }}
+      />
 
       {/* Coluna 2: Lista de Emails */}
       <div className="w-80 border-r border-border flex flex-col">

@@ -26,6 +26,14 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     headers.set('X-API-Key', SYNC_SERVER_API_KEY);
   }
   
+  // Log para debug
+  console.log('🔵 [PORTAL] fetchWithAuth:', {
+    url,
+    method: options.method || 'GET',
+    hasApiKey: !!SYNC_SERVER_API_KEY,
+    headers: Object.fromEntries(headers.entries())
+  });
+  
   return fetch(url, {
     ...options,
     headers,
@@ -265,14 +273,25 @@ async function mapFormDataToTicket(
     dominio: 'portalcertidao.com.br',
     dataCadastro: new Date().toISOString(),
     prioridade,
-    status: 'GERAL',
+    status: 'GERAL', // IMPORTANTE: Tickets criados no PORTAL sempre começam com status GERAL
     operador: null,
     dataAtribuicao: null,
     dataConclusao: null,
     historico: [],
   };
   
-  console.log('🔵 [PORTAL] Ticket final criado:', ticket);
+  console.log('🔵 [PORTAL] Ticket final criado:', {
+    codigo: ticket.codigo,
+    status: ticket.status,
+    nomeCompleto: ticket.nomeCompleto,
+    prioridade: ticket.prioridade
+  });
+  
+  // Garantir que status seja sempre GERAL para tickets novos
+  if (ticket.status !== 'GERAL') {
+    console.warn('⚠️ [PORTAL] ATENÇÃO: Status do ticket não é GERAL, corrigindo...', ticket.status);
+    ticket.status = 'GERAL';
+  }
   
   return ticket;
 }
@@ -334,7 +353,26 @@ export async function createTicket(
     // IMPORTANTE: Aguardar resposta antes de retornar
     try {
       console.log('📤 [PORTAL] Enviando ticket para servidor de sincronização...');
-      console.log('📤 [PORTAL] Dados do ticket:', { id: newTicket.id, codigo: newTicket.codigo });
+      console.log('📤 [PORTAL] URL do servidor:', SYNC_SERVER_URL);
+      console.log('📤 [PORTAL] Dados do ticket:', { 
+        id: newTicket.id, 
+        codigo: newTicket.codigo,
+        status: newTicket.status,
+        nomeCompleto: newTicket.nomeCompleto
+      });
+      
+      // Garantir que status seja sempre GERAL antes de enviar
+      if (newTicket.status !== 'GERAL') {
+        console.warn('⚠️ [PORTAL] Corrigindo status do ticket antes de enviar:', newTicket.status, '-> GERAL');
+        newTicket.status = 'GERAL';
+      }
+      
+      console.log('📤 [PORTAL] Enviando ticket para servidor:', {
+        url: `${SYNC_SERVER_URL}/tickets`,
+        codigo: newTicket.codigo,
+        status: newTicket.status,
+        nomeCompleto: newTicket.nomeCompleto
+      });
       
       const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`, {
         method: 'POST',
@@ -344,18 +382,43 @@ export async function createTicket(
         body: JSON.stringify(newTicket),
       });
       
+      console.log('📤 [PORTAL] Resposta do servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+      
       if (response.ok) {
         const serverTicket = await response.json();
         console.log('✅ [PORTAL] Ticket enviado para servidor com sucesso!', serverTicket.codigo);
-        console.log('✅ [PORTAL] Ticket confirmado no servidor:', { id: serverTicket.id, codigo: serverTicket.codigo });
+        console.log('✅ [PORTAL] Ticket confirmado no servidor:', { 
+          id: serverTicket.id, 
+          codigo: serverTicket.codigo,
+          status: serverTicket.status
+        });
+        
+        // Verificar se status foi preservado
+        if (serverTicket.status !== 'GERAL') {
+          console.error('❌ [PORTAL] ERRO CRÍTICO: Status do ticket no servidor é diferente de GERAL:', serverTicket.status);
+          console.error('❌ [PORTAL] Esperado: GERAL, Recebido:', serverTicket.status);
+        } else {
+          console.log('✅ [PORTAL] Status GERAL confirmado no servidor!');
+        }
       } else {
         const errorText = await response.text();
         console.error('❌ [PORTAL] Erro ao enviar ticket para servidor:', response.status, errorText);
         console.error('❌ [PORTAL] Ticket não foi criado no servidor, mas foi salvo localmente');
+        console.error('❌ [PORTAL] URL tentada:', `${SYNC_SERVER_URL}/tickets`);
+        console.error('❌ [PORTAL] Dados enviados:', JSON.stringify(newTicket, null, 2));
         // Não bloquear, mas avisar claramente
       }
     } catch (error) {
       console.error('❌ [PORTAL] Erro ao conectar com servidor de sincronização:', error);
+      console.error('❌ [PORTAL] Detalhes do erro:', {
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       console.error('❌ [PORTAL] Ticket não foi criado no servidor, mas foi salvo localmente');
       // Continuar mesmo se servidor não estiver disponível
     }

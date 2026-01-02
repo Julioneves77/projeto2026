@@ -148,3 +148,4 @@ echo "5. Inicie o sync-server com PM2 (passo 8 do guia)"
 echo ""
 echo -e "${GREEN}🎉 Upload concluído! Agora configure o servidor.${NC}"
 
+

@@ -56,7 +56,11 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     
     // Tentar carregar do servidor de sincronização primeiro
     try {
-      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`);
+      // Adicionar timestamp para evitar cache
+      const url = `${SYNC_SERVER_URL}/tickets?t=${Date.now()}`;
+      console.log(`🟢 [PLATAFORMA] Fazendo requisição para: ${url}`);
+      
+      const response = await fetchWithAuth(url);
       console.log(`🟢 [PLATAFORMA] Resposta do servidor: ${response.status} ${response.statusText}`);
       
       if (response.ok) {
@@ -64,12 +68,19 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         console.log(`🟢 [PLATAFORMA] Recebidos ${serverTickets.length} tickets do servidor`);
         
         // Log de distribuição por status
-        const statusCount = {};
+        const statusCount: Record<string, number> = {};
         serverTickets.forEach((t: any) => {
           const status = t.status || 'SEM_STATUS';
           statusCount[status] = (statusCount[status] || 0) + 1;
         });
         console.log(`🟢 [PLATAFORMA] Distribuição por status:`, statusCount);
+        
+        // Log específico de tickets GERAL
+        const ticketsGeral = serverTickets.filter((t: any) => t.status === 'GERAL');
+        console.log(`🟢 [PLATAFORMA] Tickets com status GERAL: ${ticketsGeral.length}`);
+        if (ticketsGeral.length > 0) {
+          console.log(`🟢 [PLATAFORMA] Códigos dos tickets GERAL:`, ticketsGeral.map((t: any) => t.codigo).join(', '));
+        }
         
         if (Array.isArray(serverTickets) && serverTickets.length > 0) {
           // Converter strings de data de volta para objetos Date

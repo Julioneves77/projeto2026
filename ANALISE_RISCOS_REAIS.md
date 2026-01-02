@@ -160,3 +160,4 @@ Fazer pelo menos Rate Limiting + Headers (45 min) antes de subir.
 
 **Quer que eu implemente essas 2 proteções básicas agora?** (45 minutos)
 
+

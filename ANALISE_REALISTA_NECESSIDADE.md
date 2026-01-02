@@ -197,3 +197,4 @@
 
 **Minha recomendação:** Pelo menos Rate Limiting (30 min) antes de lançar tráfego pago.
 
+

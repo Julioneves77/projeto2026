@@ -90,3 +90,4 @@ echo "  PORTAL: http://localhost:8888"
 echo "  PLATAFORMA: http://localhost:8889"
 echo "  SOLICITE LINK: http://localhost:8890"
 
+

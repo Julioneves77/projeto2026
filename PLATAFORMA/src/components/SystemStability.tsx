@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTickets } from '@/hooks/useTickets';
 import { 
   Globe, 
@@ -14,12 +14,69 @@ import {
   Clock,
   FileText,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  HardDrive,
+  Cpu,
+  MemoryStick
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (SYNC_SERVER_API_KEY) {
+    headers.set('X-API-Key', SYNC_SERVER_API_KEY);
+  }
+  headers.set('Content-Type', 'application/json');
+  return fetch(url, { ...options, headers });
+}
+
+interface SystemCapacity {
+  storage: {
+    total: number;
+    used: number;
+    available: number;
+    percentage: number;
+    formatted: {
+      total: string;
+      used: string;
+      available: string;
+    };
+  };
+  memory: {
+    total: number;
+    used: number;
+    free: number;
+    percentage: number;
+    formatted: {
+      total: string;
+      used: string;
+      free: string;
+    };
+  };
+  cpu: {
+    loadAverage: number[];
+    usage: number;
+    cores: number;
+    model: string;
+  };
+  uptime: {
+    seconds: number;
+    formatted: string;
+  };
+  platform: {
+    type: string;
+    platform: string;
+    arch: string;
+    hostname: string;
+  };
+}
 
 interface ServiceStatus {
   id: string;
@@ -77,6 +134,10 @@ export function SystemStability() {
   const [isChecking, setIsChecking] = useState(false);
   const [lastFullCheck, setLastFullCheck] = useState<Date | null>(null);
   const [showAllEmissions, setShowAllEmissions] = useState(false);
+  const [systemCapacity, setSystemCapacity] = useState<SystemCapacity | null>(null);
+  const [isLoadingCapacity, setIsLoadingCapacity] = useState(true);
+  const [sseConnected, setSseConnected] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const checkServices = async () => {
     setIsChecking(true);
@@ -110,9 +171,99 @@ export function SystemStability() {
     setIsChecking(false);
   };
 
+  // Buscar capacidade do sistema (fallback)
+  const fetchSystemCapacity = useCallback(async () => {
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/system/capacity`);
+      if (response.ok) {
+        const data = await response.json();
+        setSystemCapacity(data);
+        setLastUpdate(new Date());
+      }
+    } catch (error) {
+      console.error('Erro ao buscar capacidade do sistema:', error);
+    } finally {
+      setIsLoadingCapacity(false);
+    }
+  }, []);
+
+  // Conexão SSE para métricas em tempo real
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    const connectSSE = () => {
+      // Construir URL com API key se disponível
+      const sseUrl = SYNC_SERVER_API_KEY 
+        ? `${SYNC_SERVER_URL}/system/capacity/stream?apiKey=${SYNC_SERVER_API_KEY}`
+        : `${SYNC_SERVER_URL}/system/capacity/stream`;
+      
+      try {
+        eventSource = new EventSource(sseUrl);
+        
+        eventSource.addEventListener('capacity-update', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            setSystemCapacity(data);
+            setLastUpdate(new Date());
+            setIsLoadingCapacity(false);
+            setSseConnected(true);
+          } catch (error) {
+            console.error('Erro ao parsear dados SSE:', error);
+          }
+        });
+        
+        eventSource.onopen = () => {
+          console.log('📡 SSE conectado - Métricas em tempo real ativas');
+          setSseConnected(true);
+          // Cancelar fallback polling se estava ativo
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+            fallbackInterval = null;
+          }
+        };
+        
+        eventSource.onerror = (error) => {
+          console.warn('📡 SSE desconectado, ativando fallback polling', error);
+          setSseConnected(false);
+          eventSource?.close();
+          
+          // Ativar fallback polling
+          if (!fallbackInterval) {
+            fetchSystemCapacity(); // Buscar imediatamente
+            fallbackInterval = setInterval(fetchSystemCapacity, 5000);
+          }
+          
+          // Tentar reconectar SSE após 10 segundos
+          reconnectTimeout = setTimeout(connectSSE, 10000);
+        };
+      } catch (error) {
+        console.error('Erro ao iniciar SSE:', error);
+        setSseConnected(false);
+        // Usar polling como fallback
+        if (!fallbackInterval) {
+          fetchSystemCapacity();
+          fallbackInterval = setInterval(fetchSystemCapacity, 5000);
+        }
+      }
+    };
+    
+    // Buscar dados inicial e iniciar SSE
+    fetchSystemCapacity();
+    connectSSE();
+    
+    // Cleanup
+    return () => {
+      eventSource?.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, [fetchSystemCapacity]);
+
   useEffect(() => {
     checkServices();
-    // Verificar a cada 5 minutos
+    // Verificar serviços a cada 5 minutos
     const interval = setInterval(checkServices, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -334,6 +485,118 @@ export function SystemStability() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Capacidade do Sistema */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Server className="w-4 h-4" />
+                Capacidade do Sistema
+              </CardTitle>
+              <CardDescription>Monitoramento de recursos do servidor</CardDescription>
+            </div>
+            {/* Indicador de conexão em tempo real */}
+            <div className="flex items-center gap-2">
+              {sseConnected ? (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/10 border border-green-500/20">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-xs font-medium text-green-600">Tempo real</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+                  <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                  <span className="text-xs font-medium text-yellow-600">Polling</span>
+                </div>
+              )}
+              {lastUpdate && (
+                <span className="text-xs text-muted-foreground">
+                  Atualizado: {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingCapacity ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Carregando...</span>
+            </div>
+          ) : systemCapacity ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Armazenamento */}
+              <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                <div className="flex items-center gap-2 mb-3">
+                  <HardDrive className="w-5 h-5 text-blue-500" />
+                  <span className="font-medium text-foreground">Armazenamento</span>
+                </div>
+                <Progress value={systemCapacity.storage.percentage} className="mb-2" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Usado: {systemCapacity.storage.formatted.used}</span>
+                  <span>Total: {systemCapacity.storage.formatted.total}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Disponível: {systemCapacity.storage.formatted.available}
+                </p>
+              </div>
+
+              {/* Memória */}
+              <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                <div className="flex items-center gap-2 mb-3">
+                  <MemoryStick className="w-5 h-5 text-purple-500" />
+                  <span className="font-medium text-foreground">Memória RAM</span>
+                </div>
+                <Progress value={systemCapacity.memory.percentage} className="mb-2" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Usado: {systemCapacity.memory.formatted.used}</span>
+                  <span>Total: {systemCapacity.memory.formatted.total}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Livre: {systemCapacity.memory.formatted.free}
+                </p>
+              </div>
+
+              {/* CPU */}
+              <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cpu className="w-5 h-5 text-green-500" />
+                  <span className="font-medium text-foreground">CPU</span>
+                </div>
+                <Progress value={systemCapacity.cpu.usage} className="mb-2" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Uso: {systemCapacity.cpu.usage}%</span>
+                  <span>Cores: {systemCapacity.cpu.cores}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate" title={systemCapacity.cpu.model}>
+                  {systemCapacity.cpu.model}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Server className="w-10 h-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Não foi possível carregar os dados de capacidade</p>
+            </div>
+          )}
+          
+          {systemCapacity && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  <span>Uptime: {systemCapacity.uptime.formatted}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Wifi className="w-4 h-4" />
+                  <span>Plataforma: {systemCapacity.platform.platform} ({systemCapacity.platform.arch})</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Histórico de Status */}
       <Card>

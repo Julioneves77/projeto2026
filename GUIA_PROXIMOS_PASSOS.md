@@ -367,3 +367,4 @@ sudo tail -f /var/log/nginx/access.log
 
 Depois, quando estiver pronto para deploy, siga os passos de infraestrutura.
 
+

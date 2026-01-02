@@ -92,3 +92,4 @@ Abra o arquivo **`COMANDOS_PARA_COPIAR_COLAR.md`** e siga os passos na ordem.
 
 Boa sorte! 🎉
 
+

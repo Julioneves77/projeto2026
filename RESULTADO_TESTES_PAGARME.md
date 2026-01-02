@@ -171,3 +171,4 @@ O sistema processa corretamente os seguintes formatos:
 
 O webhook do Pagar.me está **100% funcional** e pronto para produção. Todos os cenários de teste foram validados e o sistema está preparado para processar pagamentos via Pagar.me corretamente.
 
+

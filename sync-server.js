@@ -16,8 +16,12 @@ const zapApiService = require('./services/zapApiService');
 const { validateEmail, validatePhone } = require('./utils/validators');
 const logger = require('./utils/logger');
 const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
+const os = require('os');
 
 const app = express();
+
+// Armazenar conexões SSE ativas para métricas do sistema
+const sseClients = new Set();
 const PORT = process.env.PORT || 3001;
 const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
@@ -167,8 +171,10 @@ const authenticateRequest = (req, res, next) => {
     return next();
   }
 
-  // Verificar API Key no header
-  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  // Verificar API Key no header ou query string (query string necessário para SSE/EventSource)
+  const apiKey = req.headers['x-api-key'] || 
+                 req.headers['authorization']?.replace('Bearer ', '') ||
+                 req.query.apiKey;
   
   if (!apiKey || apiKey !== process.env.SYNC_SERVER_API_KEY) {
     return res.status(401).json({ 
@@ -205,8 +211,199 @@ app.get('/', (req, res) => {
       health: '/health',
       tickets: '/tickets',
       upload: '/upload',
-      transactions: '/transactions/pix'
+      transactions: '/transactions/pix',
+      system: '/system/capacity',
+      storage: '/contact-messages/storage-stats'
     }
+  });
+});
+
+// GET /system/capacity - Capacidade do sistema (memória, disco, CPU)
+app.get('/system/capacity', authenticateRequest, (req, res) => {
+  try {
+    // Informações de memória
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+    const memoryPercentage = Math.round((usedMemory / totalMemory) * 100);
+    
+    // Informações de disco (diretório de trabalho)
+    const workDir = __dirname;
+    let diskTotal = 0;
+    let diskFree = 0;
+    let diskUsed = 0;
+    
+    try {
+      // Calcular tamanho dos arquivos no diretório
+      diskUsed = calculateDirectorySize(workDir);
+      // Estimar capacidade total (assumir 20GB se não conseguir obter)
+      diskTotal = 20 * 1024 * 1024 * 1024; // 20GB
+      diskFree = diskTotal - diskUsed;
+    } catch (diskError) {
+      // Se falhar, usar valores padrão
+      diskUsed = calculateDirectorySize(workDir);
+      diskTotal = 20 * 1024 * 1024 * 1024; // 20GB padrão
+      diskFree = diskTotal - diskUsed;
+    }
+    
+    const diskPercentage = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
+    
+    // Informações de CPU
+    const cpus = os.cpus();
+    const loadAvg = os.loadavg();
+    // Calcular uso médio de CPU (estimativa baseada em load average)
+    const cpuUsage = Math.min(100, Math.round((loadAvg[0] / cpus.length) * 100));
+    
+    res.json({
+      storage: {
+        total: diskTotal,
+        used: diskUsed,
+        available: diskFree,
+        percentage: diskPercentage,
+        formatted: {
+          total: formatBytes(diskTotal),
+          used: formatBytes(diskUsed),
+          available: formatBytes(diskFree)
+        }
+      },
+      memory: {
+        total: totalMemory,
+        used: usedMemory,
+        free: freeMemory,
+        percentage: memoryPercentage,
+        formatted: {
+          total: formatBytes(totalMemory),
+          used: formatBytes(usedMemory),
+          free: formatBytes(freeMemory)
+        }
+      },
+      cpu: {
+        loadAverage: loadAvg,
+        usage: cpuUsage,
+        cores: cpus.length,
+        model: cpus[0]?.model || 'Unknown'
+      },
+      uptime: {
+        seconds: os.uptime(),
+        formatted: formatUptime(os.uptime())
+      },
+      platform: {
+        type: os.type(),
+        platform: os.platform(),
+        arch: os.arch(),
+        hostname: os.hostname()
+      }
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /system/capacity' });
+    res.status(500).json({ error: 'Erro ao obter capacidade do sistema' });
+  }
+});
+
+// GET /system/capacity/stream - SSE para métricas em tempo real
+app.get('/system/capacity/stream', authenticateRequest, (req, res) => {
+  logger.info('SSE /system/capacity/stream - Cliente conectado', { ip: req.ip });
+  
+  // Configurar headers SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Desabilitar buffering no Nginx
+  res.flushHeaders();
+  
+  // Adicionar cliente à lista
+  sseClients.add(res);
+  console.log(`📡 [SSE] Cliente conectado. Total: ${sseClients.size}`);
+  
+  // Função para coletar e enviar métricas
+  const sendMetrics = () => {
+    try {
+      const totalMemory = os.totalmem();
+      const freeMemory = os.freemem();
+      const usedMemory = totalMemory - freeMemory;
+      const memoryPercentage = Math.round((usedMemory / totalMemory) * 100);
+      
+      const workDir = __dirname;
+      let diskUsed = 0;
+      try {
+        diskUsed = calculateDirectorySize(workDir);
+      } catch {}
+      const diskTotal = 20 * 1024 * 1024 * 1024; // 20GB
+      const diskFree = diskTotal - diskUsed;
+      const diskPercentage = Math.round((diskUsed / diskTotal) * 100);
+      
+      const cpus = os.cpus();
+      const loadAvg = os.loadavg();
+      const cpuUsage = Math.min(100, Math.round((loadAvg[0] / cpus.length) * 100));
+      
+      const data = {
+        storage: {
+          total: diskTotal,
+          used: diskUsed,
+          available: diskFree,
+          percentage: diskPercentage,
+          formatted: {
+            total: formatBytes(diskTotal),
+            used: formatBytes(diskUsed),
+            available: formatBytes(diskFree)
+          }
+        },
+        memory: {
+          total: totalMemory,
+          used: usedMemory,
+          free: freeMemory,
+          percentage: memoryPercentage,
+          formatted: {
+            total: formatBytes(totalMemory),
+            used: formatBytes(usedMemory),
+            free: formatBytes(freeMemory)
+          }
+        },
+        cpu: {
+          loadAverage: loadAvg,
+          usage: cpuUsage,
+          cores: cpus.length,
+          model: cpus[0]?.model || 'Unknown'
+        },
+        uptime: {
+          seconds: os.uptime(),
+          formatted: formatUptime(os.uptime())
+        },
+        platform: {
+          type: os.type(),
+          platform: os.platform(),
+          arch: os.arch(),
+          hostname: os.hostname()
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      res.write(`event: capacity-update\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (error) {
+      console.error('❌ [SSE] Erro ao enviar métricas:', error.message);
+    }
+  };
+  
+  // Enviar métricas imediatamente
+  sendMetrics();
+  
+  // Configurar intervalo de 5 segundos
+  const intervalId = setInterval(sendMetrics, 5000);
+  
+  // Heartbeat a cada 30 segundos para manter conexão viva
+  const heartbeatId = setInterval(() => {
+    try {
+      res.write(`:heartbeat\n\n`);
+    } catch {}
+  }, 30000);
+  
+  // Limpar quando cliente desconectar
+  req.on('close', () => {
+    clearInterval(intervalId);
+    clearInterval(heartbeatId);
+    sseClients.delete(res);
+    console.log(`📡 [SSE] Cliente desconectado. Total: ${sseClients.size}`);
   });
 });
 
@@ -291,12 +488,14 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     // Data de expiração do PIX (30 minutos a partir de agora)
     const pixExpirationDate = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     
+    // Criar transação PIX diretamente (Transactions aparecem no dashboard da Pagar.me)
+    // O external_id é usado para identificar o pedido no dashboard
     const payload = {
       api_key: PAGARME_SECRET_KEY,
       amount: Math.round(amountValue), // Pagar.me trabalha com centavos
       payment_method: 'pix',
       pix_expiration_date: pixExpirationDate, // Expiração do QR Code PIX
-      external_id: externalId, // ID único obrigatório para produção
+      external_id: externalId, // ID único obrigatório - usado para identificar no dashboard
       customer: {
         external_id: `customer-${docNumber}`, // ID externo do cliente
         name: customer.name,
@@ -307,9 +506,10 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
           type: documentType,
           number: docNumber
         }],
-        ...(phoneDDD && phoneNumber && {
-          phone_numbers: [`+55${phoneDDD}${phoneNumber}`],
-        }),
+        // Telefone é opcional - só incluir se fornecido, senão usar padrão
+        phone_numbers: phoneDDD && phoneNumber 
+          ? [`+55${phoneDDD}${phoneNumber}`]
+          : ['+5511999999999'], // Telefone padrão para evitar erro da API
       },
       items: [{
         id: externalId,
@@ -324,7 +524,8 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     console.log('📦 [Pagar.me] Criando transação PIX via sync-server...', {
       amount: payload.amount,
       customer: payload.customer.name,
-      ticket_id: metadata?.ticket_id || metadata?.ticket_code || 'N/A'
+      ticket_id: metadata?.ticket_id || metadata?.ticket_code || 'N/A',
+      external_id: externalId
     });
     
     // Criar transação no Pagar.me
@@ -339,6 +540,7 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     
     console.log('✅ [Pagar.me] Transação criada via sync-server:', {
       id: transaction.id,
+      external_id: transaction.external_id || externalId,
       status: transaction.status,
       pix_qr_code: transaction.pix_qr_code ? 'Gerado' : 'Não gerado'
     });
@@ -346,6 +548,7 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     // Retornar dados formatados para o frontend
     res.json({
       id: transaction.id.toString(),
+      external_id: transaction.external_id || externalId,
       status: transaction.status,
       amount: transaction.amount,
       payment_method: 'pix',
@@ -363,11 +566,20 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     
     console.error('❌ [Pagar.me] Erro ao criar transação via sync-server:', error.message);
     
+    // Log detalhado do erro
+    if (error.response) {
+      console.error('❌ [Pagar.me] Detalhes do erro:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: JSON.stringify(error.response.data, null, 2)
+      });
+    }
+    
     // Tratar erros específicos do Pagar.me
     if (error.response) {
       const status = error.response.status;
       const errorData = error.response.data || {};
-      const errorMessage = errorData.message || errorData.errors?.[0]?.message || 'Erro ao criar transação';
+      const errorMessage = errorData.message || errorData.errors?.[0]?.message || JSON.stringify(errorData);
 
       // Fallback para testes se bloqueio de IP no Pagar.me
       if (status === 401 && (errorMessage || '').toLowerCase().includes('ip de origem')) {
@@ -601,10 +813,19 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
   logger.info('POST /tickets - Criando novo ticket', { ip: req.ip });
   const newTicket = req.body;
   
+  console.log('📥 [SYNC] POST /tickets - Dados recebidos:', {
+    id: newTicket.id,
+    codigo: newTicket.codigo,
+    status: newTicket.status,
+    nomeCompleto: newTicket.nomeCompleto,
+    dataCadastro: newTicket.dataCadastro
+  });
+  
   // Validar ticket
   const validation = validateTicket(newTicket);
   if (!validation.isValid) {
     logger.warn('Ticket validation failed', { errors: validation.errors, ip: req.ip });
+    console.error('❌ [SYNC] Validação do ticket falhou:', validation.errors);
     return res.status(400).json({ 
       error: 'Dados do ticket inválidos',
       errors: validation.errors 
@@ -614,11 +835,19 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
   // Usar ticket sanitizado
   const sanitizedTicket = validation.sanitized;
   
+  console.log('📥 [SYNC] Ticket sanitizado:', {
+    id: sanitizedTicket.id,
+    codigo: sanitizedTicket.codigo,
+    status: sanitizedTicket.status
+  });
+  
   if (!sanitizedTicket.id || !sanitizedTicket.codigo) {
+    console.error('❌ [SYNC] Ticket sem id ou codigo');
     return res.status(400).json({ error: 'Ticket deve ter id e codigo' });
   }
   
   const tickets = readTickets();
+  console.log(`📥 [SYNC] Total de tickets existentes: ${tickets.length}`);
   
   // Verificar se ticket já existe
   const existingByCode = tickets.find(t => t.codigo === sanitizedTicket.codigo);
@@ -627,14 +856,17 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
   // Se mesmo ID, é uma atualização do mesmo ticket (permitir)
   if (existingById && existingById.id === sanitizedTicket.id) {
     logger.info(`Ticket ${sanitizedTicket.codigo} (ID: ${sanitizedTicket.id}) já existe com mesmo ID, atualizando...`);
+    console.log(`🔄 [SYNC] Ticket ${sanitizedTicket.codigo} já existe, atualizando...`);
     const existingIndex = tickets.findIndex(t => t.id === sanitizedTicket.id);
     tickets[existingIndex] = { ...tickets[existingIndex], ...sanitizedTicket };
     
     if (saveTickets(tickets)) {
       logger.info(`Ticket ${sanitizedTicket.codigo} atualizado com sucesso`);
+      console.log(`✅ [SYNC] Ticket ${sanitizedTicket.codigo} atualizado com status: ${sanitizedTicket.status}`);
       res.json(sanitizedTicket);
     } else {
       logger.error('Erro ao salvar ticket', { codigo: sanitizedTicket.codigo });
+      console.error(`❌ [SYNC] Erro ao salvar ticket ${sanitizedTicket.codigo}`);
       res.status(500).json({ error: 'Erro ao salvar ticket' });
     }
     return;
@@ -648,6 +880,7 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
       newId: sanitizedTicket.id,
       ip: req.ip
     });
+    console.warn(`⚠️ [SYNC] Tentativa de criar ticket duplicado: ${sanitizedTicket.codigo}`);
     return res.status(409).json({ 
       error: 'Código de ticket já existe',
       conflict: {
@@ -661,13 +894,17 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
   
   // Ticket novo, adicionar
   logger.info(`Adicionando novo ticket ${sanitizedTicket.codigo}`);
+  console.log(`➕ [SYNC] Adicionando novo ticket ${sanitizedTicket.codigo} com status: ${sanitizedTicket.status}`);
   tickets.push(sanitizedTicket);
   
   if (saveTickets(tickets)) {
     logger.info(`Ticket ${sanitizedTicket.codigo} salvo com sucesso`);
+    console.log(`✅ [SYNC] Ticket ${sanitizedTicket.codigo} salvo com sucesso! Status: ${sanitizedTicket.status}`);
+    console.log(`✅ [SYNC] Total de tickets após salvar: ${tickets.length}`);
     res.json(sanitizedTicket);
   } else {
     logger.error('Erro ao salvar ticket', { codigo: sanitizedTicket.codigo });
+    console.error(`❌ [SYNC] Erro ao salvar ticket ${sanitizedTicket.codigo}`);
     res.status(500).json({ error: 'Erro ao salvar ticket' });
   }
 });
@@ -1252,17 +1489,49 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       metadata = event.metadata || {};
     }
     
-    const ticketId = metadata.ticket_id;
+    // Tentar encontrar ticket_id em diferentes locais
+    let ticketId = metadata.ticket_id || metadata.ticket_code;
+    
+    // Se não encontrou no metadata direto, verificar em diferentes estruturas
+    if (!ticketId) {
+      // Tentar no order/transaction direto
+      if (orderOrTransaction.metadata) {
+        ticketId = orderOrTransaction.metadata.ticket_id || orderOrTransaction.metadata.ticket_code;
+      }
+      
+      // Tentar nos items
+      if (!ticketId && orderOrTransaction.items && Array.isArray(orderOrTransaction.items)) {
+        for (const item of orderOrTransaction.items) {
+          if (item.metadata && (item.metadata.ticket_id || item.metadata.ticket_code)) {
+            ticketId = item.metadata.ticket_id || item.metadata.ticket_code;
+            break;
+          }
+        }
+      }
+      
+      // Tentar no external_id (pode conter o ticket_id)
+      if (!ticketId && orderOrTransaction.external_id) {
+        const externalId = orderOrTransaction.external_id.toString();
+        // Se external_id começa com ticket- ou TK-, usar ele
+        if (externalId.startsWith('ticket-') || externalId.startsWith('TK-')) {
+          ticketId = externalId;
+        }
+      }
+    }
     
     console.log('📦 [Pagar.me Webhook] Dados extraídos:', {
       orderOrTransactionId,
       ticketId,
-      metadata
+      metadata,
+      external_id: orderOrTransaction.external_id,
+      fullOrderOrTransaction: JSON.stringify(orderOrTransaction, null, 2).substring(0, 500)
     });
     
     if (!ticketId) {
-      console.warn('⚠️ [Pagar.me Webhook] Ticket ID não encontrado no metadata:', metadata);
-      return res.status(200).json({ received: true, processed: false, reason: 'Ticket ID não encontrado' });
+      console.warn('⚠️ [Pagar.me Webhook] Ticket ID não encontrado. Metadata completo:', JSON.stringify(metadata, null, 2));
+      console.warn('⚠️ [Pagar.me Webhook] Order/Transaction completo:', JSON.stringify(orderOrTransaction, null, 2).substring(0, 1000));
+      // Não retornar erro 200 para que Pagar.me tente novamente
+      return res.status(500).json({ received: true, processed: false, reason: 'Ticket ID não encontrado no webhook' });
     }
     
     // Buscar ticket
@@ -1501,6 +1770,101 @@ app.get('/contact-messages/stats', authenticateRequest, (req, res) => {
   }
 });
 
+// GET /contact-messages/storage-stats - Estatísticas de armazenamento
+app.get('/contact-messages/storage-stats', authenticateRequest, (req, res) => {
+  try {
+    const messages = readContactMessages();
+    
+    // Calcular tamanho do arquivo JSON
+    let fileSize = 0;
+    if (fs.existsSync(CONTACT_MESSAGES_FILE)) {
+      const stats = fs.statSync(CONTACT_MESSAGES_FILE);
+      fileSize = stats.size;
+    }
+    
+    // Calcular tamanho estimado das mensagens em memória (JSON stringificado)
+    const messagesJson = JSON.stringify(messages);
+    const estimatedSize = Buffer.byteLength(messagesJson, 'utf8');
+    
+    // Usar o maior valor (arquivo ou estimativa)
+    const used = Math.max(fileSize, estimatedSize);
+    
+    // Capacidade configurável (padrão: 100MB)
+    const capacityBytes = parseInt(process.env.EMAIL_STORAGE_CAPACITY || '104857600', 10); // 100MB em bytes
+    const percentage = capacityBytes > 0 ? Math.round((used / capacityBytes) * 100) : 0;
+    
+    res.json({
+      used,
+      capacity: capacityBytes,
+      percentage,
+      messagesCount: messages.length,
+      formatted: {
+        used: formatBytes(used),
+        capacity: formatBytes(capacityBytes),
+        available: formatBytes(Math.max(0, capacityBytes - used))
+      }
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /contact-messages/storage-stats' });
+    res.status(500).json({ error: 'Erro ao obter estatísticas de armazenamento' });
+  }
+});
+
+// Função auxiliar para formatar bytes
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Função auxiliar para formatar uptime
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  
+  return parts.join(' ');
+}
+
+// Função auxiliar para calcular tamanho do diretório
+function calculateDirectorySize(dirPath) {
+  let totalSize = 0;
+  
+  try {
+    const items = fs.readdirSync(dirPath);
+    
+    for (const item of items) {
+      // Ignorar node_modules e .git para performance
+      if (item === 'node_modules' || item === '.git') continue;
+      
+      const itemPath = path.join(dirPath, item);
+      
+      try {
+        const stats = fs.statSync(itemPath);
+        
+        if (stats.isFile()) {
+          totalSize += stats.size;
+        } else if (stats.isDirectory()) {
+          totalSize += calculateDirectorySize(itemPath);
+        }
+      } catch {
+        // Ignorar erros de permissão
+      }
+    }
+  } catch {
+    // Retornar 0 se não conseguir ler o diretório
+  }
+  
+  return totalSize;
+}
+
 // POST /contact-messages - Receber nova mensagem do formulário de contato (PORTAL)
 app.post('/contact-messages', createTicketLimiter, async (req, res) => {
   try {
@@ -1728,6 +2092,134 @@ app.post('/contact-messages/:id/reply', authenticateRequest, async (req, res) =>
   } catch (error) {
     logger.logError(error, { endpoint: 'POST /contact-messages/:id/reply' });
     res.status(500).json({ error: 'Erro ao enviar resposta' });
+  }
+});
+
+// POST /contact-messages/compose - Compor e enviar novo email
+app.post('/contact-messages/compose', authenticateRequest, async (req, res) => {
+  logger.info('POST /contact-messages/compose - Compor novo email', { ip: req.ip });
+  
+  try {
+    const { to, cc, bcc, subject, content, draft } = req.body;
+    
+    // Validar campos obrigatórios
+    if (!to || !subject || !content) {
+      return res.status(400).json({ 
+        error: 'Campos obrigatórios: to, subject, content' 
+      });
+    }
+    
+    // Validar email destinatário (pode ser múltiplos separados por vírgula)
+    const toEmails = to.split(',').map(e => e.trim());
+    for (const email of toEmails) {
+      if (!validateEmail(email)) {
+        return res.status(400).json({ error: `Email destinatário inválido: ${email}` });
+      }
+    }
+    
+    // Validar emails CC e BCC se fornecidos
+    if (cc) {
+      const ccEmails = cc.split(',').map(e => e.trim());
+      for (const email of ccEmails) {
+        if (!validateEmail(email)) {
+          return res.status(400).json({ error: `Email CC inválido: ${email}` });
+        }
+      }
+    }
+    if (bcc) {
+      const bccEmails = bcc.split(',').map(e => e.trim());
+      for (const email of bccEmails) {
+        if (!validateEmail(email)) {
+          return res.status(400).json({ error: `Email BCC inválido: ${email}` });
+        }
+      }
+    }
+    
+    const messages = readContactMessages();
+    
+    // Gerar ID único
+    const id = `MSG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const newMessage = {
+      id,
+      type: 'sent',
+      from: 'Sistema',
+      fromEmail: process.env.SUPPORT_EMAIL || 'suporte@portalcertidao.org',
+      to: to.split(',')[0].trim(), // Pegar primeiro email se múltiplos
+      toEmail: to,
+      cc: cc || null,
+      bcc: bcc || null,
+      subject,
+      preview: content.replace(/<[^>]*>/g, '').substring(0, 100) + (content.length > 100 ? '...' : ''),
+      content, // HTML do editor rico
+      read: true,
+      starred: false,
+      archived: false,
+      deleted: false,
+      hasAttachment: false,
+      createdAt: new Date().toISOString(),
+      replies: [],
+      draft: draft || false
+    };
+    
+    // Se não for rascunho, enviar email via SendPulse
+    if (!draft) {
+      try {
+        // Preparar destinatários
+        const recipients = to.split(',').map(e => e.trim());
+        const ccRecipients = cc ? cc.split(',').map(e => e.trim()) : undefined;
+        const bccRecipients = bcc ? bcc.split(',').map(e => e.trim()) : undefined;
+        
+        // Enviar email via SendPulse
+        const emailResult = await sendPulseService.sendEmail({
+          to: recipients,
+          cc: ccRecipients,
+          bcc: bccRecipients,
+          subject,
+          html: content,
+          from: {
+            name: 'Portal Certidão',
+            email: process.env.SUPPORT_EMAIL || 'suporte@portalcertidao.org'
+          }
+        });
+        
+        if (!emailResult.success) {
+          console.error('❌ [Compose Email] Erro ao enviar email:', emailResult.error);
+          return res.status(500).json({ 
+            error: 'Erro ao enviar email',
+            details: emailResult.error 
+          });
+        }
+        
+        console.log('✅ [Compose Email] Email enviado com sucesso para:', to);
+      } catch (emailError) {
+        console.error('❌ [Compose Email] Erro ao enviar email:', emailError);
+        return res.status(500).json({ 
+          error: 'Erro ao enviar email',
+          details: emailError.message 
+        });
+      }
+    }
+    
+    // Salvar mensagem
+    messages.push(newMessage);
+    saveContactMessages(messages);
+    
+    logger.info('Email composto salvo', { 
+      id, 
+      to, 
+      draft: draft || false 
+    });
+    
+    res.status(201).json({
+      success: true,
+      message: newMessage,
+      sent: !draft
+    });
+    
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /contact-messages/compose' });
+    res.status(500).json({ error: 'Erro ao compor email' });
   }
 });
 

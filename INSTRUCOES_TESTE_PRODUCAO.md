@@ -85,3 +85,4 @@ No código (`PLATAFORMA/src/components/Tickets.tsx`):
    - Configuração do Nginx
    - CORS e autenticação
 
+

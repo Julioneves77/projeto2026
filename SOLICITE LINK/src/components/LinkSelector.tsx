@@ -71,9 +71,8 @@ const LinkSelector = () => {
   return (
     <div className="card-main max-w-md w-full mx-auto animate-fade-in-up">
       <div className="text-center mb-6">
-        <span className="badge">Selecione abaixo</span>
         <h2 className="text-xl font-semibold text-foreground mt-1">
-          Escolha seu link
+          Selecione a Opção
         </h2>
       </div>
 

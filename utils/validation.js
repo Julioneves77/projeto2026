@@ -67,6 +67,12 @@ function validateTicket(ticket) {
     errors.push(`status deve ser um dos: ${validStatuses.join(', ')}`);
   }
   
+  // Garantir que ticket novo sempre tenha status GERAL se não especificado
+  // IMPORTANTE: Tickets criados no PORTAL devem começar com status GERAL
+  if (!ticket.status) {
+    ticket.status = 'GERAL';
+  }
+  
   // Validar prioridade
   const validPriorities = ['padrao', 'prioridade', 'premium'];
   if (ticket.prioridade && !validPriorities.includes(ticket.prioridade)) {
@@ -78,10 +84,16 @@ function validateTicket(ticket) {
     errors.push('historico deve ser um array');
   }
   
+  // Garantir que sanitized preserve o status
+  const sanitized = {
+    ...ticket,
+    status: ticket.status || 'GERAL' // Sempre garantir status GERAL para tickets novos
+  };
+  
   return {
     isValid: errors.length === 0,
     errors,
-    sanitized: ticket
+    sanitized: sanitized
   };
 }
 

@@ -157,3 +157,4 @@ npm run preview
 
 **Total: ~1 hora para deploy completo**
 
+

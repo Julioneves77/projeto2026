@@ -65,3 +65,4 @@ echo "3. sudo bash scripts/configure-nginx.sh"
 echo "4. sudo bash scripts/configure-ssl.sh"
 echo "5. bash scripts/start-services.sh"
 
+
