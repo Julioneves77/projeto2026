@@ -55,6 +55,8 @@ export interface Ticket {
   dataAtribuicao: Date | null;
   dataConclusao: Date | null;
   historico: HistoricoItem[];
+  // Dados completos do formulário (nomeMae, rg, comarca, nacionalidade, etc.)
+  dadosFormulario?: Record<string, string | boolean>;
 }
 
 export interface RespostaPronta {

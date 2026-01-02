@@ -61,6 +61,8 @@ export interface TicketData {
   dataAtribuicao: null;
   dataConclusao: null;
   historico: any[];
+  // Dados completos do formulário para preservar TODOS os campos obrigatórios
+  dadosFormulario: Record<string, string | boolean>;
 }
 
 interface PortalFormData {
@@ -257,6 +259,21 @@ async function mapFormDataToTicket(
   // Gerar código do ticket (aguardar se necessário)
   const codigo = await generateTicketCode();
   
+  // Preservar TODOS os dados do formulário (campos obrigatórios como nomeMae, rg, comarca, etc.)
+  const dadosFormulario: Record<string, string | boolean> = {};
+  for (const [key, value] of Object.entries(formData)) {
+    // Ignorar checkbox de termos, mas preservar todos os outros campos
+    if (key !== 'termos') {
+      dadosFormulario[key] = value;
+    }
+  }
+  // Adicionar estado selecionado se disponível
+  if (state) {
+    dadosFormulario['estadoSelecionado'] = state;
+  }
+  
+  console.log('🔵 [PORTAL] Dados do formulário preservados:', Object.keys(dadosFormulario));
+  
   const ticket: TicketData = {
     id: generateTicketId(),
     codigo: codigo,
@@ -278,6 +295,7 @@ async function mapFormDataToTicket(
     dataAtribuicao: null,
     dataConclusao: null,
     historico: [],
+    dadosFormulario, // IMPORTANTE: Preserva TODOS os campos do formulário
   };
   
   console.log('🔵 [PORTAL] Ticket final criado:', {

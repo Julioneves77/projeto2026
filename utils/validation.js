@@ -84,10 +84,37 @@ function validateTicket(ticket) {
     errors.push('historico deve ser um array');
   }
   
+  // Validar e sanitizar dadosFormulario se presente
+  // IMPORTANTE: Este campo contém todos os dados obrigatórios do formulário (nomeMae, rg, comarca, etc.)
+  let dadosFormularioSanitized = null;
+  if (ticket.dadosFormulario) {
+    if (typeof ticket.dadosFormulario !== 'object' || Array.isArray(ticket.dadosFormulario)) {
+      errors.push('dadosFormulario deve ser um objeto');
+    } else {
+      dadosFormularioSanitized = {};
+      for (const [key, value] of Object.entries(ticket.dadosFormulario)) {
+        // Sanitizar chave (apenas alfanuméricos e underscore)
+        const safeKey = key.replace(/[^a-zA-Z0-9_]/g, '');
+        if (safeKey && safeKey.length <= 50) {
+          // Sanitizar valor (strings são sanitizadas, booleans mantidos)
+          if (typeof value === 'string') {
+            const sanitizedValue = sanitizeString(value);
+            if (sanitizedValue.length <= 1000) {
+              dadosFormularioSanitized[safeKey] = sanitizedValue;
+            }
+          } else if (typeof value === 'boolean') {
+            dadosFormularioSanitized[safeKey] = value;
+          }
+        }
+      }
+    }
+  }
+  
   // Garantir que sanitized preserve o status
   const sanitized = {
     ...ticket,
-    status: ticket.status || 'GERAL' // Sempre garantir status GERAL para tickets novos
+    status: ticket.status || 'GERAL', // Sempre garantir status GERAL para tickets novos
+    ...(dadosFormularioSanitized && { dadosFormulario: dadosFormularioSanitized })
   };
   
   return {

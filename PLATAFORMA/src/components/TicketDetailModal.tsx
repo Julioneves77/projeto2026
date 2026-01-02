@@ -697,6 +697,73 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                   </div>
                 </div>
 
+                {/* Dados Completos do Formulário - TODOS os campos obrigatórios */}
+                {ticket.dadosFormulario && Object.keys(ticket.dadosFormulario).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 bg-primary rounded-full"></span>
+                      Dados Completos do Formulário
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {Object.entries(ticket.dadosFormulario)
+                        .filter(([, value]) => value !== '' && value !== false)
+                        .map(([key, value]) => {
+                          // Formatar nome do campo para exibição
+                          const labelMap: Record<string, string> = {
+                            tipoDocumento: 'Tipo de Documento',
+                            cpf: 'CPF',
+                            cnpj: 'CNPJ',
+                            nomeCompleto: 'Nome Completo',
+                            razaoSocial: 'Razão Social',
+                            nomeFantasia: 'Nome Fantasia',
+                            nomeMae: 'Nome da Mãe',
+                            dataNascimento: 'Data de Nascimento',
+                            rg: 'RG',
+                            rgOrgaoEmissor: 'Órgão Emissor do RG',
+                            nacionalidade: 'Nacionalidade',
+                            estadoCivil: 'Estado Civil',
+                            enderecoCompleto: 'Endereço Completo',
+                            comarca: 'Comarca',
+                            finalidade: 'Finalidade',
+                            modelo: 'Modelo',
+                            pessoa: 'Pessoa',
+                            tipoCertidao: 'Tipo de Certidão',
+                            estadoEmissao: 'Estado de Emissão',
+                            estadoSelecionado: 'Estado Selecionado',
+                            paisNascimento: 'País de Nascimento',
+                            ufNascimento: 'UF de Nascimento',
+                            municipioNascimento: 'Município de Nascimento',
+                            telefone: 'Telefone',
+                            email: 'E-mail',
+                            sexo: 'Sexo'
+                          };
+                          const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                          const displayValue = typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value);
+                          
+                          return (
+                            <div key={key} className="flex items-start justify-between p-3 bg-primary/5 rounded-lg border border-primary/10">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-primary/70 mb-1 font-medium">{label}</p>
+                                <p className="text-sm font-medium text-foreground break-words">{displayValue}</p>
+                              </div>
+                              <button
+                                onClick={() => copyToClipboard(displayValue, `form_${key}`)}
+                                className="copy-btn flex-shrink-0 ml-2"
+                                title="Copiar valor"
+                              >
+                                {copiedField === `form_${key}` ? (
+                                  <Check className="w-4 h-4 text-status-complete" />
+                                ) : (
+                                  <Copy className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Dados do Ticket - apenas para admin/financeiro */}
                 {userRole !== 'atendente' && (
                   <div>
