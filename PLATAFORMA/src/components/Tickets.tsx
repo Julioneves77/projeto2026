@@ -113,10 +113,14 @@ export function Tickets() {
       );
     })
     .sort((a, b) => {
-      // Primeiro ordena por prioridade
+      // Na aba Geral: ordenar apenas por data (mais recente primeiro)
+      if (activeTab === 'geral') {
+        return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
+      }
+      
+      // Nas outras abas: primeiro por prioridade, depois por data
       const prioridadeDiff = getPrioridadeOrder(a.prioridade) - getPrioridadeOrder(b.prioridade);
       if (prioridadeDiff !== 0) return prioridadeDiff;
-      // Depois ordena por data de cadastro (mais recente primeiro)
       return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
     });
 
