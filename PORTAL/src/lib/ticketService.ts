@@ -1,10 +1,22 @@
 /**
  * Serviço para criar tickets no formato da PLATAFORMA
  * Usa servidor de sincronização para integração entre PORTAL e PLATAFORMA
+ * 
+ * IMPORTANTE: Preserva TODOS os campos obrigatórios do formulário
+ * (nomeMae, nacionalidade, paisNascimento, rg, comarca, etc.)
+ * no campo dadosFormulario para uso na PLATAFORMA.
+ * 
+ * @updated 2026-01-02 - Adicionado dadosFormulario para campos obrigatórios
  */
+
+// Versão do serviço para controle de cache
+const TICKET_SERVICE_VERSION = '2.0.1-dadosFormulario';
 
 // URL do servidor de sincronização - configurável via variável de ambiente
 const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+
+// Log versão ao carregar módulo
+console.log(`📋 [PORTAL] TicketService v${TICKET_SERVICE_VERSION} carregado`);
 
 // API Key para autenticação (opcional)
 const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
