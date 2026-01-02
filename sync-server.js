@@ -411,10 +411,10 @@ app.get('/system/capacity/stream', authenticateRequest, (req, res) => {
 // Endpoints Pagar.me (registrados ANTES do middleware global)
 // ============================================
 
-// POST /transactions/pix - Criar transação PIX via Pagar.me (proxy do frontend)
-// Usa raw já aplicado no middleware e faz parse manual simples
+// POST /transactions/pix - Criar pedido PIX via Pagar.me API v5
+// Migrado de API v1 (/1/transactions) para API v5 (/core/v5/orders)
 app.post('/transactions/pix', authenticateRequest, async (req, res) => {
-  logger.info('POST /transactions/pix - Criando transação PIX', { ip: req.ip });
+  logger.info('POST /transactions/pix - Criando pedido PIX (API v5)', { ip: req.ip });
   
   try {
     // Coletar corpo bruto da requisição (já entregue pelo express.raw)
@@ -431,9 +431,7 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       // Tentar converter payload sem aspas em JSON válido
       try {
         const fixed = raw
-          // adicionar aspas em chaves sem aspas
           .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
-          // adicionar aspas em valores texto não numéricos e sem aspas
           .replace(/:\s*([a-zA-Z@._-]+)(\s*[,}])/g, ':"$1"$2');
         body = JSON.parse(fixed);
       } catch (e2) {
@@ -451,10 +449,9 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       return res.status(400).json({ error: 'Corpo inválido', details: 'Esperado JSON' });
     }
 
-    const { amount, customer = {}, metadata, payment_method } = body;
-    const paymentMethod = payment_method || 'pix';
+    const { amount, customer = {}, metadata } = body;
 
-    // Normalizar campos para evitar erros em fallback
+    // Normalizar campos
     const amountValue = Number(amount || 0);
     const metadataValue = metadata || {};
 
@@ -474,87 +471,105 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       return res.status(500).json({ error: 'Configuração de pagamento não disponível' });
     }
     
-    // Preparar payload para Pagar.me
     const axios = require('axios');
     const docNumber = (customer.document_number ?? '').toString().replace(/\D/g, '');
-    const phoneDDD = customer.phone?.ddd ? customer.phone.ddd.toString() : undefined;
-    const phoneNumber = customer.phone?.number ? customer.phone.number.toString() : undefined;
+    const phoneDDD = customer.phone?.ddd ? customer.phone.ddd.toString() : '11';
+    const phoneNumber = customer.phone?.number ? customer.phone.number.toString() : '999999999';
 
-    // Gerar external_id único (exigido pela API de produção do Pagar.me)
-    const externalId = metadata?.ticket_id || metadata?.ticket_code || `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Gerar code único para o pedido
+    const orderCode = metadata?.ticket_id || metadata?.ticket_code || `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const customerType = docNumber.length > 11 ? 'company' : 'individual';
-    const documentType = docNumber.length > 11 ? 'cnpj' : 'cpf';
     
-    // Data de expiração do PIX (30 minutos a partir de agora)
-    const pixExpirationDate = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    
-    // Criar transação PIX diretamente (Transactions aparecem no dashboard da Pagar.me)
-    // O external_id é usado para identificar o pedido no dashboard
+    // ============================================
+    // PAYLOAD API v5 - Estrutura de Orders
+    // ============================================
     const payload = {
-      api_key: PAGARME_SECRET_KEY,
-      amount: Math.round(amountValue), // Pagar.me trabalha com centavos
-      payment_method: 'pix',
-      pix_expiration_date: pixExpirationDate, // Expiração do QR Code PIX
-      external_id: externalId, // ID único obrigatório - usado para identificar no dashboard
+      code: orderCode,
+      items: [{
+        amount: Math.round(amountValue), // Valor em centavos
+        description: metadata?.certificate_type || 'Certidão',
+        quantity: 1
+      }],
       customer: {
-        external_id: `customer-${docNumber}`, // ID externo do cliente
         name: customer.name,
         email: customer.email,
         type: customerType,
-        country: 'br',
-        documents: [{
-          type: documentType,
-          number: docNumber
-        }],
-        // Telefone é opcional - só incluir se fornecido, senão usar padrão
-        phone_numbers: phoneDDD && phoneNumber 
-          ? [`+55${phoneDDD}${phoneNumber}`]
-          : ['+5511999999999'], // Telefone padrão para evitar erro da API
+        document: docNumber,
+        phones: {
+          mobile_phone: {
+            country_code: '55',
+            area_code: phoneDDD,
+            number: phoneNumber
+          }
+        }
       },
-      items: [{
-        id: externalId,
-        title: metadata?.certificate_type || 'Certidão',
-        unit_price: Math.round(amountValue),
-        quantity: 1,
-        tangible: false
+      payments: [{
+        payment_method: 'pix',
+        pix: {
+          expires_in: 1800 // 30 minutos em segundos
+        }
       }],
-      ...(metadata && { metadata }),
+      // Metadata para rastreamento
+      metadata: metadataValue
     };
     
-    console.log('📦 [Pagar.me] Criando transação PIX via sync-server...', {
-      amount: payload.amount,
+    console.log('📦 [Pagar.me API v5] Criando pedido PIX...', {
+      code: orderCode,
+      amount: payload.items[0].amount,
       customer: payload.customer.name,
-      ticket_id: metadata?.ticket_id || metadata?.ticket_code || 'N/A',
-      external_id: externalId
+      ticket_id: metadata?.ticket_id || metadata?.ticket_code || 'N/A'
     });
     
-    // Criar transação no Pagar.me
-    const pagarmeResponse = await axios.post('https://api.pagar.me/1/transactions', payload, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 30000, // 30 segundos
+    // ============================================
+    // CHAMADA API v5 - Basic Auth com secret key
+    // ============================================
+    const authToken = Buffer.from(PAGARME_SECRET_KEY + ':').toString('base64');
+    
+    const pagarmeResponse = await axios.post(
+      'https://api.pagar.me/core/v5/orders',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authToken}`
+        },
+        timeout: 30000
+      }
+    );
+    
+    const order = pagarmeResponse.data;
+    
+    // Extrair dados do charge/transaction
+    const charge = order.charges?.[0];
+    const lastTransaction = charge?.last_transaction;
+    
+    console.log('✅ [Pagar.me API v5] Pedido criado:', {
+      order_id: order.id,
+      code: order.code,
+      status: order.status,
+      charge_id: charge?.id,
+      charge_status: charge?.status,
+      qr_code_url: lastTransaction?.qr_code_url ? 'Gerado' : 'Não gerado'
     });
     
-    const transaction = pagarmeResponse.data;
-    
-    console.log('✅ [Pagar.me] Transação criada via sync-server:', {
-      id: transaction.id,
-      external_id: transaction.external_id || externalId,
-      status: transaction.status,
-      pix_qr_code: transaction.pix_qr_code ? 'Gerado' : 'Não gerado'
-    });
-    
-    // Retornar dados formatados para o frontend
+    // ============================================
+    // RESPOSTA - Mapeada para formato do frontend
+    // ============================================
     res.json({
-      id: transaction.id.toString(),
-      external_id: transaction.external_id || externalId,
-      status: transaction.status,
-      amount: transaction.amount,
+      id: order.id,
+      external_id: order.code,
+      order_id: order.id,
+      charge_id: charge?.id,
+      status: order.status,
+      amount: order.amount,
       payment_method: 'pix',
-      pix_qr_code: transaction.pix_qr_code,
-      pix_expiration_date: transaction.pix_expiration_date,
-      metadata: transaction.metadata || {},
+      // PIX data da API v5
+      pix_qr_code: lastTransaction?.qr_code || null,
+      pix_qr_code_url: lastTransaction?.qr_code_url || null,
+      pix_expiration_date: lastTransaction?.expires_at || null,
+      // Campos legados para compatibilidade
+      transaction_id: lastTransaction?.id,
+      metadata: order.metadata || metadataValue
     });
     
   } catch (error) {
@@ -564,37 +579,22 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       errorMessage: error.message
     });
     
-    console.error('❌ [Pagar.me] Erro ao criar transação via sync-server:', error.message);
+    console.error('❌ [Pagar.me API v5] Erro ao criar pedido:', error.message);
     
     // Log detalhado do erro
     if (error.response) {
-      console.error('❌ [Pagar.me] Detalhes do erro:', {
+      console.error('❌ [Pagar.me API v5] Detalhes do erro:', {
         status: error.response.status,
         statusText: error.response.statusText,
         data: JSON.stringify(error.response.data, null, 2)
       });
     }
     
-    // Tratar erros específicos do Pagar.me
+    // Tratar erros específicos
     if (error.response) {
       const status = error.response.status;
       const errorData = error.response.data || {};
       const errorMessage = errorData.message || errorData.errors?.[0]?.message || JSON.stringify(errorData);
-
-      // Fallback para testes se bloqueio de IP no Pagar.me
-      if (status === 401 && (errorMessage || '').toLowerCase().includes('ip de origem')) {
-        console.warn('⚠️ [Pagar.me] IP não autorizado. Retornando mock para teste.');
-        const mock = {
-          id: `mock-${Date.now()}`,
-          status: 'paid',
-          amount: Math.round(amountValue),
-          payment_method: 'pix',
-          pix_qr_code: 'MOCK-QR-CODE',
-          pix_expiration_date: new Date(Date.now() + 30 * 60000).toISOString(),
-          metadata: metadataValue
-        };
-        return res.json(mock);
-      }
       
       return res.status(status).json({
         error: errorMessage,
@@ -605,17 +605,18 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     res.status(500).json({
       error: process.env.NODE_ENV === 'production' 
         ? 'Erro ao processar pagamento' 
-        : error.message || 'Erro desconhecido ao criar transação'
+        : error.message || 'Erro desconhecido ao criar pedido'
     });
   }
 });
 
-// GET /transactions/:id - Consultar status de transação Pagar.me
+// GET /transactions/:id - Consultar status de pedido/charge via Pagar.me API v5
+// Aceita order_id (or_xxx) ou charge_id (ch_xxx)
 app.get('/transactions/:id', authenticateRequest, async (req, res) => {
-  logger.info(`GET /transactions/${req.params.id} - Consultando status de transação`, { ip: req.ip });
+  const entityId = req.params.id;
+  logger.info(`GET /transactions/${entityId} - Consultando status (API v5)`, { ip: req.ip });
   
   try {
-    const transactionId = req.params.id;
     const PAGARME_SECRET_KEY = process.env.PAGARME_SECRET_KEY;
     
     if (!PAGARME_SECRET_KEY) {
@@ -623,31 +624,71 @@ app.get('/transactions/:id', authenticateRequest, async (req, res) => {
     }
     
     const axios = require('axios');
-    const response = await axios.get(
-      `https://api.pagar.me/1/transactions/${transactionId}?api_key=${PAGARME_SECRET_KEY}`,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-      }
-    );
+    const authToken = Buffer.from(PAGARME_SECRET_KEY + ':').toString('base64');
     
-    const transaction = response.data;
+    // Determinar se é order ou charge pelo prefixo
+    const isOrder = entityId.startsWith('or_');
+    const isCharge = entityId.startsWith('ch_');
     
-    res.json({
-      id: transaction.id.toString(),
-      status: transaction.status,
-      amount: transaction.amount,
-      payment_method: transaction.payment_method,
-      pix_qr_code: transaction.pix_qr_code,
-      pix_expiration_date: transaction.pix_expiration_date,
-      metadata: transaction.metadata || {},
+    let endpoint;
+    if (isOrder) {
+      endpoint = `https://api.pagar.me/core/v5/orders/${entityId}`;
+    } else if (isCharge) {
+      endpoint = `https://api.pagar.me/core/v5/charges/${entityId}`;
+    } else {
+      // Tentar como order primeiro
+      endpoint = `https://api.pagar.me/core/v5/orders/${entityId}`;
+    }
+    
+    const response = await axios.get(endpoint, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authToken}`
+      },
+      timeout: 30000
     });
+    
+    const data = response.data;
+    
+    // Mapear resposta para formato compatível
+    if (isOrder || data.charges) {
+      // É um Order
+      const charge = data.charges?.[0];
+      const lastTransaction = charge?.last_transaction;
+      
+      res.json({
+        id: data.id,
+        order_id: data.id,
+        charge_id: charge?.id,
+        status: data.status,
+        amount: data.amount,
+        payment_method: charge?.payment_method || 'pix',
+        pix_qr_code: lastTransaction?.qr_code || null,
+        pix_qr_code_url: lastTransaction?.qr_code_url || null,
+        pix_expiration_date: lastTransaction?.expires_at || null,
+        metadata: data.metadata || {}
+      });
+    } else {
+      // É um Charge
+      const lastTransaction = data.last_transaction;
+      
+      res.json({
+        id: data.id,
+        charge_id: data.id,
+        order_id: data.order?.id,
+        status: data.status,
+        amount: data.amount,
+        payment_method: data.payment_method || 'pix',
+        pix_qr_code: lastTransaction?.qr_code || null,
+        pix_qr_code_url: lastTransaction?.qr_code_url || null,
+        pix_expiration_date: lastTransaction?.expires_at || null,
+        metadata: data.metadata || {}
+      });
+    }
     
   } catch (error) {
     logger.logError(error, {
-      endpoint: `/transactions/${req.params.id}`,
+      endpoint: `/transactions/${entityId}`,
       ip: req.ip
     });
     
@@ -656,7 +697,7 @@ app.get('/transactions/:id', authenticateRequest, async (req, res) => {
       const errorData = error.response.data || {};
       
       return res.status(status).json({
-        error: errorData.message || 'Erro ao consultar transação',
+        error: errorData.message || 'Erro ao consultar pedido/transação',
         details: process.env.NODE_ENV !== 'production' ? errorData : undefined
       });
     }
@@ -1430,6 +1471,7 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
 // Endpoints Pagar.me foram movidos para ANTES do middleware global (linha ~179)
 
 // POST /webhooks/pagarme - Webhook do Pagar.me para notificações de pagamento
+// Suporta tanto API v1 (transaction.paid) quanto API v5 (order.paid, charge.paid)
 app.post('/webhooks/pagarme', express.json(), async (req, res) => {
   logger.info('POST /webhooks/pagarme - Webhook recebido do Pagar.me', { ip: req.ip });
   
@@ -1438,39 +1480,56 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
     const event = req.body;
     
     // Log completo do payload para debug
-    console.log('📦 [Pagar.me Webhook] Payload completo recebido:', JSON.stringify(event, null, 2));
+    console.log('📦 [Pagar.me Webhook v5] Payload completo recebido:', JSON.stringify(event, null, 2));
     
+    // API v5 envia type, API v1 envia event
     const eventType = event.type || event.event || 'unknown';
-    console.log('📦 [Pagar.me Webhook] Tipo de evento:', eventType);
+    console.log('📦 [Pagar.me Webhook v5] Tipo de evento:', eventType);
     
     // Verificar se é evento de pagamento confirmado
-    // Pagar.me pode enviar: order.paid, transaction.paid, ou order com status paid
+    // API v5: order.paid, charge.paid
+    // API v1 (legada): transaction.paid
     const isPaidEvent = 
       eventType === 'order.paid' ||
+      eventType === 'charge.paid' ||
       eventType === 'transaction.paid' ||
+      event.data?.status === 'paid' ||
       event.order?.status === 'paid' ||
       event.transaction?.status === 'paid' ||
       event.status === 'paid';
     
     if (!isPaidEvent) {
-      console.log('⚠️ [Pagar.me Webhook] Evento ignorado (não é pagamento confirmado):', eventType);
+      console.log('⚠️ [Pagar.me Webhook v5] Evento ignorado (não é pagamento confirmado):', eventType);
       return res.status(200).json({ received: true, processed: false, reason: 'Evento não é pagamento confirmado' });
     }
     
-    // Extrair informações - Pagar.me pode enviar order ou transaction
-    let orderOrTransaction = null;
-    let orderOrTransactionId = null;
+    // ============================================
+    // Extrair informações - API v5 usa estrutura data
+    // ============================================
+    let orderData = null;
+    let orderId = null;
+    let orderCode = null;  // Na v5, code é o identificador que definimos
     let metadata = {};
     
-    if (event.order) {
-      // Evento order.paid - estrutura com order
-      orderOrTransaction = event.order;
-      orderOrTransactionId = orderOrTransaction.id?.toString();
-      metadata = orderOrTransaction.metadata || {};
+    // API v5: dados vêm em event.data
+    if (event.data) {
+      orderData = event.data;
+      orderId = orderData.id?.toString();
+      orderCode = orderData.code;  // CODE é o ticket_id que passamos na criação!
+      metadata = orderData.metadata || {};
+      
+      console.log('📦 [Pagar.me Webhook v5] Estrutura API v5 detectada:', { orderId, orderCode });
+    }
+    // API v1 legada: event.order ou event.transaction
+    else if (event.order) {
+      orderData = event.order;
+      orderId = orderData.id?.toString();
+      orderCode = orderData.external_id;
+      metadata = orderData.metadata || {};
       
       // Se metadata não estiver no order, verificar nos items
-      if (!metadata.ticket_id && orderOrTransaction.items && Array.isArray(orderOrTransaction.items)) {
-        for (const item of orderOrTransaction.items) {
+      if (!metadata.ticket_id && orderData.items && Array.isArray(orderData.items)) {
+        for (const item of orderData.items) {
           if (item.metadata && item.metadata.ticket_id) {
             metadata = item.metadata;
             break;
@@ -1478,30 +1537,36 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
         }
       }
     } else if (event.transaction) {
-      // Evento transaction.paid - estrutura com transaction
-      orderOrTransaction = event.transaction;
-      orderOrTransactionId = orderOrTransaction.id?.toString();
-      metadata = orderOrTransaction.metadata || {};
+      orderData = event.transaction;
+      orderId = orderData.id?.toString();
+      orderCode = orderData.external_id;
+      metadata = orderData.metadata || {};
     } else {
       // Fallback - tentar usar o próprio event
-      orderOrTransaction = event;
-      orderOrTransactionId = event.id?.toString();
+      orderData = event;
+      orderId = event.id?.toString();
+      orderCode = event.code || event.external_id;
       metadata = event.metadata || {};
     }
     
-    // Tentar encontrar ticket_id em diferentes locais
-    let ticketId = metadata.ticket_id || metadata.ticket_code;
+    // ============================================
+    // Encontrar ticket_id - Prioridade:
+    // 1. orderCode (code da API v5 = ticket_id)
+    // 2. metadata.ticket_id ou metadata.ticket_code
+    // 3. external_id
+    // ============================================
+    let ticketId = orderCode || metadata.ticket_id || metadata.ticket_code;
     
-    // Se não encontrou no metadata direto, verificar em diferentes estruturas
+    // Se não encontrou, verificar em diferentes estruturas
     if (!ticketId) {
-      // Tentar no order/transaction direto
-      if (orderOrTransaction.metadata) {
-        ticketId = orderOrTransaction.metadata.ticket_id || orderOrTransaction.metadata.ticket_code;
+      // Tentar no orderData direto
+      if (orderData.metadata) {
+        ticketId = orderData.metadata.ticket_id || orderData.metadata.ticket_code;
       }
       
       // Tentar nos items
-      if (!ticketId && orderOrTransaction.items && Array.isArray(orderOrTransaction.items)) {
-        for (const item of orderOrTransaction.items) {
+      if (!ticketId && orderData.items && Array.isArray(orderData.items)) {
+        for (const item of orderData.items) {
           if (item.metadata && (item.metadata.ticket_id || item.metadata.ticket_code)) {
             ticketId = item.metadata.ticket_id || item.metadata.ticket_code;
             break;
@@ -1510,8 +1575,8 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       }
       
       // Tentar no external_id (pode conter o ticket_id)
-      if (!ticketId && orderOrTransaction.external_id) {
-        const externalId = orderOrTransaction.external_id.toString();
+      if (!ticketId && orderData.external_id) {
+        const externalId = orderData.external_id.toString();
         // Se external_id começa com ticket- ou TK-, usar ele
         if (externalId.startsWith('ticket-') || externalId.startsWith('TK-')) {
           ticketId = externalId;
@@ -1519,17 +1584,18 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       }
     }
     
-    console.log('📦 [Pagar.me Webhook] Dados extraídos:', {
-      orderOrTransactionId,
+    console.log('📦 [Pagar.me Webhook v5] Dados extraídos:', {
+      orderId,
+      orderCode,
       ticketId,
       metadata,
-      external_id: orderOrTransaction.external_id,
-      fullOrderOrTransaction: JSON.stringify(orderOrTransaction, null, 2).substring(0, 500)
+      external_id: orderData.external_id,
+      fullOrderData: JSON.stringify(orderData, null, 2).substring(0, 500)
     });
     
     if (!ticketId) {
-      console.warn('⚠️ [Pagar.me Webhook] Ticket ID não encontrado. Metadata completo:', JSON.stringify(metadata, null, 2));
-      console.warn('⚠️ [Pagar.me Webhook] Order/Transaction completo:', JSON.stringify(orderOrTransaction, null, 2).substring(0, 1000));
+      console.warn('⚠️ [Pagar.me Webhook v5] Ticket ID não encontrado. Metadata completo:', JSON.stringify(metadata, null, 2));
+      console.warn('⚠️ [Pagar.me Webhook v5] Order Data completo:', JSON.stringify(orderData, null, 2).substring(0, 1000));
       // Não retornar erro 200 para que Pagar.me tente novamente
       return res.status(500).json({ received: true, processed: false, reason: 'Ticket ID não encontrado no webhook' });
     }
@@ -1564,7 +1630,7 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       autor: 'Sistema',
       statusAnterior: ticket.status,
       statusNovo: 'EM_OPERACAO',
-      mensagem: `Pagamento confirmado via Pagar.me (Pedido: ${orderOrTransactionId || 'N/A'}). Ticket em processamento.`,
+      mensagem: `Pagamento confirmado via Pagar.me (Pedido: ${orderId || 'N/A'}). Ticket em processamento.`,
       enviouEmail: false,
       enviouWhatsApp: false
     };
@@ -1636,9 +1702,10 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       // Não bloquear o webhook se a confirmação falhar
     }
     
-    logger.info('✅ [Pagar.me Webhook] Webhook processado com sucesso', {
+    logger.info('✅ [Pagar.me Webhook v5] Webhook processado com sucesso', {
       ticketCodigo: ticket.codigo,
-      orderOrTransactionId: orderOrTransactionId,
+      orderId: orderId,
+      orderCode: orderCode,
       eventType: eventType
     });
     
