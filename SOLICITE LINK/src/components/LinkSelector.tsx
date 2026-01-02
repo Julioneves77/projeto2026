@@ -74,10 +74,9 @@ const LinkSelector = () => {
       boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.5) inset'
     }}>
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-3">
-          Selecione a Opção
+        <h2 className="text-xl font-bold text-gray-800">
+          Escolha o Tipo de Solicitação Desejada
         </h2>
-        <p className="text-gray-500">Escolha o tipo de solicitação desejada</p>
       </div>
 
       <Select value={selectedLink} onValueChange={setSelectedLink}>
