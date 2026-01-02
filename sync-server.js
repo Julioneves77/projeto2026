@@ -1788,7 +1788,9 @@ app.get('/contact-messages', authenticateRequest, (req, res) => {
     
     // Filtrar por pasta
     if (folder === 'inbox') {
-      filtered = filtered.filter(m => !m.archived);
+      filtered = filtered.filter(m => !m.archived && m.type !== 'sent');
+    } else if (folder === 'unread') {
+      filtered = filtered.filter(m => !m.read && !m.archived && m.type !== 'sent');
     } else if (folder === 'starred') {
       filtered = filtered.filter(m => m.starred && !m.archived);
     } else if (folder === 'archive') {

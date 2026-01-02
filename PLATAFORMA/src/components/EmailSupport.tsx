@@ -84,6 +84,7 @@ interface StorageStats {
 
 const menuItems = [
   { id: 'inbox', label: 'Caixa de Entrada', icon: Inbox },
+  { id: 'unread', label: 'Não lidos', icon: Mail },
   { id: 'starred', label: 'Favoritos', icon: Star },
   { id: 'sent', label: 'Enviados', icon: Send },
   { id: 'archive', label: 'Arquivados', icon: Archive },
