@@ -73,9 +73,9 @@ const LinkSelector = () => {
       background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(240,245,255,0.9) 100%)',
       boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.5) inset'
     }}>
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-bold text-gray-800">
-          Escolha o Tipo de Solicitação Desejada
+      <div className="text-center mb-6">
+        <h2 className="text-base sm:text-lg md:text-xl font-bold text-gray-800">
+          Escolha o Tipo de Solicitação
         </h2>
       </div>
 

@@ -16,11 +16,11 @@ const Index = () => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="text-center mb-10 max-w-xl animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight mb-4 whitespace-nowrap">
-            Selecione a Opção Desejada para Continuar
+          <h1 className="text-lg sm:text-2xl md:text-3xl font-bold text-foreground tracking-tight mb-4">
+            Selecione a Opção Desejada
           </h1>
-          <p className="section-subtitle">
-            Você será Direcionado para a Página da sua Escolha
+          <p className="text-sm sm:text-base text-muted-foreground">
+            Você será direcionado para a página escolhida
           </p>
         </div>
 
