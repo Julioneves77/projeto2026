@@ -1,10 +1,16 @@
 /**
  * Serviço de integração com Pagar.me
  * Documentação: https://docs.pagar.me
+ * 
+ * IMPORTANTE: As transações são criadas via sync-server (backend) para evitar problemas de CORS.
+ * O frontend não chama diretamente a API do Pagar.me.
  */
 
-const PAGARME_API_URL = 'https://api.pagar.me/1/transactions';
-const PAGARME_PUBLIC_KEY = import.meta.env.VITE_PAGARME_PUBLIC_KEY || '';
+// URL do servidor de sincronização - configurável via variável de ambiente
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+
+// API Key para autenticação
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
 
 export interface PagarmeTransaction {
   id: string;
@@ -38,42 +44,53 @@ export interface CreatePixTransactionParams {
 }
 
 /**
- * Cria uma transação PIX via Pagar.me
+ * Helper para fazer requisições autenticadas ao sync-server
+ */
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  
+  // Adicionar API Key se configurada
+  if (SYNC_SERVER_API_KEY) {
+    headers.set('X-API-Key', SYNC_SERVER_API_KEY);
+  }
+  
+  return fetch(url, {
+    ...options,
+    headers,
+  });
+}
+
+/**
+ * Cria uma transação PIX via sync-server (que chama Pagar.me)
  */
 export async function createPixTransaction(
   params: CreatePixTransactionParams
 ): Promise<PagarmeTransaction> {
-  if (!PAGARME_PUBLIC_KEY) {
-    throw new Error('VITE_PAGARME_PUBLIC_KEY não está configurada');
-  }
-
-  const payload = {
-    api_key: PAGARME_PUBLIC_KEY,
-    amount: params.amount,
-    payment_method: 'pix',
-    customer: {
-      name: params.customer.name,
-      email: params.customer.email,
-      document_number: params.customer.document_number,
-      ...(params.customer.phone && {
-        phone: {
-          ddd: params.customer.phone.ddd,
-          number: params.customer.phone.number,
-        },
-      }),
-    },
-    ...(params.metadata && {
-      metadata: params.metadata,
-    }),
-  };
-
   try {
-    console.log('📦 [Pagar.me] Criando transação PIX...', {
+    console.log('📦 [Pagar.me] Criando transação PIX via sync-server...', {
       amount: params.amount,
       customer: params.customer.name,
     });
 
-    const response = await fetch(PAGARME_API_URL, {
+    const payload = {
+      amount: params.amount,
+      customer: {
+        name: params.customer.name,
+        email: params.customer.email,
+        document_number: params.customer.document_number,
+        ...(params.customer.phone && {
+          phone: {
+            ddd: params.customer.phone.ddd,
+            number: params.customer.phone.number,
+          },
+        }),
+      },
+      ...(params.metadata && {
+        metadata: params.metadata,
+      }),
+    };
+
+    const response = await fetchWithAuth(`${SYNC_SERVER_URL}/transactions/pix`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -85,12 +102,12 @@ export async function createPixTransaction(
       const errorData = await response.json().catch(() => ({}));
       console.error('❌ [Pagar.me] Erro ao criar transação:', errorData);
       throw new Error(
-        errorData.message || `Erro ${response.status} ao criar transação`
+        errorData.error || errorData.message || `Erro ${response.status} ao criar transação`
       );
     }
 
     const transaction = await response.json();
-    console.log('✅ [Pagar.me] Transação criada:', transaction.id);
+    console.log('✅ [Pagar.me] Transação criada via sync-server:', transaction.id);
 
     return {
       id: transaction.id.toString(),
@@ -99,7 +116,7 @@ export async function createPixTransaction(
       payment_method: 'pix',
       pix_qr_code: transaction.pix_qr_code,
       pix_expiration_date: transaction.pix_expiration_date,
-      metadata: transaction.metadata,
+      metadata: transaction.metadata || {},
     };
   } catch (error) {
     console.error('❌ [Pagar.me] Erro ao criar transação:', error);
@@ -108,18 +125,14 @@ export async function createPixTransaction(
 }
 
 /**
- * Consulta o status de uma transação
+ * Consulta o status de uma transação via sync-server
  */
 export async function getTransactionStatus(
   transactionId: string
 ): Promise<PagarmeTransaction> {
-  if (!PAGARME_PUBLIC_KEY) {
-    throw new Error('VITE_PAGARME_PUBLIC_KEY não está configurada');
-  }
-
   try {
-    const response = await fetch(
-      `${PAGARME_API_URL}/${transactionId}?api_key=${PAGARME_PUBLIC_KEY}`,
+    const response = await fetchWithAuth(
+      `${SYNC_SERVER_URL}/transactions/${transactionId}`,
       {
         method: 'GET',
         headers: {
@@ -131,7 +144,7 @@ export async function getTransactionStatus(
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        errorData.message || `Erro ${response.status} ao consultar transação`
+        errorData.error || errorData.message || `Erro ${response.status} ao consultar transação`
       );
     }
 
@@ -144,7 +157,7 @@ export async function getTransactionStatus(
       payment_method: transaction.payment_method,
       pix_qr_code: transaction.pix_qr_code,
       pix_expiration_date: transaction.pix_expiration_date,
-      metadata: transaction.metadata,
+      metadata: transaction.metadata || {},
     };
   } catch (error) {
     console.error('❌ [Pagar.me] Erro ao consultar transação:', error);

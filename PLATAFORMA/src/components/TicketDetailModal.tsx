@@ -228,10 +228,13 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     };
 
     // Adicionar histórico (isso já atualiza o status do ticket automaticamente)
+    console.log(`📝 [PLATAFORMA] Adicionando histórico com status: ${novoStatus}`);
     addHistorico(ticket.id, historicoItem);
 
     // Aguardar um pouco para garantir que o ticket foi atualizado no servidor
+    console.log(`⏳ [PLATAFORMA] Aguardando atualização do ticket...`);
     await new Promise(resolve => setTimeout(resolve, 500));
+    console.log(`✅ [PLATAFORMA] Ticket atualizado no estado local`);
 
     // Se status é CONCLUIDO, enviar notificações
     if (novoStatus === 'CONCLUIDO') {

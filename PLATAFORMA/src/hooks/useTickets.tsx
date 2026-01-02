@@ -52,13 +52,24 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
 
   const loadTickets = async () => {
     console.log('🟢 [PLATAFORMA] Carregando tickets do servidor de sincronização...');
+    console.log(`🟢 [PLATAFORMA] URL: ${SYNC_SERVER_URL}/tickets`);
     
     // Tentar carregar do servidor de sincronização primeiro
     try {
       const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets`);
+      console.log(`🟢 [PLATAFORMA] Resposta do servidor: ${response.status} ${response.statusText}`);
+      
       if (response.ok) {
         const serverTickets = await response.json();
         console.log(`🟢 [PLATAFORMA] Recebidos ${serverTickets.length} tickets do servidor`);
+        
+        // Log de distribuição por status
+        const statusCount = {};
+        serverTickets.forEach((t: any) => {
+          const status = t.status || 'SEM_STATUS';
+          statusCount[status] = (statusCount[status] || 0) + 1;
+        });
+        console.log(`🟢 [PLATAFORMA] Distribuição por status:`, statusCount);
         
         if (Array.isArray(serverTickets) && serverTickets.length > 0) {
           // Converter strings de data de volta para objetos Date

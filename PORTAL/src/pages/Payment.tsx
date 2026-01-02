@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -587,8 +588,8 @@ const Payment = () => {
 
           <div className="grid gap-6 md:grid-cols-2">
             {/* QR Code Section */}
-            <Card className="p-5">
-              <div className="text-center">
+            <Card className="p-4 sm:p-5 overflow-hidden">
+              <div className="text-center overflow-hidden">
                 <h2 className="font-heading text-base font-bold text-foreground mb-3">
                   QR Code PIX
                 </h2>
@@ -602,11 +603,14 @@ const Payment = () => {
                   </div>
                 ) : pixQrCode ? (
                   <>
-                    <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
-                      <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(pixQrCode)}`}
-                        alt="QR Code PIX"
-                        className="w-40 h-40 mx-auto"
+                    <div className="bg-white border-2 border-border rounded-xl p-4 inline-block mb-3 max-w-full overflow-hidden">
+                      <QRCodeSVG 
+                        value={pixQrCode}
+                        size={160}
+                        level="M"
+                        includeMargin={false}
+                        className="mx-auto w-32 h-32 sm:w-40 sm:h-40"
+                        style={{ maxWidth: '100%', height: 'auto' }}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">

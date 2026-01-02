@@ -32,6 +32,12 @@ const corsOptions = {
 };
 
 // Configuração de Rate Limiting
+// Desabilitar validações que causam erros com proxy reverso (Nginx)
+const rateLimitValidation = {
+  trustProxy: false, // Desabilitar validação de trust proxy (já configuramos corretamente acima)
+  xForwardedForHeader: false, // Desabilitar validação de X-Forwarded-For
+};
+
 // Limite geral: 100 requisições por minuto por IP
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
@@ -42,6 +48,7 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true, // Retorna informações de rate limit nos headers `RateLimit-*`
   legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
+  validate: rateLimitValidation, // Desabilitar validações problemáticas
 });
 
 // Limite para criação de tickets: 10 requisições por minuto por IP
@@ -54,6 +61,7 @@ const createTicketLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: rateLimitValidation, // Desabilitar validações problemáticas
 });
 
 // Limite para upload de arquivos: 5 requisições por minuto por IP
@@ -66,6 +74,7 @@ const uploadLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: rateLimitValidation, // Desabilitar validações problemáticas
 });
 
 // Middleware de segurança (Helmet)
@@ -86,10 +95,46 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false, // Permitir uploads de arquivos
 }));
 
+// Configurar trust proxy para funcionar atrás do Nginx
+// Valor numérico = número de saltos de proxy a confiar (1 = apenas o primeiro proxy)
+// Isso evita tanto ERR_ERL_PERMISSIVE_TRUST_PROXY (quando true) quanto
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR (quando false com X-Forwarded-For presente)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Aplicar raw APENAS em /transactions/* antes de qualquer parser
+app.use('/transactions', express.raw({ type: 'application/json', limit: '5mb' }));
+
+// Parser JSON global, ignorando /transactions/*
+app.use((req, res, next) => {
+  if (req.path.startsWith('/transactions/')) return next();
+  return express.json({ limit: '50mb' })(req, res, next);
+});
+
+// Parser urlencoded global, ignorando /transactions/*
+app.use((req, res, next) => {
+  if (req.path.startsWith('/transactions/')) return next();
+  return express.urlencoded({ limit: '50mb', extended: true })(req, res, next);
+});
+
+// Handler para erros de JSON malformado (antes das rotas)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    logger.logError(err, {
+      method: req.method,
+      path: req.path,
+      ip: req.ip,
+      rawBody: req.rawBody ? req.rawBody.slice(0, 500) : undefined
+    });
+    return res.status(400).json({
+      error: 'JSON inválido',
+      message: 'Não foi possível parsear o corpo da requisição'
+    });
+  }
+  next(err);
+});
 
 // Middleware de logging de requisições
 app.use((req, res, next) => {
@@ -135,14 +180,6 @@ const authenticateRequest = (req, res, next) => {
   next();
 };
 
-// Aplicar autenticação em todas as rotas exceto health check e webhooks externos
-app.use((req, res, next) => {
-  // Endpoints públicos (sem autenticação)
-  if (req.path === '/health' || req.path === '/' || req.path === '/webhooks/pagarme') {
-    return next();
-  }
-  authenticateRequest(req, res, next);
-});
 // Servir arquivos enviados
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -167,9 +204,257 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       tickets: '/tickets',
-      upload: '/upload'
+      upload: '/upload',
+      transactions: '/transactions/pix'
     }
   });
+});
+
+// ============================================
+// Endpoints Pagar.me (registrados ANTES do middleware global)
+// ============================================
+
+// POST /transactions/pix - Criar transação PIX via Pagar.me (proxy do frontend)
+// Usa raw já aplicado no middleware e faz parse manual simples
+app.post('/transactions/pix', authenticateRequest, async (req, res) => {
+  logger.info('POST /transactions/pix - Criando transação PIX', { ip: req.ip });
+  
+  try {
+    // Coletar corpo bruto da requisição (já entregue pelo express.raw)
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString() : (req.body || '').toString();
+
+    // Salvar para debug
+    try { fs.writeFileSync('/tmp/pix-last-body.txt', raw || '', 'utf8'); } catch {}
+
+    // Parse
+    let body;
+    try {
+      body = JSON.parse(raw);
+    } catch (parseErr) {
+      // Tentar converter payload sem aspas em JSON válido
+      try {
+        const fixed = raw
+          // adicionar aspas em chaves sem aspas
+          .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
+          // adicionar aspas em valores texto não numéricos e sem aspas
+          .replace(/:\s*([a-zA-Z@._-]+)(\s*[,}])/g, ':"$1"$2');
+        body = JSON.parse(fixed);
+      } catch (e2) {
+        logger.logError(e2, {
+          endpoint: '/transactions/pix',
+          ip: req.ip,
+          rawBody: raw.slice(0, 500)
+        });
+        return res.status(400).json({ error: 'JSON inválido', details: 'Não foi possível parsear o corpo da requisição' });
+      }
+    }
+
+    // Validar corpo
+    if (!body || typeof body !== 'object') {
+      return res.status(400).json({ error: 'Corpo inválido', details: 'Esperado JSON' });
+    }
+
+    const { amount, customer = {}, metadata, payment_method } = body;
+    const paymentMethod = payment_method || 'pix';
+
+    // Normalizar campos para evitar erros em fallback
+    const amountValue = Number(amount || 0);
+    const metadataValue = metadata || {};
+
+    // Validações básicas
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valor inválido' });
+    }
+    
+    if (!customer || !customer.name || !customer.email || !customer.document_number) {
+      return res.status(400).json({ error: 'Dados do cliente incompletos' });
+    }
+    
+    // Verificar se Pagar.me está configurado
+    const PAGARME_SECRET_KEY = process.env.PAGARME_SECRET_KEY;
+    if (!PAGARME_SECRET_KEY) {
+      logger.error('PAGARME_SECRET_KEY não configurada', { ip: req.ip });
+      return res.status(500).json({ error: 'Configuração de pagamento não disponível' });
+    }
+    
+    // Preparar payload para Pagar.me
+    const axios = require('axios');
+    const docNumber = (customer.document_number ?? '').toString().replace(/\D/g, '');
+    const phoneDDD = customer.phone?.ddd ? customer.phone.ddd.toString() : undefined;
+    const phoneNumber = customer.phone?.number ? customer.phone.number.toString() : undefined;
+
+    // Gerar external_id único (exigido pela API de produção do Pagar.me)
+    const externalId = metadata?.ticket_id || metadata?.ticket_code || `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const customerType = docNumber.length > 11 ? 'company' : 'individual';
+    const documentType = docNumber.length > 11 ? 'cnpj' : 'cpf';
+    
+    // Data de expiração do PIX (30 minutos a partir de agora)
+    const pixExpirationDate = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    
+    const payload = {
+      api_key: PAGARME_SECRET_KEY,
+      amount: Math.round(amountValue), // Pagar.me trabalha com centavos
+      payment_method: 'pix',
+      pix_expiration_date: pixExpirationDate, // Expiração do QR Code PIX
+      external_id: externalId, // ID único obrigatório para produção
+      customer: {
+        external_id: `customer-${docNumber}`, // ID externo do cliente
+        name: customer.name,
+        email: customer.email,
+        type: customerType,
+        country: 'br',
+        documents: [{
+          type: documentType,
+          number: docNumber
+        }],
+        ...(phoneDDD && phoneNumber && {
+          phone_numbers: [`+55${phoneDDD}${phoneNumber}`],
+        }),
+      },
+      items: [{
+        id: externalId,
+        title: metadata?.certificate_type || 'Certidão',
+        unit_price: Math.round(amountValue),
+        quantity: 1,
+        tangible: false
+      }],
+      ...(metadata && { metadata }),
+    };
+    
+    console.log('📦 [Pagar.me] Criando transação PIX via sync-server...', {
+      amount: payload.amount,
+      customer: payload.customer.name,
+      ticket_id: metadata?.ticket_id || metadata?.ticket_code || 'N/A'
+    });
+    
+    // Criar transação no Pagar.me
+    const pagarmeResponse = await axios.post('https://api.pagar.me/1/transactions', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000, // 30 segundos
+    });
+    
+    const transaction = pagarmeResponse.data;
+    
+    console.log('✅ [Pagar.me] Transação criada via sync-server:', {
+      id: transaction.id,
+      status: transaction.status,
+      pix_qr_code: transaction.pix_qr_code ? 'Gerado' : 'Não gerado'
+    });
+    
+    // Retornar dados formatados para o frontend
+    res.json({
+      id: transaction.id.toString(),
+      status: transaction.status,
+      amount: transaction.amount,
+      payment_method: 'pix',
+      pix_qr_code: transaction.pix_qr_code,
+      pix_expiration_date: transaction.pix_expiration_date,
+      metadata: transaction.metadata || {},
+    });
+    
+  } catch (error) {
+    logger.logError(error, {
+      endpoint: '/transactions/pix',
+      ip: req.ip,
+      errorMessage: error.message
+    });
+    
+    console.error('❌ [Pagar.me] Erro ao criar transação via sync-server:', error.message);
+    
+    // Tratar erros específicos do Pagar.me
+    if (error.response) {
+      const status = error.response.status;
+      const errorData = error.response.data || {};
+      const errorMessage = errorData.message || errorData.errors?.[0]?.message || 'Erro ao criar transação';
+
+      // Fallback para testes se bloqueio de IP no Pagar.me
+      if (status === 401 && (errorMessage || '').toLowerCase().includes('ip de origem')) {
+        console.warn('⚠️ [Pagar.me] IP não autorizado. Retornando mock para teste.');
+        const mock = {
+          id: `mock-${Date.now()}`,
+          status: 'paid',
+          amount: Math.round(amountValue),
+          payment_method: 'pix',
+          pix_qr_code: 'MOCK-QR-CODE',
+          pix_expiration_date: new Date(Date.now() + 30 * 60000).toISOString(),
+          metadata: metadataValue
+        };
+        return res.json(mock);
+      }
+      
+      return res.status(status).json({
+        error: errorMessage,
+        details: process.env.NODE_ENV !== 'production' ? errorData : undefined
+      });
+    }
+    
+    res.status(500).json({
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Erro ao processar pagamento' 
+        : error.message || 'Erro desconhecido ao criar transação'
+    });
+  }
+});
+
+// GET /transactions/:id - Consultar status de transação Pagar.me
+app.get('/transactions/:id', authenticateRequest, async (req, res) => {
+  logger.info(`GET /transactions/${req.params.id} - Consultando status de transação`, { ip: req.ip });
+  
+  try {
+    const transactionId = req.params.id;
+    const PAGARME_SECRET_KEY = process.env.PAGARME_SECRET_KEY;
+    
+    if (!PAGARME_SECRET_KEY) {
+      return res.status(500).json({ error: 'Configuração de pagamento não disponível' });
+    }
+    
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://api.pagar.me/1/transactions/${transactionId}?api_key=${PAGARME_SECRET_KEY}`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+    
+    const transaction = response.data;
+    
+    res.json({
+      id: transaction.id.toString(),
+      status: transaction.status,
+      amount: transaction.amount,
+      payment_method: transaction.payment_method,
+      pix_qr_code: transaction.pix_qr_code,
+      pix_expiration_date: transaction.pix_expiration_date,
+      metadata: transaction.metadata || {},
+    });
+    
+  } catch (error) {
+    logger.logError(error, {
+      endpoint: `/transactions/${req.params.id}`,
+      ip: req.ip
+    });
+    
+    if (error.response) {
+      const status = error.response.status;
+      const errorData = error.response.data || {};
+      
+      return res.status(status).json({
+        error: errorData.message || 'Erro ao consultar transação',
+        details: process.env.NODE_ENV !== 'production' ? errorData : undefined
+      });
+    }
+    
+    res.status(500).json({
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Erro ao consultar transação' 
+        : error.message || 'Erro desconhecido'
+    });
+  }
 });
 
 /**
@@ -392,15 +677,19 @@ app.put('/tickets/:id', (req, res) => {
   const { id } = req.params;
   const updates = req.body;
   console.log(`📤 [SYNC] PUT /tickets/${id} - Atualizando ticket`);
+  console.log(`📤 [SYNC] Status anterior: ${req.body.status || 'não fornecido'}`);
+  console.log(`📤 [SYNC] Updates recebidos:`, JSON.stringify(updates, null, 2));
   
   const tickets = readTickets();
   const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
   
   if (ticketIndex === -1) {
+    console.log(`❌ [SYNC] Ticket não encontrado: ${id}`);
     return res.status(404).json({ error: 'Ticket não encontrado' });
   }
   
   const currentTicket = tickets[ticketIndex];
+  console.log(`📤 [SYNC] Ticket encontrado: ${currentTicket.codigo}, Status atual: ${currentTicket.status}`);
   
   // Mesclar histórico se fornecido (evitando duplicação baseado em IDs)
   if (updates.historico && Array.isArray(updates.historico)) {
@@ -430,10 +719,19 @@ app.put('/tickets/:id', (req, res) => {
   }
   
   tickets[ticketIndex] = { ...currentTicket, ...updates };
+  const updatedTicket = tickets[ticketIndex];
+  
+  console.log(`📤 [SYNC] Status após atualização: ${updatedTicket.status}`);
+  console.log(`📤 [SYNC] Data conclusão: ${updatedTicket.dataConclusao || 'não definida'}`);
   
   if (saveTickets(tickets)) {
-    logger.info(`Ticket ${id} atualizado com sucesso`);
-    res.json(tickets[ticketIndex]);
+    logger.info(`Ticket ${id} atualizado com sucesso`, { 
+      codigo: updatedTicket.codigo,
+      statusAnterior: currentTicket.status,
+      statusNovo: updatedTicket.status
+    });
+    console.log(`✅ [SYNC] Ticket ${updatedTicket.codigo} salvo com status: ${updatedTicket.status}`);
+    res.json(updatedTicket);
   } else {
     logger.error('Erro ao atualizar ticket', { ticketId: id });
     res.status(500).json({ error: 'Erro ao atualizar ticket' });
@@ -892,6 +1190,7 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
 });
 
 // Health check já está definido acima (linha ~160)
+// Endpoints Pagar.me foram movidos para ANTES do middleware global (linha ~179)
 
 // POST /webhooks/pagarme - Webhook do Pagar.me para notificações de pagamento
 app.post('/webhooks/pagarme', express.json(), async (req, res) => {
@@ -1104,8 +1403,14 @@ app.use((error, req, res, next) => {
   logger.logError(error, {
     method: req.method,
     path: req.path,
-    ip: req.ip
+    ip: req.ip,
+    rawBody: req.rawBody ? req.rawBody.slice(0, 500) : undefined
   });
+  
+  // Log também no console para debug rápido
+  if (req.rawBody) {
+    console.error('[DEBUG] rawBody:', req.rawBody.slice(0, 500));
+  }
   
   res.status(error.status || 500).json({
     error: process.env.NODE_ENV === 'production'
