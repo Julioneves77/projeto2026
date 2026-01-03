@@ -1,13 +1,97 @@
 {
-  "titulos": [],
-  "descricoes": [],
-  "keywords": [],
-  "sitelinks": [],
-  "frases": [],
-  "campanhas": [],
+  "tipos": {
+    "criminal_federal": {
+      "nome": "Criminal Federal",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "criminal_estadual": {
+      "nome": "Criminal Estadual",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "antecedentes_pf": {
+      "nome": "Antecedentes PF",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "eleitoral": {
+      "nome": "Eleitoral",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "trabalhista": {
+      "nome": "Trabalhista",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "civel": {
+      "nome": "Cível",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "nascimento": {
+      "nome": "Nascimento",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "casamento": {
+      "nome": "Casamento",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "obito": {
+      "nome": "Óbito",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    },
+    "geral": {
+      "nome": "Geral",
+      "titulos": [],
+      "descricoes": [],
+      "keywords": [],
+      "sitelinks": [],
+      "frases": []
+    }
+  },
+  "govdocs_bloqueados": [
+    "governo", "federal", "oficial", "ministerio", "ministério", "publico", "público",
+    "orgao", "órgão", "estado", "estadual", "tribunal", "justica", "justiça", "policia", "polícia",
+    "detran", "receita", "inss", "tse", "trf", "trt", "stf", "stj",
+    "prefeitura", "secretaria", "certidao oficial", "certidão oficial",
+    "documento oficial", "site oficial", "portal oficial", "gov.br",
+    "poder judiciario", "poder judiciário", "ministerio publico", "ministério público"
+  ],
   "metadata": {
     "ultimaAtualizacao": null,
-    "totalImportacoes": 0
+    "totalImportacoes": 0,
+    "versao": "2.0"
   }
 }
-

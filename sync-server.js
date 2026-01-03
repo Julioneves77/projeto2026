@@ -2509,35 +2509,85 @@ app.use((error, req, res, next) => {
 });
 
 // ============================================
-// SISTEMA DE GESTÃO DE COPIES - GOOGLE ADS
+// SISTEMA INTELIGENTE DE ANÚNCIOS - GOOGLE ADS v2.0
 // ============================================
 
+// Tipos de Certidão disponíveis
+const TIPOS_CERTIDAO = {
+  criminal_federal: { nome: 'Criminal Federal', keywords: ['criminal federal', 'pf', 'polícia federal', 'antecedentes federais'] },
+  criminal_estadual: { nome: 'Criminal Estadual', keywords: ['criminal estadual', 'estadual', 'polícia civil', 'antecedentes estaduais'] },
+  antecedentes_pf: { nome: 'Antecedentes PF', keywords: ['antecedentes', 'pf', 'polícia federal', 'ficha limpa'] },
+  eleitoral: { nome: 'Eleitoral', keywords: ['eleitoral', 'eleitor', 'título eleitor', 'quitação eleitoral', 'situação eleitoral'] },
+  trabalhista: { nome: 'Trabalhista', keywords: ['trabalhista', 'trabalho', 'trt', 'débitos trabalhistas', 'ações trabalhistas'] },
+  civel: { nome: 'Cível', keywords: ['civel', 'cível', 'civil', 'ações civeis', 'processo civel'] },
+  nascimento: { nome: 'Nascimento', keywords: ['nascimento', 'certidão nascimento', 'registro nascimento'] },
+  casamento: { nome: 'Casamento', keywords: ['casamento', 'certidão casamento', 'matrimônio'] },
+  obito: { nome: 'Óbito', keywords: ['obito', 'óbito', 'certidão óbito', 'falecimento'] },
+  geral: { nome: 'Geral', keywords: [] }
+};
+
+// Palavras bloqueadas (GovDocs) - Lista expandida
+const PALAVRAS_BLOQUEADAS = [
+  'governo', 'federal', 'oficial', 'ministerio', 'ministério', 'publico', 'público', 'publica', 'pública',
+  'orgao', 'órgão', 'tribunal', 'justica', 'justiça', 'policia', 'polícia',
+  'detran', 'receita', 'inss', 'tse', 'trf', 'trt', 'stf', 'stj',
+  'prefeitura', 'secretaria', 'certidao oficial', 'certidão oficial',
+  'documento oficial', 'site oficial', 'portal oficial', 'gov.br',
+  'poder judiciario', 'poder judiciário', 'ministerio publico', 'ministério público',
+  'cartório oficial', 'registro oficial', 'emitido pelo governo'
+];
+
 // Inicializar arquivo de copies se não existir
-if (!fs.existsSync(COPIES_FILE)) {
-  const initialData = {
-    titulos: [],
-    descricoes: [],
-    keywords: [],
-    sitelinks: [],
-    frases: [],
-    campanhas: [],
-    metadata: {
-      ultimaAtualizacao: new Date().toISOString(),
-      totalImportacoes: 0
-    }
-  };
-  fs.writeFileSync(COPIES_FILE, JSON.stringify(initialData, null, 2));
-  console.log('📁 Arquivo de copies criado:', COPIES_FILE);
+function initCopiesFile() {
+  if (!fs.existsSync(COPIES_FILE)) {
+    const initialData = {
+      tipos: {},
+      govdocs_bloqueados: PALAVRAS_BLOQUEADAS,
+      metadata: { ultimaAtualizacao: new Date().toISOString(), totalImportacoes: 0, versao: '2.0' }
+    };
+    // Inicializar todos os tipos
+    Object.keys(TIPOS_CERTIDAO).forEach(tipo => {
+      initialData.tipos[tipo] = {
+        nome: TIPOS_CERTIDAO[tipo].nome,
+        titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: []
+      };
+    });
+    fs.writeFileSync(COPIES_FILE, JSON.stringify(initialData, null, 2));
+    console.log('📁 Arquivo de copies v2.0 criado:', COPIES_FILE);
+  }
 }
+initCopiesFile();
 
 // Função auxiliar para ler copies
 function readCopies() {
   try {
     const data = fs.readFileSync(COPIES_FILE, 'utf8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    // Migrar dados antigos se necessário
+    if (!parsed.tipos && parsed.titulos) {
+      console.log('🔄 Migrando dados para v2.0...');
+      const migrated = {
+        tipos: {},
+        govdocs_bloqueados: PALAVRAS_BLOQUEADAS,
+        metadata: { ...parsed.metadata, versao: '2.0' }
+      };
+      Object.keys(TIPOS_CERTIDAO).forEach(tipo => {
+        migrated.tipos[tipo] = {
+          nome: TIPOS_CERTIDAO[tipo].nome,
+          titulos: tipo === 'geral' ? (parsed.titulos || []) : [],
+          descricoes: tipo === 'geral' ? (parsed.descricoes || []) : [],
+          keywords: tipo === 'geral' ? (parsed.keywords || []) : [],
+          sitelinks: tipo === 'geral' ? (parsed.sitelinks || []) : [],
+          frases: tipo === 'geral' ? (parsed.frases || []) : []
+        };
+      });
+      fs.writeFileSync(COPIES_FILE, JSON.stringify(migrated, null, 2));
+      return migrated;
+    }
+    return parsed;
   } catch (error) {
     console.error('❌ Erro ao ler copies:', error);
-    return { titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: [], campanhas: [], metadata: {} };
+    return { tipos: {}, metadata: {} };
   }
 }
 
@@ -2572,13 +2622,7 @@ function classificarCopy(copy) {
   return 'disponivel';
 }
 
-// Palavras bloqueadas (GovDocs)
-const PALAVRAS_BLOQUEADAS = [
-  'governo', 'federal', 'oficial', 'ministerio', 'publico', 'publica',
-  'orgao', 'estado', 'estadual', 'municipal', 'prefeitura', 'tribunal',
-  'justica', 'policia', 'detran', 'receita', 'inss', 'fgts'
-];
-
+// Verificar GovDocs
 function verificarGovDocs(texto) {
   const textoLower = texto.toLowerCase();
   const encontradas = PALAVRAS_BLOQUEADAS.filter(p => textoLower.includes(p));
@@ -2588,57 +2632,345 @@ function verificarGovDocs(texto) {
   };
 }
 
-// GET /copies - Listar todos os copies
-app.get('/copies', authenticateRequest, (req, res) => {
-  console.log('📥 [COPIES] GET /copies - Listando copies');
-  const copies = readCopies();
-  const { tipo, status, categoria, ordenar } = req.query;
+// DETECTOR: Identificar tipo de certidão baseado no texto
+function detectarTipoCertidao(texto) {
+  const textoLower = texto.toLowerCase();
   
-  let resultado = [];
-  
-  // Filtrar por tipo
-  if (tipo && copies[tipo]) {
-    resultado = copies[tipo];
-  } else {
-    // Retornar todos os tipos
-    resultado = {
-      titulos: copies.titulos || [],
-      descricoes: copies.descricoes || [],
-      keywords: copies.keywords || [],
-      sitelinks: copies.sitelinks || [],
-      frases: copies.frases || []
-    };
+  for (const [tipoId, config] of Object.entries(TIPOS_CERTIDAO)) {
+    if (tipoId === 'geral') continue;
+    for (const keyword of config.keywords) {
+      if (textoLower.includes(keyword)) {
+        return tipoId;
+      }
+    }
   }
+  return 'geral';
+}
+
+// PARSER: Interpretar linha colada do Google Ads
+function parsearLinhaGoogleAds(linha) {
+  // Detectar separador
+  const separadores = ['\t', '|', ',', ';'];
+  let melhorSeparador = '\t';
+  let maxColunas = 0;
   
-  // Filtrar por status se especificado
-  if (status && Array.isArray(resultado)) {
-    resultado = resultado.filter(c => c.status === status);
-  }
-  
-  // Filtrar por categoria se especificado
-  if (categoria && Array.isArray(resultado)) {
-    resultado = resultado.filter(c => c.categoria === categoria);
-  }
-  
-  // Ordenar
-  if (ordenar && Array.isArray(resultado)) {
-    switch (ordenar) {
-      case 'ctr':
-        resultado.sort((a, b) => (b.metricas?.ctr || 0) - (a.metricas?.ctr || 0));
-        break;
-      case 'conversoes':
-        resultado.sort((a, b) => (b.metricas?.conversoes || 0) - (a.metricas?.conversoes || 0));
-        break;
-      case 'recente':
-        resultado.sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm));
-        break;
+  for (const sep of separadores) {
+    const colunas = linha.split(sep).filter(c => c.trim());
+    if (colunas.length > maxColunas) {
+      maxColunas = colunas.length;
+      melhorSeparador = sep;
     }
   }
   
-  res.json(resultado);
+  const colunas = linha.split(melhorSeparador).map(c => c.trim().replace(/^\"|\"$/g, ''));
+  
+  if (colunas.length < 2) {
+    return { sucesso: false, erro: 'Linha com poucas colunas' };
+  }
+  
+  // Detectar o que é cada coluna
+  const resultado = {
+    sucesso: true,
+    texto: null,
+    tipoRecurso: null, // titulo, descricao, keyword
+    tipoCertidao: null,
+    metricas: {
+      impressoes: 0,
+      cliques: 0,
+      ctr: 0,
+      custo: 0,
+      conversoes: 0
+    }
+  };
+  
+  for (const col of colunas) {
+    const colLower = col.toLowerCase();
+    
+    // Detectar tipo de recurso
+    if (colLower === 'título' || colLower === 'titulo') {
+      resultado.tipoRecurso = 'titulos';
+    } else if (colLower === 'descrição' || colLower === 'descricao' || colLower === 'description') {
+      resultado.tipoRecurso = 'descricoes';
+    } else if (colLower.includes('palavra') || colLower === 'keyword') {
+      resultado.tipoRecurso = 'keywords';
+    } else if (colLower === 'sitelink') {
+      resultado.tipoRecurso = 'sitelinks';
+    }
+    
+    // Detectar métricas numéricas
+    const numerico = col.replace(/[R$\s.]/g, '').replace(',', '.');
+    if (/^\d+$/.test(col)) {
+      // Número inteiro - pode ser impressões ou cliques
+      const num = parseInt(col);
+      if (num > 100) {
+        resultado.metricas.impressoes = num;
+      } else {
+        resultado.metricas.cliques = num;
+      }
+    } else if (/^\d+[\.,]\d+%?$/.test(col.replace('%', ''))) {
+      // Número decimal - CTR ou custo
+      const num = parseFloat(numerico);
+      if (num < 20) {
+        resultado.metricas.ctr = num;
+      } else {
+        resultado.metricas.custo = num;
+      }
+    }
+    
+    // Ignorar colunas de status conhecidas
+    const statusIgnorados = ['anúncio', 'anuncio', 'qualificada', 'qualificado', 'ativado', 'ativo', 'pausado', 'nenhuma', 'anunciante'];
+    if (statusIgnorados.includes(colLower)) continue;
+    
+    // Se não é métrica e tem mais de 5 caracteres, provavelmente é o texto
+    if (!resultado.texto && col.length > 5 && !/^[\d\.,R$%]+$/.test(col) && !statusIgnorados.includes(colLower)) {
+      resultado.texto = col;
+    }
+  }
+  
+  // Se não detectou tipo de recurso, tentar pelo tamanho
+  if (!resultado.tipoRecurso && resultado.texto) {
+    if (resultado.texto.length <= 30) {
+      resultado.tipoRecurso = 'titulos';
+    } else if (resultado.texto.length <= 90) {
+      resultado.tipoRecurso = 'descricoes';
+    } else {
+      resultado.tipoRecurso = 'keywords';
+    }
+  }
+  
+  // Detectar tipo de certidão pelo texto
+  if (resultado.texto) {
+    resultado.tipoCertidao = detectarTipoCertidao(resultado.texto);
+    
+    // Calcular CTR se tiver impressões e cliques
+    if (resultado.metricas.impressoes > 0 && resultado.metricas.cliques > 0 && resultado.metricas.ctr === 0) {
+      resultado.metricas.ctr = parseFloat(((resultado.metricas.cliques / resultado.metricas.impressoes) * 100).toFixed(2));
+    }
+  }
+  
+  if (!resultado.texto) {
+    resultado.sucesso = false;
+    resultado.erro = 'Não foi possível identificar o texto principal';
+  }
+  
+  return resultado;
+}
+
+// GET /copies/tipos - Listar tipos de certidão disponíveis
+app.get('/copies/tipos', authenticateRequest, (req, res) => {
+  res.json(Object.entries(TIPOS_CERTIDAO).map(([id, config]) => ({
+    id,
+    nome: config.nome,
+    keywords: config.keywords
+  })));
 });
 
-// GET /copies/stats - Estatísticas dos copies
+// POST /copies/colar-linha - Processar linha colada do Google Ads
+app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
+  const { linha, tipoCertidaoOverride } = req.body;
+  
+  if (!linha || !linha.trim()) {
+    return res.status(400).json({ error: 'Linha é obrigatória' });
+  }
+  
+  console.log('📥 [COPIES] POST /copies/colar-linha - Processando linha');
+  
+  // Parsear a linha
+  const parsed = parsearLinhaGoogleAds(linha);
+  
+  if (!parsed.sucesso) {
+    return res.status(400).json({ error: parsed.erro, parsed });
+  }
+  
+  // Override do tipo se especificado
+  if (tipoCertidaoOverride && TIPOS_CERTIDAO[tipoCertidaoOverride]) {
+    parsed.tipoCertidao = tipoCertidaoOverride;
+  }
+  
+  // Verificar GovDocs
+  const govCheck = verificarGovDocs(parsed.texto);
+  if (!govCheck.seguro) {
+    return res.status(400).json({
+      error: 'Texto contém palavras bloqueadas (GovDocs)',
+      palavras: govCheck.palavrasEncontradas,
+      parsed
+    });
+  }
+  
+  const copies = readCopies();
+  const tipoCert = parsed.tipoCertidao || 'geral';
+  const tipoRecurso = parsed.tipoRecurso || 'titulos';
+  
+  // Garantir que a estrutura existe
+  if (!copies.tipos) copies.tipos = {};
+  if (!copies.tipos[tipoCert]) {
+    copies.tipos[tipoCert] = {
+      nome: TIPOS_CERTIDAO[tipoCert]?.nome || tipoCert,
+      titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: []
+    };
+  }
+  if (!copies.tipos[tipoCert][tipoRecurso]) {
+    copies.tipos[tipoCert][tipoRecurso] = [];
+  }
+  
+  // Verificar se já existe
+  const existente = copies.tipos[tipoCert][tipoRecurso].find(c => 
+    c.texto.toLowerCase() === parsed.texto.toLowerCase()
+  );
+  
+  let resultado;
+  
+  if (existente) {
+    // Atualizar métricas
+    existente.metricas.impressoes += parsed.metricas.impressoes;
+    existente.metricas.cliques += parsed.metricas.cliques;
+    existente.metricas.custo += parsed.metricas.custo;
+    if (existente.metricas.impressoes > 0) {
+      existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
+    }
+    existente.status = classificarCopy(existente);
+    existente.atualizadoEm = new Date().toISOString();
+    existente.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
+    
+    resultado = { acao: 'atualizado', copy: existente };
+  } else {
+    // Criar novo
+    const novoCopy = {
+      id: generateCopyId(tipoRecurso),
+      texto: parsed.texto,
+      caracteres: parsed.texto.length,
+      tipoCertidao: tipoCert,
+      tipoRecurso: tipoRecurso,
+      status: 'disponivel',
+      metricas: parsed.metricas,
+      historico: [{ data: new Date().toISOString(), acao: 'criado_via_linha' }],
+      validacao: { govdocs_safe: true },
+      criadoEm: new Date().toISOString(),
+      atualizadoEm: new Date().toISOString()
+    };
+    
+    novoCopy.status = classificarCopy(novoCopy);
+    copies.tipos[tipoCert][tipoRecurso].push(novoCopy);
+    
+    resultado = { acao: 'criado', copy: novoCopy };
+  }
+  
+  if (saveCopies(copies)) {
+    console.log(`✅ [COPIES] ${resultado.acao}: ${parsed.texto.substring(0, 30)}... -> ${tipoCert}/${tipoRecurso}`);
+    res.json({
+      success: true,
+      ...resultado,
+      parsed: {
+        texto: parsed.texto,
+        tipoRecurso: tipoRecurso,
+        tipoCertidao: tipoCert,
+        metricas: parsed.metricas
+      }
+    });
+  } else {
+    res.status(500).json({ error: 'Erro ao salvar' });
+  }
+});
+
+// GET /copies/gerar-anuncio/:tipo - Gerar anúncio completo para um tipo
+app.get('/copies/gerar-anuncio/:tipo', authenticateRequest, (req, res) => {
+  const { tipo } = req.params;
+  
+  if (!TIPOS_CERTIDAO[tipo]) {
+    return res.status(400).json({ error: 'Tipo de certidão inválido', tiposValidos: Object.keys(TIPOS_CERTIDAO) });
+  }
+  
+  const copies = readCopies();
+  const dados = copies.tipos?.[tipo] || { titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: [] };
+  
+  // Ordenar por status (campeões primeiro) e CTR
+  const ordenar = (arr) => {
+    return [...(arr || [])].sort((a, b) => {
+      const ordem = { campeao: 0, ativo: 1, disponivel: 2, pausado: 3, baixa_perf: 4, bloqueado: 5 };
+      const ordemA = ordem[a.status] ?? 4;
+      const ordemB = ordem[b.status] ?? 4;
+      if (ordemA !== ordemB) return ordemA - ordemB;
+      return (b.metricas?.ctr || 0) - (a.metricas?.ctr || 0);
+    }).filter(c => c.status !== 'bloqueado');
+  };
+  
+  const titulos = ordenar(dados.titulos).slice(0, 15);
+  const descricoes = ordenar(dados.descricoes).slice(0, 4);
+  const keywords = ordenar(dados.keywords).slice(0, 20);
+  const sitelinks = ordenar(dados.sitelinks).slice(0, 6);
+  const frases = ordenar(dados.frases).slice(0, 10);
+  
+  // Gerar anúncio formatado
+  const anuncio = {
+    tipo: tipo,
+    nomeTipo: TIPOS_CERTIDAO[tipo].nome,
+    geradoEm: new Date().toISOString(),
+    completo: titulos.length >= 3 && descricoes.length >= 2,
+    stats: {
+      titulos: titulos.length,
+      descricoes: descricoes.length,
+      keywords: keywords.length,
+      sitelinks: sitelinks.length,
+      frases: frases.length,
+      campeoes: {
+        titulos: titulos.filter(t => t.status === 'campeao').length,
+        descricoes: descricoes.filter(t => t.status === 'campeao').length
+      }
+    },
+    componentes: {
+      titulos: titulos.map(t => ({ texto: t.texto, status: t.status, ctr: t.metricas?.ctr })),
+      descricoes: descricoes.map(t => ({ texto: t.texto, status: t.status, ctr: t.metricas?.ctr })),
+      keywords: keywords.map(t => ({ texto: t.texto, status: t.status })),
+      sitelinks: sitelinks.map(t => ({ texto: t.texto, status: t.status })),
+      frases: frases.map(t => ({ texto: t.texto, status: t.status }))
+    },
+    textoCopiavel: {
+      titulos: titulos.map(t => t.texto).join('\n'),
+      descricoes: descricoes.map(t => t.texto).join('\n'),
+      keywords: keywords.map(t => t.texto).join('\n'),
+      sitelinks: sitelinks.map(t => t.texto).join('\n'),
+      frases: frases.map(t => t.texto).join('\n')
+    }
+  };
+  
+  res.json(anuncio);
+});
+
+// GET /copies - Listar todos os copies (v2 - por tipo de certidão)
+app.get('/copies', authenticateRequest, (req, res) => {
+  console.log('📥 [COPIES] GET /copies - Listando copies');
+  const copies = readCopies();
+  const { tipoCertidao, tipoRecurso, status, ordenar } = req.query;
+  
+  // Se especificou tipo de certidão
+  if (tipoCertidao && copies.tipos?.[tipoCertidao]) {
+    const dados = copies.tipos[tipoCertidao];
+    
+    if (tipoRecurso && dados[tipoRecurso]) {
+      let resultado = [...dados[tipoRecurso]];
+      
+      if (status) {
+        resultado = resultado.filter(c => c.status === status);
+      }
+      
+      if (ordenar === 'ctr') {
+        resultado.sort((a, b) => (b.metricas?.ctr || 0) - (a.metricas?.ctr || 0));
+      }
+      
+      return res.json(resultado);
+    }
+    
+    return res.json(dados);
+  }
+  
+  // Retornar todos organizados por tipo
+  res.json({
+    tipos: copies.tipos || {},
+    tiposDisponiveis: Object.keys(TIPOS_CERTIDAO)
+  });
+});
+
+// GET /copies/stats - Estatísticas dos copies (v2)
 app.get('/copies/stats', authenticateRequest, (req, res) => {
   const copies = readCopies();
   
@@ -2650,13 +2982,31 @@ app.get('/copies/stats', authenticateRequest, (req, res) => {
     return stats;
   };
   
+  const statsPorTipo = {};
+  let totais = { titulos: 0, descricoes: 0, keywords: 0, sitelinks: 0, frases: 0 };
+  
+  if (copies.tipos) {
+    Object.entries(copies.tipos).forEach(([tipoId, dados]) => {
+      statsPorTipo[tipoId] = {
+        nome: dados.nome,
+        titulos: { total: (dados.titulos || []).length, ...contarPorStatus(dados.titulos) },
+        descricoes: { total: (dados.descricoes || []).length, ...contarPorStatus(dados.descricoes) },
+        keywords: { total: (dados.keywords || []).length, ...contarPorStatus(dados.keywords) },
+        sitelinks: { total: (dados.sitelinks || []).length, ...contarPorStatus(dados.sitelinks) },
+        frases: { total: (dados.frases || []).length, ...contarPorStatus(dados.frases) }
+      };
+      
+      totais.titulos += (dados.titulos || []).length;
+      totais.descricoes += (dados.descricoes || []).length;
+      totais.keywords += (dados.keywords || []).length;
+      totais.sitelinks += (dados.sitelinks || []).length;
+      totais.frases += (dados.frases || []).length;
+    });
+  }
+  
   res.json({
-    titulos: { total: (copies.titulos || []).length, ...contarPorStatus(copies.titulos) },
-    descricoes: { total: (copies.descricoes || []).length, ...contarPorStatus(copies.descricoes) },
-    keywords: { total: (copies.keywords || []).length, ...contarPorStatus(copies.keywords) },
-    sitelinks: { total: (copies.sitelinks || []).length, ...contarPorStatus(copies.sitelinks) },
-    frases: { total: (copies.frases || []).length, ...contarPorStatus(copies.frases) },
-    campanhas: (copies.campanhas || []).length,
+    totais,
+    porTipo: statsPorTipo,
     ultimaAtualizacao: copies.metadata?.ultimaAtualizacao,
     totalImportacoes: copies.metadata?.totalImportacoes || 0
   });
