@@ -80,7 +80,7 @@ const Index = () => {
             {/* Header */}
             <div className="text-center mb-10">
               <h1 className="font-heading text-xl md:text-2xl lg:text-3xl font-bold text-primary uppercase tracking-wide">
-                Todas as suas certidões direto no seu E-mail e WhatsApp.
+                Serviços para Você
               </h1>
               <p className="mt-3 text-muted-foreground">
                 Processo rápido, seguro e 100% online.

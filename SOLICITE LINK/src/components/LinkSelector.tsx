@@ -9,50 +9,51 @@ import {
 import { ChevronRight } from "lucide-react";
 import { pushDL } from "@/lib/dataLayer";
 
-// URL do PORTAL - configurável via variável de ambiente
-const PORTAL_URL = import.meta.env.VITE_PORTAL_URL || 'http://localhost:8083';
 
-// Mapeamento de serviços do SOLICITE LINK para tipos do PORTAL
+// URL do Portal - todos os serviços vão para a home
+const PORTAL_HOME = 'https://www.portalcertidao.org';
+
+// Mapeamento de serviços do SOLICITE LINK
 const linkOptions = [
   { 
     id: "criminal-federal", 
-    label: "Criminal Federal", 
-    portalPath: "/certidao/federais?type=criminal"
+    label: "Certidão Criminal Federal", 
+    portalPath: ""
   },
   { 
     id: "quitacao-eleitoral", 
-    label: "Quitação Eleitoral", 
-    portalPath: "/certidao/federais?type=eleitoral"
+    label: "Certidão Quitação Eleitoral", 
+    portalPath: ""
   },
   { 
     id: "antecedencia-pf", 
-    label: "Antecedência Criminal – PF", 
-    portalPath: "/certidao/policia-federal"
+    label: "Certidão Antecedência Criminal – PF", 
+    portalPath: ""
   },
   { 
     id: "criminal-estadual", 
-    label: "Criminal Estadual", 
-    portalPath: "/certidao/estaduais"
+    label: "Certidão Criminal Estadual", 
+    portalPath: ""
   },
   { 
     id: "civel-federal", 
-    label: "Cível Federal", 
-    portalPath: "/certidao/federais?type=civel"
+    label: "Certidão Cível Federal", 
+    portalPath: ""
   },
   { 
     id: "civel-estadual", 
-    label: "Cível Estadual", 
-    portalPath: "/certidao/estaduais?type=civel"
+    label: "Certidão Cível Estadual", 
+    portalPath: ""
   },
   { 
     id: "cnd", 
-    label: "CND", 
-    portalPath: "/certidao/cnd"
+    label: "Certidão CND", 
+    portalPath: ""
   },
   { 
     id: "cpf-regular", 
-    label: "CPF Regular", 
-    portalPath: "/certidao/cpf-regular"
+    label: "Certidão CPF Regular", 
+    portalPath: ""
   },
 ];
 
@@ -82,9 +83,8 @@ const LinkSelector = () => {
         funnel_step: 'access_clicked'
       });
       
-      // Redirecionar para PORTAL com o caminho correto
-      const portalFullUrl = `${PORTAL_URL}${selectedOption.portalPath}`;
-      window.location.href = portalFullUrl;
+      // Redirecionar para a home do PORTAL
+      window.location.href = PORTAL_HOME;
     }
   };
 
@@ -101,7 +101,7 @@ const LinkSelector = () => {
 
       <Select value={selectedLink} onValueChange={handleSelectChange}>
         <SelectTrigger className="w-full h-16 text-lg font-medium bg-white border-2 border-primary/30 hover:border-primary shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl focus:ring-4 focus:ring-primary/20">
-          <SelectValue placeholder="Selecione uma opção na lista" />
+          <SelectValue placeholder="Selecione qual Documento precisa pedir" />
         </SelectTrigger>
         <SelectContent className="bg-white border-2 border-primary/20 shadow-2xl rounded-xl z-50 max-h-80">
           {linkOptions.map((option) => (

@@ -26,7 +26,64 @@
     },
     "eleitoral": {
       "nome": "Eleitoral",
-      "titulos": [],
+      "titulos": [
+        {
+          "id": "tit-1767453532066-l9ssko",
+          "texto": "Veja Seus Links Eleitorais",
+          "caracteres": 26,
+          "tipoCertidao": "eleitoral",
+          "tipoRecurso": "titulos",
+          "status": "disponivel",
+          "metricas": {
+            "impressoes": 200,
+            "cliques": 24,
+            "ctr": 12,
+            "custo": 0,
+            "conversoes": 0
+          },
+          "historico": [
+            {
+              "data": "2026-01-03T15:18:52.066Z",
+              "acao": "criado_via_linha"
+            },
+            {
+              "data": "2026-01-03T15:19:05.377Z",
+              "acao": "atualizado_via_linha"
+            }
+          ],
+          "validacao": {
+            "govdocs_safe": true
+          },
+          "criadoEm": "2026-01-03T15:18:52.066Z",
+          "atualizadoEm": "2026-01-03T15:19:05.377Z"
+        },
+        {
+          "id": "tit-1767453540265-0j7q32",
+          "texto": "Consulte Situacao Eleitoral Agora",
+          "caracteres": 33,
+          "tipoCertidao": "eleitoral",
+          "tipoRecurso": "titulos",
+          "status": "disponivel",
+          "metricas": {
+            "impressoes": 136,
+            "cliques": 0,
+            "ctr": 0,
+            "custo": 0,
+            "conversoes": 0
+          },
+          "historico": [
+            {
+              "data": "2026-01-03T15:19:00.265Z",
+              "acao": "criado_via_linha"
+            }
+          ],
+          "validacao": {
+            "govdocs_safe": true
+          },
+          "criadoEm": "2026-01-03T15:19:00.265Z",
+          "atualizadoEm": "2026-01-03T15:19:00.265Z"
+        }
+      ],
       "descricoes": [],
       "keywords": [],
       "sitelinks": [],
@@ -82,15 +139,45 @@
     }
   },
   "govdocs_bloqueados": [
-    "governo", "federal", "oficial", "ministerio", "ministério", "publico", "público",
-    "orgao", "órgão", "estado", "estadual", "tribunal", "justica", "justiça", "policia", "polícia",
-    "detran", "receita", "inss", "tse", "trf", "trt", "stf", "stj",
-    "prefeitura", "secretaria", "certidao oficial", "certidão oficial",
-    "documento oficial", "site oficial", "portal oficial", "gov.br",
-    "poder judiciario", "poder judiciário", "ministerio publico", "ministério público"
+    "governo",
+    "federal",
+    "oficial",
+    "ministerio",
+    "ministério",
+    "publico",
+    "público",
+    "orgao",
+    "órgão",
+    "estado",
+    "estadual",
+    "tribunal",
+    "justica",
+    "justiça",
+    "policia",
+    "polícia",
+    "detran",
+    "receita",
+    "inss",
+    "tse",
+    "trf",
+    "trt",
+    "stf",
+    "stj",
+    "prefeitura",
+    "secretaria",
+    "certidao oficial",
+    "certidão oficial",
+    "documento oficial",
+    "site oficial",
+    "portal oficial",
+    "gov.br",
+    "poder judiciario",
+    "poder judiciário",
+    "ministerio publico",
+    "ministério público"
   ],
   "metadata": {
-    "ultimaAtualizacao": null,
+    "ultimaAtualizacao": "2026-01-03T15:19:05.377Z",
     "totalImportacoes": 0,
     "versao": "2.0"
   }
