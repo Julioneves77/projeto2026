@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Footer from "@/components/Footer";
 import { ArrowLeft, CheckCircle, Mail, MessageCircle, Clock, Home } from "lucide-react";
+import { pushDL } from "@/lib/dataLayer";
 
 const Obrigado = () => {
   const [searchParams] = useSearchParams();
@@ -24,27 +25,18 @@ const Obrigado = () => {
 
   // Disparar evento GTM de conversão
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      // Criar dataLayer se não existir
-      if (!(window as any).dataLayer) {
-        (window as any).dataLayer = [];
-      }
-      
-      // Disparar evento de conversão
-      (window as any).dataLayer.push({
-        event: "conversion",
+    if (ticketCodigo || planoId || tipoCertidao) {
+      pushDL('payment_completed', {
+        funnel_step: 'payment_success',
+        source: 'links',
+        ticketCodigo: ticketCodigo,
+        plano: planoId,
+        tipoCertidao: tipoCertidao || "Solicitação",
+        // Campos adicionais para compatibilidade
         eventCategory: "Pagamento",
         eventAction: "Confirmado",
         eventLabel: tipoCertidao || "Solicitação",
-        ticketCodigo: ticketCodigo,
-        plano: planoId,
         value: planoId === "premium" ? "premium" : planoId === "prioridade" ? "prioridade" : "padrao",
-      });
-      
-      console.log('✅ [SOLICITE LINK] Evento GTM de conversão disparado:', {
-        ticketCodigo,
-        planoId,
-        tipoCertidao
       });
     }
   }, [ticketCodigo, planoId, tipoCertidao]);

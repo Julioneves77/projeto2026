@@ -11,6 +11,7 @@ import FAQ from "./pages/FAQ";
 import Depoimentos from "./pages/Depoimentos";
 import Contato from "./pages/Contato";
 import Obrigado from "./pages/Obrigado";
+import EventProxy from "./pages/EventProxy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/event" element={<EventProxy />} />
           <Route path="/como-funciona" element={<ComoFunciona />} />
           <Route path="/privacidade" element={<Privacidade />} />
           <Route path="/termos" element={<Termos />} />

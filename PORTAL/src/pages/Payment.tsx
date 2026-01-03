@@ -50,6 +50,7 @@ const Payment = () => {
   const [pixTransaction, setPixTransaction] = useState<PagarmeTransaction | null>(null);
   const [pixQrCode, setPixQrCode] = useState<string | null>(null);
   const [isLoadingPix, setIsLoadingPix] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isTestMode = !locationState.formData;
 
@@ -276,7 +277,7 @@ const Payment = () => {
     }
   };
 
-  // Função para redirecionar para página de obrigado
+  // Função para redirecionar para página de obrigado via /event (dispara evento GTM)
   const redirectToThankYou = async (ticket: any) => {
     const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
     
@@ -285,22 +286,31 @@ const Payment = () => {
     const planoId = selectedPlan.id || 'padrao';
     const email = formData.email || '';
     
-    const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
-    obrigadoUrl.searchParams.set('codigo', ticketCodigo);
-    obrigadoUrl.searchParams.set('plano', planoNome);
-    obrigadoUrl.searchParams.set('planoId', planoId);
-    obrigadoUrl.searchParams.set('email', email);
-    obrigadoUrl.searchParams.set('tipo', certificateType);
-    
-    // Salvar no localStorage como fallback
+    // Salvar no localStorage como fallback (será lido pela página /obrigado)
     if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
     if (planoNome) localStorage.setItem('planoNome', planoNome);
     if (planoId) localStorage.setItem('planoId', planoId);
     if (email) localStorage.setItem('ticketEmail', email);
     if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
     
-    // Redirecionar para SOLICITE LINK
-    window.location.href = obrigadoUrl.toString();
+    // Gerar session ID único para anti-duplicidade
+    const sessionId = `${ticketCodigo}_${Date.now()}`;
+    
+    // Redirecionar para /event primeiro (dispara evento GTM) e depois vai para /obrigado
+    // O EventProxy no solicite.link vai disparar o evento e redirecionar para /obrigado
+    const eventUrl = new URL(`${SOLICITE_LINK_URL}/event`);
+    eventUrl.searchParams.set('type', 'payment_completed');
+    eventUrl.searchParams.set('sid', sessionId);
+    eventUrl.searchParams.set('codigo', ticketCodigo);
+    eventUrl.searchParams.set('plano', planoNome);
+    eventUrl.searchParams.set('planoId', planoId);
+    eventUrl.searchParams.set('email', email);
+    eventUrl.searchParams.set('tipo', certificateType);
+    
+    console.log('🚀 [PORTAL Payment] Redirecionando para solicite.link/event:', eventUrl.toString());
+    
+    // Redirecionar para SOLICITE LINK /event (que dispara o evento e redireciona para /obrigado)
+    window.location.href = eventUrl.toString();
   };
 
   const formatPrice = (price: number) => {

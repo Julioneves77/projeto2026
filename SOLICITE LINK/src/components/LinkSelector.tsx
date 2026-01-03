@@ -7,6 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronRight } from "lucide-react";
+import { pushDL } from "@/lib/dataLayer";
 
 // URL do PORTAL - configurável via variável de ambiente
 const PORTAL_URL = import.meta.env.VITE_PORTAL_URL || 'http://localhost:8083';
@@ -60,8 +61,27 @@ const LinkSelector = () => {
 
   const selectedOption = linkOptions.find((opt) => opt.id === selectedLink);
 
+  const handleSelectChange = (value: string) => {
+    setSelectedLink(value);
+    const option = linkOptions.find((opt) => opt.id === value);
+    if (option) {
+      pushDL('links_option_selected', {
+        option_id: option.id,
+        option_label: option.label,
+        funnel_step: 'option_selected'
+      });
+    }
+  };
+
   const handleAccessClick = () => {
     if (selectedOption) {
+      pushDL('links_access_clicked', {
+        option_id: selectedOption.id,
+        option_label: selectedOption.label,
+        destination_hint: selectedOption.portalPath,
+        funnel_step: 'access_clicked'
+      });
+      
       // Redirecionar para PORTAL com o caminho correto
       const portalFullUrl = `${PORTAL_URL}${selectedOption.portalPath}`;
       window.location.href = portalFullUrl;
@@ -79,7 +99,7 @@ const LinkSelector = () => {
         </h2>
       </div>
 
-      <Select value={selectedLink} onValueChange={setSelectedLink}>
+      <Select value={selectedLink} onValueChange={handleSelectChange}>
         <SelectTrigger className="w-full h-16 text-lg font-medium bg-white border-2 border-primary/30 hover:border-primary shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl focus:ring-4 focus:ring-primary/20">
           <SelectValue placeholder="Selecione uma opção na lista" />
         </SelectTrigger>
