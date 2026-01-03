@@ -24,6 +24,7 @@ const app = express();
 const sseClients = new Set();
 const PORT = process.env.PORT || 3001;
 const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
+const COPIES_FILE = path.join(__dirname, 'copies-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
 // Configuração de CORS
