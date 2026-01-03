@@ -2513,16 +2513,16 @@ app.use((error, req, res, next) => {
 // ============================================
 
 // Tipos de Certidão disponíveis
+// Tipos de certidão disponíveis no Portal (portalcertidao.org)
 const TIPOS_CERTIDAO = {
-  criminal_federal: { nome: 'Criminal Federal', keywords: ['criminal federal', 'pf', 'polícia federal', 'antecedentes federais'] },
-  criminal_estadual: { nome: 'Criminal Estadual', keywords: ['criminal estadual', 'estadual', 'polícia civil', 'antecedentes estaduais'] },
-  antecedentes_pf: { nome: 'Antecedentes PF', keywords: ['antecedentes', 'pf', 'polícia federal', 'ficha limpa'] },
-  eleitoral: { nome: 'Eleitoral', keywords: ['eleitoral', 'eleitor', 'título eleitor', 'quitação eleitoral', 'situação eleitoral'] },
-  trabalhista: { nome: 'Trabalhista', keywords: ['trabalhista', 'trabalho', 'trt', 'débitos trabalhistas', 'ações trabalhistas'] },
-  civel: { nome: 'Cível', keywords: ['civel', 'cível', 'civil', 'ações civeis', 'processo civel'] },
-  nascimento: { nome: 'Nascimento', keywords: ['nascimento', 'certidão nascimento', 'registro nascimento'] },
-  casamento: { nome: 'Casamento', keywords: ['casamento', 'certidão casamento', 'matrimônio'] },
-  obito: { nome: 'Óbito', keywords: ['obito', 'óbito', 'certidão óbito', 'falecimento'] },
+  criminal_federal: { nome: 'Criminal Federal', keywords: ['criminal federal', 'certidão negativa criminal federal', 'antecedentes federais'] },
+  criminal_estadual: { nome: 'Criminal Estadual', keywords: ['criminal estadual', 'certidão negativa criminal estadual', 'antecedentes estaduais', 'polícia civil'] },
+  antecedentes_pf: { nome: 'Antecedentes PF', keywords: ['antecedentes criminais', 'polícia federal', 'pf', 'ficha limpa'] },
+  eleitoral: { nome: 'Eleitoral', keywords: ['eleitoral', 'quitação eleitoral', 'certidão eleitoral', 'título eleitor', 'situação eleitoral'] },
+  civel_federal: { nome: 'Cível Federal', keywords: ['cível federal', 'certidão negativa cível federal', 'civil federal'] },
+  civel_estadual: { nome: 'Cível Estadual', keywords: ['cível estadual', 'certidão negativa cível estadual', 'civil estadual'] },
+  cnd: { nome: 'CND', keywords: ['cnd', 'certidão negativa de débitos', 'débitos', 'certidão de débitos'] },
+  cpf_regular: { nome: 'CPF Regular', keywords: ['cpf regular', 'certidão cpf', 'cpf', 'situação cpf'] },
   geral: { nome: 'Geral', keywords: [] }
 };
 
@@ -2649,30 +2649,39 @@ function detectarTipoCertidao(texto) {
 
 // PARSER: Interpretar linha colada do Google Ads
 function parsearLinhaGoogleAds(linha) {
-  // Detectar separador
+  // Normalizar linha: substituir múltiplos espaços por TAB para facilitar parsing
+  let linhaNormalizada = linha;
+  
+  // Se não tem TAB, tentar detectar padrão de múltiplos espaços
+  if (!linha.includes('\t')) {
+    // Padrão comum: texto seguido de palavras conhecidas (Anúncio, Qualificada, Título, etc.)
+    // Substituir sequências de 2+ espaços por TAB
+    linhaNormalizada = linha.replace(/\s{2,}/g, '\t');
+  }
+  
+  // Detectar separador (priorizar TAB que é o padrão do Google Ads)
   const separadores = ['\t', '|', ',', ';'];
   let melhorSeparador = '\t';
   let maxColunas = 0;
   
   for (const sep of separadores) {
-    const colunas = linha.split(sep).filter(c => c.trim());
+    const colunas = linhaNormalizada.split(sep).map(c => c.trim());
     if (colunas.length > maxColunas) {
       maxColunas = colunas.length;
       melhorSeparador = sep;
     }
   }
   
-  const colunas = linha.split(melhorSeparador).map(c => c.trim().replace(/^\"|\"$/g, ''));
+  const colunas = linhaNormalizada.split(melhorSeparador).map(c => c.trim().replace(/^\"|\"$/g, ''));
   
   if (colunas.length < 2) {
     return { sucesso: false, erro: 'Linha com poucas colunas' };
   }
   
-  // Detectar o que é cada coluna
   const resultado = {
     sucesso: true,
     texto: null,
-    tipoRecurso: null, // titulo, descricao, keyword
+    tipoRecurso: null,
     tipoCertidao: null,
     metricas: {
       impressoes: 0,
@@ -2683,51 +2692,241 @@ function parsearLinhaGoogleAds(linha) {
     }
   };
   
-  for (const col of colunas) {
-    const colLower = col.toLowerCase();
-    
-    // Detectar tipo de recurso
-    if (colLower === 'título' || colLower === 'titulo') {
-      resultado.tipoRecurso = 'titulos';
-    } else if (colLower === 'descrição' || colLower === 'descricao' || colLower === 'description') {
-      resultado.tipoRecurso = 'descricoes';
-    } else if (colLower.includes('palavra') || colLower === 'keyword') {
-      resultado.tipoRecurso = 'keywords';
-    } else if (colLower === 'sitelink') {
-      resultado.tipoRecurso = 'sitelinks';
-    }
-    
-    // Detectar métricas numéricas
-    const numerico = col.replace(/[R$\s.]/g, '').replace(',', '.');
-    if (/^\d+$/.test(col)) {
-      // Número inteiro - pode ser impressões ou cliques
-      const num = parseInt(col);
-      if (num > 100) {
-        resultado.metricas.impressoes = num;
-      } else {
-        resultado.metricas.cliques = num;
-      }
-    } else if (/^\d+[\.,]\d+%?$/.test(col.replace('%', ''))) {
-      // Número decimal - CTR ou custo
-      const num = parseFloat(numerico);
-      if (num < 20) {
-        resultado.metricas.ctr = num;
-      } else {
-        resultado.metricas.custo = num;
-      }
-    }
-    
-    // Ignorar colunas de status conhecidas
-    const statusIgnorados = ['anúncio', 'anuncio', 'qualificada', 'qualificado', 'ativado', 'ativo', 'pausado', 'nenhuma', 'anunciante'];
-    if (statusIgnorados.includes(colLower)) continue;
-    
-    // Se não é métrica e tem mais de 5 caracteres, provavelmente é o texto
-    if (!resultado.texto && col.length > 5 && !/^[\d\.,R$%]+$/.test(col) && !statusIgnorados.includes(colLower)) {
-      resultado.texto = col;
+  // FORMATO ESPERADO DO GOOGLE ADS (Relatório de Anúncios):
+  // 
+  // FORMATO COMPACTO (sem "Adicionada por" e "Data"):
+  // Coluna 0: Texto do recurso
+  // Coluna 1: Nível ("Anúncio")
+  // Coluna 2: Status ("Qualificada")
+  // Coluna 3: Tipo de recurso ("Título", "Descrição", "Palavra-chave")
+  // Coluna 4: Fixação ("Nenhuma")
+  // Coluna 5: Impressões (número)
+  // Coluna 6: Cliques (número)
+  // Coluna 7: CTR ("31,58%")
+  // Coluna 8: CPC ("R$ 2,04")
+  // Coluna 9: Conversões ("0,00")
+  // Coluna 10: Valor conv. ("0,00")
+  // Coluna 11: Custo ("R$ 24,43")
+  //
+  // FORMATO COM "Adicionada por" e "Data":
+  // Coluna 0: Texto do recurso
+  // Coluna 1: Nível ("Anúncio" ou "Campanha")
+  // Coluna 2: Status ("Qualificada")
+  // Coluna 3: Tipo de recurso ("Título", "Descrição", "Sitelink", "Palavra-chave")
+  // Coluna 4: Fixação ("Nenhuma")
+  // Coluna 5: Adicionada por ("Anunciante")
+  // Coluna 6: Data ("1 de dez. de 2025 16:16" ou "—")
+  // Coluna 7: Impressões (número)
+  // Coluna 8: Cliques (número)
+  // Coluna 9: Custo ("R$ 187,74")
+  // Coluna 10: Conversões (número decimal)
+  // Coluna 11: Outro campo (número decimal)
+  // Coluna 12: CTR ("16,05%")
+  // Coluna 13: CPC ("R$ 1,36")
+  
+  // Detectar formato: se coluna 5 é número puro (impressões), é formato compacto
+  // Se coluna 5 contém texto como "Anunciante", é formato com data
+  let formatoCompacto = false;
+  let formatoComData = false;
+  
+  if (colunas.length > 5) {
+    // Se coluna 5 é um número puro (impressões no formato compacto)
+    const col5SemPontos = colunas[5].replace(/\./g, '');
+    if (/^\d+$/.test(col5SemPontos)) {
+      formatoCompacto = true;
+    } else if (colunas[5].toLowerCase().includes('anunciante') || 
+               colunas[5].toLowerCase().includes('sistema') ||
+               colunas[5].toLowerCase().includes('google')) {
+      formatoComData = true;
     }
   }
   
-  // Se não detectou tipo de recurso, tentar pelo tamanho
+  // Ajustar índices baseado no formato detectado
+  let idxImpressoes, idxCliques, idxCusto, idxConversoes, idxCTR, idxCPC;
+  
+  if (formatoCompacto) {
+    // Formato compacto: métricas começam na coluna 5
+    idxImpressoes = 5;
+    idxCliques = 6;
+    idxCTR = 7;
+    idxCPC = 8;
+    idxConversoes = 9;
+    idxCusto = 11;  // Custo está na última coluna (11)
+  } else {
+    // Formato com "Adicionada por" e "Data"
+    idxImpressoes = 7;
+    idxCliques = 8;
+    idxCusto = 9;
+    idxConversoes = 10;
+    idxCTR = 12;
+    idxCPC = 13;
+  }
+  
+  // Extrair texto da coluna 0
+  // Se o texto contém palavras conhecidas do Google Ads, extrair apenas a parte antes delas
+  if (colunas.length > 0 && colunas[0]) {
+    let texto = colunas[0];
+    
+    // Se o texto contém "Anúncio", "Qualificada", etc., pegar apenas a parte antes
+    const palavrasConhecidas = ['anúncio', 'anuncio', 'qualificada', 'qualificado'];
+    for (const palavra of palavrasConhecidas) {
+      const index = texto.toLowerCase().indexOf(palavra);
+      if (index > 0) {
+        texto = texto.substring(0, index).trim();
+        break;
+      }
+    }
+    
+    resultado.texto = texto || colunas[0];
+  }
+  
+  // Extrair tipo de recurso da coluna 3 (ou procurar na linha inteira se não tiver colunas suficientes)
+  let tipoDetectado = false;
+  
+  if (colunas.length > 3 && colunas[3]) {
+    const tipoLower = colunas[3].toLowerCase();
+    if (tipoLower === 'título' || tipoLower === 'titulo' || tipoLower === 'headline') {
+      resultado.tipoRecurso = 'titulos';
+      tipoDetectado = true;
+    } else if (tipoLower === 'descrição' || tipoLower === 'descricao' || tipoLower === 'description') {
+      resultado.tipoRecurso = 'descricoes';
+      tipoDetectado = true;
+    } else if (tipoLower.includes('palavra') || tipoLower === 'keyword' || tipoLower === 'palavra-chave') {
+      resultado.tipoRecurso = 'keywords';
+      tipoDetectado = true;
+    } else if (tipoLower === 'sitelink' || tipoLower === 'site link') {
+      resultado.tipoRecurso = 'sitelinks';
+      tipoDetectado = true;
+    } else if (tipoLower === 'frase' || tipoLower === 'phrase') {
+      resultado.tipoRecurso = 'frases';
+      tipoDetectado = true;
+    }
+  }
+  
+  // Se não detectou pela coluna 3, procurar na linha inteira
+  if (!tipoDetectado) {
+    const linhaLower = linha.toLowerCase();
+    if (linhaLower.includes(' título') || linhaLower.includes(' titulo') || linhaLower.includes(' headline')) {
+      resultado.tipoRecurso = 'titulos';
+      tipoDetectado = true;
+    } else if (linhaLower.includes(' descrição') || linhaLower.includes(' descricao') || linhaLower.includes(' description')) {
+      resultado.tipoRecurso = 'descricoes';
+      tipoDetectado = true;
+    } else if (linhaLower.includes(' palavra') || linhaLower.includes(' keyword') || linhaLower.includes(' palavra-chave')) {
+      resultado.tipoRecurso = 'keywords';
+      tipoDetectado = true;
+    } else if (linhaLower.includes(' sitelink') || linhaLower.includes(' site link')) {
+      resultado.tipoRecurso = 'sitelinks';
+      tipoDetectado = true;
+    } else if (linhaLower.includes(' frase') || linhaLower.includes(' phrase')) {
+      resultado.tipoRecurso = 'frases';
+      tipoDetectado = true;
+    }
+  }
+  
+  // Extrair métricas usando índices dinâmicos baseados no formato
+  // Impressões
+  if (colunas.length > idxImpressoes && colunas[idxImpressoes]) {
+    const impressoesStr = colunas[idxImpressoes].replace(/\./g, ''); // Remove pontos de milhar
+    const impressoes = parseInt(impressoesStr.replace(/[^\d]/g, ''));
+    if (!isNaN(impressoes) && impressoes > 0 && impressoes < 100000000) { // Validar que não é ano (2025, etc)
+      resultado.metricas.impressoes = impressoes;
+    }
+  }
+  
+  // Cliques
+  if (colunas.length > idxCliques && colunas[idxCliques]) {
+    const cliques = parseInt(colunas[idxCliques].replace(/[^\d]/g, ''));
+    if (!isNaN(cliques) && cliques > 0 && cliques < 1000000) { // Validar que não é ano
+      resultado.metricas.cliques = cliques;
+    }
+  }
+  
+  // Custo (formato "R$ 187,74")
+  if (colunas.length > idxCusto && colunas[idxCusto]) {
+    const custoStr = colunas[idxCusto].replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+    const custo = parseFloat(custoStr);
+    if (!isNaN(custo) && custo > 0) {
+      resultado.metricas.custo = custo;
+    }
+  }
+  
+  // Conversões
+  if (colunas.length > idxConversoes && colunas[idxConversoes]) {
+    const conversoesStr = colunas[idxConversoes].replace(',', '.');
+    const conversoes = parseFloat(conversoesStr);
+    if (!isNaN(conversoes)) {
+      resultado.metricas.conversoes = conversoes;
+    }
+  }
+  
+  // CTR da linha (se disponível no formato com data)
+  if (idxCTR > 0 && colunas.length > idxCTR && colunas[idxCTR]) {
+    const ctrStr = colunas[idxCTR].replace('%', '').replace(',', '.');
+    const ctr = parseFloat(ctrStr);
+    if (!isNaN(ctr) && ctr > 0 && ctr <= 100) {
+      resultado.metricas.ctr = ctr;
+    }
+  }
+  
+  // Se não extraiu métricas das colunas corretas, procurar na linha inteira (fallback)
+  // Mas ignorar números que fazem parte de datas (anos como 2025, 2024, etc)
+  if (resultado.metricas.impressoes === 0 && resultado.metricas.cliques === 0) {
+    // Procurar números na linha, mas ignorar anos (2020-2030)
+    const numeros = linha.match(/[\d.]+/g) || [];
+    const numerosInteiros = numeros
+      .map(n => parseInt(n.replace(/\./g, '')))
+      .filter(n => !isNaN(n) && n > 0 && (n < 2020 || n > 2030)); // Ignorar anos
+    
+    if (numerosInteiros.length >= 2) {
+      // Ordenar: maior = impressões, segundo maior = cliques
+      numerosInteiros.sort((a, b) => b - a);
+      resultado.metricas.impressoes = numerosInteiros[0];
+      resultado.metricas.cliques = numerosInteiros[1];
+    } else if (numerosInteiros.length === 1) {
+      // Se só tem um número, pode ser impressões ou cliques
+      if (numerosInteiros[0] > 100) {
+        resultado.metricas.impressoes = numerosInteiros[0];
+      } else {
+        resultado.metricas.cliques = numerosInteiros[0];
+      }
+    }
+  }
+  
+  // Procurar custo na linha (formato R$ X,XX ou R$ X.XXX,XX) - fallback
+  if (resultado.metricas.custo === 0) {
+    const custoMatch = linha.match(/R\$\s*([\d.,]+)/i);
+    if (custoMatch) {
+      const custoStr = custoMatch[1].replace(/\./g, '').replace(',', '.');
+      const custo = parseFloat(custoStr);
+      if (!isNaN(custo) && custo > 0) {
+        resultado.metricas.custo = custo;
+      }
+    }
+  }
+  
+  // Se o texto contém muitas palavras conhecidas do Google Ads, tentar extrair apenas o texto real
+  if (resultado.texto && resultado.texto.length > 50) {
+    const palavrasConhecidas = ['anúncio', 'anuncio', 'qualificada', 'qualificado', 'nenhuma', 'anunciante'];
+    let textoLimpo = resultado.texto;
+    
+    for (const palavra of palavrasConhecidas) {
+      const regex = new RegExp(`\\s*${palavra}\\s*`, 'i');
+      const index = textoLimpo.toLowerCase().indexOf(palavra);
+      if (index > 0 && index < textoLimpo.length / 2) {
+        // Se encontrou palavra conhecida na primeira metade, pegar só o que vem antes
+        textoLimpo = textoLimpo.substring(0, index).trim();
+        break;
+      }
+    }
+    
+    // Se conseguiu limpar, usar o texto limpo
+    if (textoLimpo.length < resultado.texto.length && textoLimpo.length > 0) {
+      resultado.texto = textoLimpo;
+    }
+  }
+  
+  // Se não detectou tipo de recurso, tentar fallback por tamanho do texto
   if (!resultado.tipoRecurso && resultado.texto) {
     if (resultado.texto.length <= 30) {
       resultado.tipoRecurso = 'titulos';
@@ -2742,8 +2941,8 @@ function parsearLinhaGoogleAds(linha) {
   if (resultado.texto) {
     resultado.tipoCertidao = detectarTipoCertidao(resultado.texto);
     
-    // Calcular CTR se tiver impressões e cliques
-    if (resultado.metricas.impressoes > 0 && resultado.metricas.cliques > 0 && resultado.metricas.ctr === 0) {
+    // Calcular CTR automaticamente apenas se não foi extraído da linha
+    if (resultado.metricas.ctr === 0 && resultado.metricas.impressoes > 0 && resultado.metricas.cliques > 0) {
       resultado.metricas.ctr = parseFloat(((resultado.metricas.cliques / resultado.metricas.impressoes) * 100).toFixed(2));
     }
   }
@@ -2765,26 +2964,98 @@ app.get('/copies/tipos', authenticateRequest, (req, res) => {
   })));
 });
 
+// POST /copies/verificar-duplicacao - Verificar se texto já existe em qualquer tipo de recurso
+app.post('/copies/verificar-duplicacao', authenticateRequest, (req, res) => {
+  const { texto, tipoCertidao } = req.body;
+  
+  if (!texto || !texto.trim()) {
+    return res.status(400).json({ error: 'Texto é obrigatório' });
+  }
+  
+  const copies = readCopies();
+  const textoLower = texto.toLowerCase().trim();
+  const duplicatas = [];
+  
+  // Verificar em todos os tipos de certidão ou apenas no especificado
+  const tiposCertidaoParaVerificar = tipoCertidao && copies.tipos[tipoCertidao] 
+    ? { [tipoCertidao]: copies.tipos[tipoCertidao] } 
+    : copies.tipos || {};
+  
+  const tiposRecurso = ['titulos', 'descricoes', 'keywords', 'sitelinks', 'frases'];
+  
+  for (const [tipoCert, dados] of Object.entries(tiposCertidaoParaVerificar)) {
+    for (const tipoRecurso of tiposRecurso) {
+      if (dados[tipoRecurso] && Array.isArray(dados[tipoRecurso])) {
+        const existente = dados[tipoRecurso].find(c => 
+          c.texto && c.texto.toLowerCase().trim() === textoLower
+        );
+        
+        if (existente) {
+          duplicatas.push({
+            id: existente.id,
+            texto: existente.texto,
+            tipoCertidao: tipoCert,
+            tipoRecurso: tipoRecurso,
+            metricas: existente.metricas,
+            status: existente.status
+          });
+        }
+      }
+    }
+  }
+  
+  res.json({
+    existe: duplicatas.length > 0,
+    duplicatas
+  });
+});
+
+// POST /copies/preview-linha - Preview de linha sem salvar
+app.post('/copies/preview-linha', authenticateRequest, (req, res) => {
+  const { linha } = req.body;
+  
+  if (!linha || !linha.trim()) {
+    return res.status(400).json({ sucesso: false, erro: 'Linha é obrigatória' });
+  }
+  
+  const parsed = parsearLinhaGoogleAds(linha);
+  res.json(parsed);
+});
+
 // POST /copies/colar-linha - Processar linha colada do Google Ads
 app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
-  const { linha, tipoCertidaoOverride } = req.body;
+  const { linha, tipoCertidaoOverride, tipoRecursoOverride, acaoDuplicacao, duplicataId, duplicataTipoCertidao, duplicataTipoRecurso } = req.body;
   
   if (!linha || !linha.trim()) {
     return res.status(400).json({ error: 'Linha é obrigatória' });
   }
   
   console.log('📥 [COPIES] POST /copies/colar-linha - Processando linha');
+  console.log('   tipoCertidaoOverride:', tipoCertidaoOverride);
+  console.log('   tipoRecursoOverride:', tipoRecursoOverride);
+  console.log('   acaoDuplicacao:', acaoDuplicacao);
   
   // Parsear a linha
   const parsed = parsearLinhaGoogleAds(linha);
   
   if (!parsed.sucesso) {
+    console.log('   ❌ Parse falhou:', parsed.erro);
     return res.status(400).json({ error: parsed.erro, parsed });
   }
   
-  // Override do tipo se especificado
+  console.log('   ✅ Parse OK - tipoCertidao:', parsed.tipoCertidao, 'tipoRecurso:', parsed.tipoRecurso);
+  
+  // Override do tipo de certidão se especificado
   if (tipoCertidaoOverride && TIPOS_CERTIDAO[tipoCertidaoOverride]) {
     parsed.tipoCertidao = tipoCertidaoOverride;
+    console.log('   🔄 Override tipoCertidao:', tipoCertidaoOverride);
+  }
+  
+  // Override do tipo de recurso APENAS se não foi detectado automaticamente ou se usuário forçou
+  // Prioridade: tipo detectado automaticamente > override manual
+  if (!parsed.tipoRecurso && tipoRecursoOverride && ['titulos', 'descricoes', 'keywords', 'sitelinks', 'frases'].includes(tipoRecursoOverride)) {
+    parsed.tipoRecurso = tipoRecursoOverride;
+    console.log('   🔄 Override tipoRecurso (fallback):', tipoRecursoOverride);
   }
   
   // Verificar GovDocs
@@ -2800,6 +3071,50 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
   const copies = readCopies();
   const tipoCert = parsed.tipoCertidao || 'geral';
   const tipoRecurso = parsed.tipoRecurso || 'titulos';
+  const textoLower = parsed.texto.toLowerCase().trim();
+  const tiposRecurso = ['titulos', 'descricoes', 'keywords', 'sitelinks', 'frases'];
+  
+  // VERIFICAÇÃO GLOBAL DE DUPLICAÇÃO - verificar em todos os tipos de recurso
+  const duplicatasGlobais = [];
+  
+  if (copies.tipos && copies.tipos[tipoCert]) {
+    for (const tipo of tiposRecurso) {
+      if (copies.tipos[tipoCert][tipo] && Array.isArray(copies.tipos[tipoCert][tipo])) {
+        const encontrado = copies.tipos[tipoCert][tipo].find(c => 
+          c.texto && c.texto.toLowerCase().trim() === textoLower
+        );
+        if (encontrado) {
+          duplicatasGlobais.push({
+            id: encontrado.id,
+            texto: encontrado.texto,
+            tipoCertidao: tipoCert,
+            tipoRecurso: tipo,
+            metricas: encontrado.metricas,
+            status: encontrado.status
+          });
+        }
+      }
+    }
+  }
+  
+  // Se existe duplicata e não foi especificada ação, retornar para confirmação
+  if (duplicatasGlobais.length > 0 && !acaoDuplicacao) {
+    console.log('   ⚠️ Duplicata encontrada, aguardando decisão do usuário');
+    return res.status(409).json({
+      error: 'duplicata_encontrada',
+      mensagem: 'Este texto já existe em outro tipo de recurso',
+      duplicatas: duplicatasGlobais,
+      parsed: {
+        texto: parsed.texto,
+        tipoRecurso: tipoRecurso,
+        tipoCertidao: tipoCert,
+        metricas: parsed.metricas
+      },
+      tipoRecursoDetectado: tipoRecurso
+    });
+  }
+  
+  console.log('   📍 Salvando em:', tipoCert, '/', tipoRecurso);
   
   // Garantir que a estrutura existe
   if (!copies.tipos) copies.tipos = {};
@@ -2808,33 +3123,48 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
       nome: TIPOS_CERTIDAO[tipoCert]?.nome || tipoCert,
       titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: []
     };
+    console.log('   📁 Criado tipo de certidão:', tipoCert);
   }
   if (!copies.tipos[tipoCert][tipoRecurso]) {
     copies.tipos[tipoCert][tipoRecurso] = [];
+    console.log('   📁 Criado tipo de recurso:', tipoRecurso);
   }
-  
-  // Verificar se já existe
-  const existente = copies.tipos[tipoCert][tipoRecurso].find(c => 
-    c.texto.toLowerCase() === parsed.texto.toLowerCase()
-  );
   
   let resultado;
   
-  if (existente) {
-    // Atualizar métricas
-    existente.metricas.impressoes += parsed.metricas.impressoes;
-    existente.metricas.cliques += parsed.metricas.cliques;
-    existente.metricas.custo += parsed.metricas.custo;
-    if (existente.metricas.impressoes > 0) {
-      existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
-    }
-    existente.status = classificarCopy(existente);
-    existente.atualizadoEm = new Date().toISOString();
-    existente.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
+  // Processar de acordo com a ação de duplicação
+  if (acaoDuplicacao === 'atualizar_existente' && duplicataId && duplicataTipoCertidao && duplicataTipoRecurso) {
+    // Atualizar o copy existente onde ele está
+    const existente = copies.tipos[duplicataTipoCertidao]?.[duplicataTipoRecurso]?.find(c => c.id === duplicataId);
     
-    resultado = { acao: 'atualizado', copy: existente };
-  } else {
-    // Criar novo
+    if (existente) {
+      existente.metricas.impressoes += parsed.metricas.impressoes;
+      existente.metricas.cliques += parsed.metricas.cliques;
+      existente.metricas.custo += parsed.metricas.custo;
+      if (existente.metricas.impressoes > 0) {
+        existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
+      }
+      existente.status = classificarCopy(existente);
+      existente.atualizadoEm = new Date().toISOString();
+      existente.historico = existente.historico || [];
+      existente.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
+      
+      resultado = { acao: 'atualizado', copy: existente, localExistente: true };
+    } else {
+      return res.status(404).json({ error: 'Copy original não encontrado' });
+    }
+  } else if (acaoDuplicacao === 'mover_para_novo' && duplicataId && duplicataTipoCertidao && duplicataTipoRecurso) {
+    // Remover do local antigo e criar no novo tipo detectado
+    const arrayAntigo = copies.tipos[duplicataTipoCertidao]?.[duplicataTipoRecurso];
+    if (arrayAntigo) {
+      const index = arrayAntigo.findIndex(c => c.id === duplicataId);
+      if (index !== -1) {
+        arrayAntigo.splice(index, 1);
+        console.log(`   🗑️ Removido de ${duplicataTipoCertidao}/${duplicataTipoRecurso}`);
+      }
+    }
+    
+    // Criar no novo local
     const novoCopy = {
       id: generateCopyId(tipoRecurso),
       texto: parsed.texto,
@@ -2843,7 +3173,7 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
       tipoRecurso: tipoRecurso,
       status: 'disponivel',
       metricas: parsed.metricas,
-      historico: [{ data: new Date().toISOString(), acao: 'criado_via_linha' }],
+      historico: [{ data: new Date().toISOString(), acao: 'movido_de_' + duplicataTipoRecurso }],
       validacao: { govdocs_safe: true },
       criadoEm: new Date().toISOString(),
       atualizadoEm: new Date().toISOString()
@@ -2852,11 +3182,53 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
     novoCopy.status = classificarCopy(novoCopy);
     copies.tipos[tipoCert][tipoRecurso].push(novoCopy);
     
-    resultado = { acao: 'criado', copy: novoCopy };
+    resultado = { acao: 'movido', copy: novoCopy, deOnde: `${duplicataTipoCertidao}/${duplicataTipoRecurso}` };
+  } else {
+    // Comportamento padrão: verificar duplicata no mesmo tipo ou criar novo
+    const existenteNoTipo = copies.tipos[tipoCert][tipoRecurso].find(c => 
+      c.texto.toLowerCase() === textoLower
+    );
+    
+    if (existenteNoTipo) {
+      // Atualizar métricas
+      existenteNoTipo.metricas.impressoes += parsed.metricas.impressoes;
+      existenteNoTipo.metricas.cliques += parsed.metricas.cliques;
+      existenteNoTipo.metricas.custo += parsed.metricas.custo;
+      if (existenteNoTipo.metricas.impressoes > 0) {
+        existenteNoTipo.metricas.ctr = parseFloat(((existenteNoTipo.metricas.cliques / existenteNoTipo.metricas.impressoes) * 100).toFixed(2));
+      }
+      existenteNoTipo.status = classificarCopy(existenteNoTipo);
+      existenteNoTipo.atualizadoEm = new Date().toISOString();
+      existenteNoTipo.historico = existenteNoTipo.historico || [];
+      existenteNoTipo.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
+      
+      resultado = { acao: 'atualizado', copy: existenteNoTipo };
+    } else {
+      // Criar novo
+      const novoCopy = {
+        id: generateCopyId(tipoRecurso),
+        texto: parsed.texto,
+        caracteres: parsed.texto.length,
+        tipoCertidao: tipoCert,
+        tipoRecurso: tipoRecurso,
+        status: 'disponivel',
+        metricas: parsed.metricas,
+        historico: [{ data: new Date().toISOString(), acao: 'criado_via_linha' }],
+        validacao: { govdocs_safe: true },
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString()
+      };
+      
+      novoCopy.status = classificarCopy(novoCopy);
+      copies.tipos[tipoCert][tipoRecurso].push(novoCopy);
+      
+      resultado = { acao: 'criado', copy: novoCopy };
+    }
   }
   
   if (saveCopies(copies)) {
     console.log(`✅ [COPIES] ${resultado.acao}: ${parsed.texto.substring(0, 30)}... -> ${tipoCert}/${tipoRecurso}`);
+    console.log(`   📊 Total de ${tipoRecurso} em ${tipoCert}:`, copies.tipos[tipoCert][tipoRecurso].length);
     res.json({
       success: true,
       ...resultado,
@@ -2868,6 +3240,7 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
       }
     });
   } else {
+    console.error('❌ [COPIES] Erro ao salvar copies');
     res.status(500).json({ error: 'Erro ao salvar' });
   }
 });
@@ -3085,24 +3458,28 @@ app.post('/copies', authenticateRequest, (req, res) => {
   }
 });
 
-// PUT /copies/:tipo/:id - Atualizar copy
-app.put('/copies/:tipo/:id', authenticateRequest, (req, res) => {
-  const { tipo, id } = req.params;
+// PUT /copies/:tipoCertidao/:tipoRecurso/:id - Atualizar copy
+app.put('/copies/:tipoCertidao/:tipoRecurso/:id', authenticateRequest, (req, res) => {
+  const { tipoCertidao, tipoRecurso, id } = req.params;
   const updates = req.body;
   
   const copies = readCopies();
   
-  if (!copies[tipo]) {
-    return res.status(400).json({ error: 'Tipo inválido' });
+  if (!copies.tipos?.[tipoCertidao]) {
+    return res.status(400).json({ error: 'Tipo de certidão inválido' });
   }
   
-  const index = copies[tipo].findIndex(c => c.id === id);
+  if (!copies.tipos[tipoCertidao][tipoRecurso]) {
+    return res.status(400).json({ error: 'Tipo de recurso inválido' });
+  }
+  
+  const index = copies.tipos[tipoCertidao][tipoRecurso].findIndex(c => c.id === id);
   if (index === -1) {
     return res.status(404).json({ error: 'Copy não encontrado' });
   }
   
   // Atualizar campos permitidos
-  const copy = copies[tipo][index];
+  const copy = copies.tipos[tipoCertidao][tipoRecurso][index];
   
   if (updates.texto) {
     const govCheck = verificarGovDocs(updates.texto);
@@ -3148,35 +3525,39 @@ app.put('/copies/:tipo/:id', authenticateRequest, (req, res) => {
     campos: Object.keys(updates)
   });
   
-  copies[tipo][index] = copy;
+  copies.tipos[tipoCertidao][tipoRecurso][index] = copy;
   
   if (saveCopies(copies)) {
-    console.log(`✅ [COPIES] ${tipo.slice(0, -1)} ${id} atualizado`);
+    console.log(`✅ [COPIES] ${tipoCertidao}/${tipoRecurso}/${id} atualizado`);
     res.json(copy);
   } else {
     res.status(500).json({ error: 'Erro ao salvar' });
   }
 });
 
-// DELETE /copies/:tipo/:id - Deletar copy
-app.delete('/copies/:tipo/:id', authenticateRequest, (req, res) => {
-  const { tipo, id } = req.params;
+// DELETE /copies/:tipoCertidao/:tipoRecurso/:id - Deletar copy
+app.delete('/copies/:tipoCertidao/:tipoRecurso/:id', authenticateRequest, (req, res) => {
+  const { tipoCertidao, tipoRecurso, id } = req.params;
   
   const copies = readCopies();
   
-  if (!copies[tipo]) {
-    return res.status(400).json({ error: 'Tipo inválido' });
+  if (!copies.tipos?.[tipoCertidao]) {
+    return res.status(400).json({ error: 'Tipo de certidão inválido' });
   }
   
-  const index = copies[tipo].findIndex(c => c.id === id);
+  if (!copies.tipos[tipoCertidao][tipoRecurso]) {
+    return res.status(400).json({ error: 'Tipo de recurso inválido' });
+  }
+  
+  const index = copies.tipos[tipoCertidao][tipoRecurso].findIndex(c => c.id === id);
   if (index === -1) {
     return res.status(404).json({ error: 'Copy não encontrado' });
   }
   
-  const deletado = copies[tipo].splice(index, 1)[0];
+  const deletado = copies.tipos[tipoCertidao][tipoRecurso].splice(index, 1)[0];
   
   if (saveCopies(copies)) {
-    console.log(`🗑️ [COPIES] ${tipo.slice(0, -1)} ${id} deletado`);
+    console.log(`🗑️ [COPIES] ${tipoCertidao}/${tipoRecurso}/${id} deletado`);
     res.json({ success: true, deleted: deletado });
   } else {
     res.status(500).json({ error: 'Erro ao deletar' });
