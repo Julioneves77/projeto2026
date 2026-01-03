@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
 import { useColumnResize } from '@/hooks/useColumnResize';
+import { useToast } from '@/hooks/use-toast';
 import { Ticket, TicketStatus, PrioridadeType } from '@/types';
 import { TicketDetailModal } from './TicketDetailModal';
 import { TicketEditModal } from './TicketEditModal';
@@ -26,8 +27,9 @@ type TabType = 'geral' | 'em_operacao' | 'concluidos';
 
 export function Tickets() {
   const { currentUser, userRole } = useAuth();
-  const { tickets, atribuirTicket, updateTicket } = useTickets();
+  const { tickets, atribuirTicket, updateTicket, deleteTicket } = useTickets();
   const { columnWidths, isResizing, resizingColumn, tableRef, handleResizeStart, handleDoubleClick } = useColumnResize();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('em_operacao');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -248,9 +250,21 @@ export function Tickets() {
     updateTicket(ticket.id, { status: 'EM_OPERACAO' });
   };
 
-  const handleDelete = (ticketId: string) => {
-    if (window.confirm('Tem certeza que deseja deletar este ticket?')) {
-      // Em um sistema real, teria a função deleteTicket
+  const handleDelete = async (ticketId: string) => {
+    if (window.confirm('Tem certeza que deseja deletar este ticket? Esta ação não pode ser desfeita.')) {
+      const success = await deleteTicket(ticketId);
+      if (success) {
+        toast({
+          title: "Ticket deletado",
+          description: "O ticket foi removido com sucesso.",
+        });
+      } else {
+        toast({
+          title: "Erro ao deletar",
+          description: "Não foi possível deletar o ticket. Tente novamente.",
+          variant: "destructive"
+        });
+      }
     }
   };
 

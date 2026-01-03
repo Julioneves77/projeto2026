@@ -5,6 +5,7 @@ import { ticketsMock } from '@/data/mockData';
 interface TicketsContextType {
   tickets: Ticket[];
   updateTicket: (id: string, updates: Partial<Ticket>) => Promise<void>;
+  deleteTicket: (id: string) => Promise<boolean>;
   addHistorico: (ticketId: string, item: Omit<HistoricoItem, 'id'>) => void;
   atribuirTicket: (ticketId: string, operador: string) => void;
   createTicket: (ticket: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>) => Promise<Ticket>;
@@ -352,6 +353,37 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     saveTickets(updated);
   };
 
+  const deleteTicket = async (id: string): Promise<boolean> => {
+    console.log(`🗑️ [PLATAFORMA] Deletando ticket: ${id}`);
+    
+    try {
+      const response = await fetchWithAuth(`${SYNC_SERVER_URL}/tickets/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ [PLATAFORMA] Ticket deletado:`, result);
+        
+        // Remover do estado local
+        const updated = tickets.filter(t => t.id !== id);
+        saveTickets(updated);
+        
+        return true;
+      } else {
+        const error = await response.json().catch(() => ({}));
+        console.error(`❌ [PLATAFORMA] Erro ao deletar ticket:`, response.status, error);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ [PLATAFORMA] Erro ao conectar com servidor:', error);
+      return false;
+    }
+  };
+
   const addHistorico = (ticketId: string, item: Omit<HistoricoItem, 'id'>) => {
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
@@ -473,6 +505,7 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     <TicketsContext.Provider value={{
       tickets,
       updateTicket,
+      deleteTicket,
       addHistorico,
       atribuirTicket,
       createTicket,

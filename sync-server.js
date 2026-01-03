@@ -1086,6 +1086,36 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
   }
 });
 
+// DELETE /tickets/:id - Deletar ticket
+app.delete('/tickets/:id', authenticateRequest, (req, res) => {
+  const { id } = req.params;
+  console.log(`🗑️ [SYNC] DELETE /tickets/${id} - Deletando ticket`);
+  
+  const tickets = readTickets();
+  const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
+  
+  if (ticketIndex === -1) {
+    console.log(`❌ [SYNC] Ticket não encontrado para deletar: ${id}`);
+    return res.status(404).json({ error: 'Ticket não encontrado' });
+  }
+  
+  const deletedTicket = tickets[ticketIndex];
+  tickets.splice(ticketIndex, 1);
+  
+  if (saveTickets(tickets)) {
+    console.log(`✅ [SYNC] Ticket ${deletedTicket.codigo} deletado com sucesso!`);
+    logger.info(`Ticket ${deletedTicket.codigo} deletado`, { id, codigo: deletedTicket.codigo });
+    res.json({ 
+      success: true, 
+      message: `Ticket ${deletedTicket.codigo} deletado com sucesso`,
+      deleted: deletedTicket 
+    });
+  } else {
+    console.error(`❌ [SYNC] Erro ao deletar ticket ${id}`);
+    res.status(500).json({ error: 'Erro ao deletar ticket' });
+  }
+});
+
 // PUT /tickets/:id - Atualizar ticket existente
 app.put('/tickets/:id', (req, res) => {
   const { id } = req.params;
