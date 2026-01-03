@@ -786,6 +786,80 @@ function saveTickets(tickets) {
   }
 }
 
+// ============================================
+// LIMPEZA AUTOMÁTICA DE TICKETS ANTIGOS
+// ============================================
+// Regras:
+// - GERAL: apaga após 5 dias
+// - EM_OPERACAO: apaga após 7 dias
+// - CONCLUIDO: apaga após 10 dias
+
+const TICKET_CLEANUP_RULES = {
+  'GERAL': 5,           // 5 dias
+  'EM_OPERACAO': 7,     // 7 dias
+  'CONCLUIDO': 10       // 10 dias
+};
+
+function cleanupOldTickets() {
+  try {
+    const tickets = readTickets();
+    const now = new Date();
+    const initialCount = tickets.length;
+    
+    const filteredTickets = tickets.filter(ticket => {
+      const dataCadastro = new Date(ticket.dataCadastro);
+      const diffTime = now - dataCadastro;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      const status = ticket.status || 'GERAL';
+      const maxDays = TICKET_CLEANUP_RULES[status];
+      
+      // Se não tem regra definida, manter o ticket
+      if (!maxDays) return true;
+      
+      // Se passou do limite, remover (retorna false)
+      if (diffDays > maxDays) {
+        console.log(`🗑️ [CLEANUP] Removendo ticket ${ticket.codigo} (${status}) - ${diffDays} dias`);
+        return false;
+      }
+      
+      return true;
+    });
+    
+    const removedCount = initialCount - filteredTickets.length;
+    
+    if (removedCount > 0) {
+      saveTickets(filteredTickets);
+      console.log(`🧹 [CLEANUP] Limpeza concluída: ${removedCount} tickets removidos, ${filteredTickets.length} restantes`);
+      logger.info(`Cleanup: ${removedCount} tickets removidos`);
+    } else {
+      console.log(`🧹 [CLEANUP] Nenhum ticket antigo para remover. Total: ${initialCount}`);
+    }
+    
+    return { removed: removedCount, remaining: filteredTickets.length };
+  } catch (error) {
+    console.error('❌ [CLEANUP] Erro na limpeza de tickets:', error);
+    logger.logError(error, { function: 'cleanupOldTickets' });
+    return { removed: 0, remaining: 0, error: error.message };
+  }
+}
+
+// Executar limpeza a cada 1 hora (3600000 ms)
+const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hora
+
+setInterval(() => {
+  console.log('🧹 [CLEANUP] Iniciando limpeza automática de tickets...');
+  cleanupOldTickets();
+}, CLEANUP_INTERVAL);
+
+// Executar limpeza inicial após 1 minuto do start
+setTimeout(() => {
+  console.log('🧹 [CLEANUP] Executando limpeza inicial...');
+  cleanupOldTickets();
+}, 60000);
+
+console.log('🧹 [CLEANUP] Limpeza automática configurada: GERAL=5d, EM_OPERACAO=7d, CONCLUIDO=10d');
+
 // GET /tickets - Listar todos os tickets
 app.get('/tickets', (req, res) => {
   console.log('📥 [SYNC] GET /tickets - Listando todos os tickets');
@@ -831,6 +905,68 @@ app.get('/tickets/generate-code', (req, res) => {
     console.error('❌ [SYNC] Erro ao gerar código:', error);
     res.status(500).json({ error: 'Erro ao gerar código de ticket' });
   }
+});
+
+// GET /tickets/stats - Estatísticas de tickets por status e idade
+// IMPORTANTE: Deve vir ANTES de /tickets/:id para não conflitar
+app.get('/tickets/stats', (req, res) => {
+  const tickets = readTickets();
+  const now = new Date();
+  
+  const stats = {
+    total: tickets.length,
+    porStatus: {},
+    aSerRemovidos: {
+      em24h: 0,
+      em48h: 0,
+      em72h: 0
+    },
+    regras: TICKET_CLEANUP_RULES
+  };
+  
+  tickets.forEach(ticket => {
+    const status = ticket.status || 'GERAL';
+    const dataCadastro = new Date(ticket.dataCadastro);
+    const diffDays = Math.floor((now - dataCadastro) / (1000 * 60 * 60 * 24));
+    const maxDays = TICKET_CLEANUP_RULES[status] || 999;
+    const diasRestantes = maxDays - diffDays;
+    
+    // Contar por status
+    if (!stats.porStatus[status]) {
+      stats.porStatus[status] = { total: 0, mediaIdadeDias: 0, idades: [] };
+    }
+    stats.porStatus[status].total++;
+    stats.porStatus[status].idades.push(diffDays);
+    
+    // Contar quantos serão removidos em breve
+    if (diasRestantes <= 1) stats.aSerRemovidos.em24h++;
+    else if (diasRestantes <= 2) stats.aSerRemovidos.em48h++;
+    else if (diasRestantes <= 3) stats.aSerRemovidos.em72h++;
+  });
+  
+  // Calcular média de idade por status
+  Object.keys(stats.porStatus).forEach(status => {
+    const idades = stats.porStatus[status].idades;
+    stats.porStatus[status].mediaIdadeDias = idades.length > 0 
+      ? Math.round(idades.reduce((a, b) => a + b, 0) / idades.length) 
+      : 0;
+    delete stats.porStatus[status].idades;
+  });
+  
+  res.json(stats);
+});
+
+// POST /tickets/cleanup - Executar limpeza manual de tickets antigos
+// IMPORTANTE: Deve vir ANTES de /tickets/:id para não conflitar
+app.post('/tickets/cleanup', authenticateRequest, (req, res) => {
+  console.log('🧹 [SYNC] POST /tickets/cleanup - Limpeza manual solicitada');
+  const result = cleanupOldTickets();
+  res.json({
+    success: true,
+    message: `Limpeza concluída: ${result.removed} tickets removidos`,
+    ...result,
+    rules: TICKET_CLEANUP_RULES
+  });
 });
 
 // GET /tickets/:id - Buscar ticket específico
