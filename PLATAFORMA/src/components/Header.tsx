@@ -13,7 +13,8 @@ import {
   LogOut,
   Headset,
   Mail,
-  Activity
+  Activity,
+  Target
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -41,6 +42,7 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
     { id: 'estatisticas', label: 'Estatísticas', icon: TrendingUp, roles: ['admin'] },
     { id: 'usuarios', label: 'Usuários', icon: Users, roles: ['admin'] },
     { id: 'suporte-email', label: 'Suporte Email', icon: Mail, roles: ['admin', 'financeiro'], badge: unreadEmails },
+    { id: 'ads', label: 'Ads', icon: Target, roles: ['admin'] },
     { id: 'estabilidade', label: 'Estabilidade', icon: Activity, roles: ['admin', 'financeiro'], showStatus: true },
   ];
 

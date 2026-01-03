@@ -9,13 +9,14 @@ import { Statistics } from '@/components/Statistics';
 import { Reports } from '@/components/Reports';
 import { EmailSupport } from '@/components/EmailSupport';
 import { SystemStability } from '@/components/SystemStability';
+import { CopiesAds } from '@/components/CopiesAds';
 
 const Index = () => {
   const { currentUser } = useAuth();
   // Carregar aba ativa do localStorage
   const [activeTab, setActiveTab] = useState(() => {
     const saved = localStorage.getItem('av_active_tab');
-    const validTabs = ['dashboard', 'tickets', 'usuarios', 'estatisticas', 'relatorios', 'suporte-email', 'estabilidade'];
+    const validTabs = ['dashboard', 'tickets', 'usuarios', 'estatisticas', 'relatorios', 'suporte-email', 'ads', 'estabilidade'];
     return (saved && validTabs.includes(saved)) ? saved : 'dashboard';
   });
 
@@ -42,6 +43,8 @@ const Index = () => {
         return <Reports />;
       case 'suporte-email':
         return <EmailSupport />;
+      case 'ads':
+        return <CopiesAds />;
       case 'estabilidade':
         return <SystemStability />;
       default:

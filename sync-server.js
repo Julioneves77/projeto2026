@@ -2508,6 +2508,664 @@ app.use((error, req, res, next) => {
   });
 });
 
+// ============================================
+// SISTEMA DE GESTÃO DE COPIES - GOOGLE ADS
+// ============================================
+
+// Inicializar arquivo de copies se não existir
+if (!fs.existsSync(COPIES_FILE)) {
+  const initialData = {
+    titulos: [],
+    descricoes: [],
+    keywords: [],
+    sitelinks: [],
+    frases: [],
+    campanhas: [],
+    metadata: {
+      ultimaAtualizacao: new Date().toISOString(),
+      totalImportacoes: 0
+    }
+  };
+  fs.writeFileSync(COPIES_FILE, JSON.stringify(initialData, null, 2));
+  console.log('📁 Arquivo de copies criado:', COPIES_FILE);
+}
+
+// Função auxiliar para ler copies
+function readCopies() {
+  try {
+    const data = fs.readFileSync(COPIES_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('❌ Erro ao ler copies:', error);
+    return { titulos: [], descricoes: [], keywords: [], sitelinks: [], frases: [], campanhas: [], metadata: {} };
+  }
+}
+
+// Função auxiliar para salvar copies
+function saveCopies(copies) {
+  try {
+    copies.metadata = copies.metadata || {};
+    copies.metadata.ultimaAtualizacao = new Date().toISOString();
+    fs.writeFileSync(COPIES_FILE, JSON.stringify(copies, null, 2));
+    return true;
+  } catch (error) {
+    console.error('❌ Erro ao salvar copies:', error);
+    return false;
+  }
+}
+
+// Função para gerar ID único
+function generateCopyId(tipo) {
+  const prefix = tipo.substring(0, 3);
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+}
+
+// Função para classificar copy baseado em métricas
+function classificarCopy(copy) {
+  const { impressoes = 0, ctr = 0, conversoes = 0, reprovado = false } = copy.metricas || {};
+  
+  if (reprovado) return 'bloqueado';
+  if (ctr >= 4.0 && conversoes >= 10) return 'campeao';
+  if (ctr >= 3.0 && conversoes >= 5) return 'ativo';
+  if (ctr < 1.5 && impressoes > 500) return 'baixa_perf';
+  if (copy.uso?.campanhas?.length > 0) return 'ativo';
+  return 'disponivel';
+}
+
+// Palavras bloqueadas (GovDocs)
+const PALAVRAS_BLOQUEADAS = [
+  'governo', 'federal', 'oficial', 'ministerio', 'publico', 'publica',
+  'orgao', 'estado', 'estadual', 'municipal', 'prefeitura', 'tribunal',
+  'justica', 'policia', 'detran', 'receita', 'inss', 'fgts'
+];
+
+function verificarGovDocs(texto) {
+  const textoLower = texto.toLowerCase();
+  const encontradas = PALAVRAS_BLOQUEADAS.filter(p => textoLower.includes(p));
+  return {
+    seguro: encontradas.length === 0,
+    palavrasEncontradas: encontradas
+  };
+}
+
+// GET /copies - Listar todos os copies
+app.get('/copies', authenticateRequest, (req, res) => {
+  console.log('📥 [COPIES] GET /copies - Listando copies');
+  const copies = readCopies();
+  const { tipo, status, categoria, ordenar } = req.query;
+  
+  let resultado = [];
+  
+  // Filtrar por tipo
+  if (tipo && copies[tipo]) {
+    resultado = copies[tipo];
+  } else {
+    // Retornar todos os tipos
+    resultado = {
+      titulos: copies.titulos || [],
+      descricoes: copies.descricoes || [],
+      keywords: copies.keywords || [],
+      sitelinks: copies.sitelinks || [],
+      frases: copies.frases || []
+    };
+  }
+  
+  // Filtrar por status se especificado
+  if (status && Array.isArray(resultado)) {
+    resultado = resultado.filter(c => c.status === status);
+  }
+  
+  // Filtrar por categoria se especificado
+  if (categoria && Array.isArray(resultado)) {
+    resultado = resultado.filter(c => c.categoria === categoria);
+  }
+  
+  // Ordenar
+  if (ordenar && Array.isArray(resultado)) {
+    switch (ordenar) {
+      case 'ctr':
+        resultado.sort((a, b) => (b.metricas?.ctr || 0) - (a.metricas?.ctr || 0));
+        break;
+      case 'conversoes':
+        resultado.sort((a, b) => (b.metricas?.conversoes || 0) - (a.metricas?.conversoes || 0));
+        break;
+      case 'recente':
+        resultado.sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm));
+        break;
+    }
+  }
+  
+  res.json(resultado);
+});
+
+// GET /copies/stats - Estatísticas dos copies
+app.get('/copies/stats', authenticateRequest, (req, res) => {
+  const copies = readCopies();
+  
+  const contarPorStatus = (arr) => {
+    const stats = { disponivel: 0, ativo: 0, campeao: 0, baixa_perf: 0, bloqueado: 0, pausado: 0 };
+    (arr || []).forEach(c => {
+      if (stats.hasOwnProperty(c.status)) stats[c.status]++;
+    });
+    return stats;
+  };
+  
+  res.json({
+    titulos: { total: (copies.titulos || []).length, ...contarPorStatus(copies.titulos) },
+    descricoes: { total: (copies.descricoes || []).length, ...contarPorStatus(copies.descricoes) },
+    keywords: { total: (copies.keywords || []).length, ...contarPorStatus(copies.keywords) },
+    sitelinks: { total: (copies.sitelinks || []).length, ...contarPorStatus(copies.sitelinks) },
+    frases: { total: (copies.frases || []).length, ...contarPorStatus(copies.frases) },
+    campanhas: (copies.campanhas || []).length,
+    ultimaAtualizacao: copies.metadata?.ultimaAtualizacao,
+    totalImportacoes: copies.metadata?.totalImportacoes || 0
+  });
+});
+
+// POST /copies - Criar novo copy
+app.post('/copies', authenticateRequest, (req, res) => {
+  const { tipo, texto, categoria, campanha } = req.body;
+  
+  if (!tipo || !texto) {
+    return res.status(400).json({ error: 'Tipo e texto são obrigatórios' });
+  }
+  
+  const tiposValidos = ['titulos', 'descricoes', 'keywords', 'sitelinks', 'frases'];
+  if (!tiposValidos.includes(tipo)) {
+    return res.status(400).json({ error: 'Tipo inválido', tiposValidos });
+  }
+  
+  // Verificar GovDocs
+  const govCheck = verificarGovDocs(texto);
+  if (!govCheck.seguro) {
+    return res.status(400).json({
+      error: 'Texto contém palavras bloqueadas (GovDocs)',
+      palavras: govCheck.palavrasEncontradas
+    });
+  }
+  
+  const copies = readCopies();
+  
+  // Verificar duplicata
+  const duplicado = copies[tipo].find(c => c.texto.toLowerCase() === texto.toLowerCase());
+  if (duplicado) {
+    return res.status(409).json({
+      error: 'Copy já existe',
+      existente: duplicado
+    });
+  }
+  
+  const novoCopy = {
+    id: generateCopyId(tipo),
+    texto,
+    caracteres: texto.length,
+    categoria: categoria || 'geral',
+    status: 'disponivel',
+    metricas: {
+      impressoes: 0,
+      cliques: 0,
+      ctr: 0,
+      conversoes: 0,
+      convRate: 0
+    },
+    uso: {
+      campanhas: campanha ? [campanha] : [],
+      grupos: [],
+      ativo_em: []
+    },
+    historico: [
+      { data: new Date().toISOString(), acao: 'criado' }
+    ],
+    validacao: {
+      govdocs_safe: true,
+      reprovado: false,
+      motivo_reprovacao: null
+    },
+    criadoEm: new Date().toISOString(),
+    atualizadoEm: new Date().toISOString()
+  };
+  
+  copies[tipo].push(novoCopy);
+  
+  if (saveCopies(copies)) {
+    console.log(`✅ [COPIES] Novo ${tipo.slice(0, -1)} criado: ${novoCopy.id}`);
+    res.status(201).json(novoCopy);
+  } else {
+    res.status(500).json({ error: 'Erro ao salvar copy' });
+  }
+});
+
+// PUT /copies/:tipo/:id - Atualizar copy
+app.put('/copies/:tipo/:id', authenticateRequest, (req, res) => {
+  const { tipo, id } = req.params;
+  const updates = req.body;
+  
+  const copies = readCopies();
+  
+  if (!copies[tipo]) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
+  
+  const index = copies[tipo].findIndex(c => c.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Copy não encontrado' });
+  }
+  
+  // Atualizar campos permitidos
+  const copy = copies[tipo][index];
+  
+  if (updates.texto) {
+    const govCheck = verificarGovDocs(updates.texto);
+    if (!govCheck.seguro) {
+      return res.status(400).json({
+        error: 'Texto contém palavras bloqueadas',
+        palavras: govCheck.palavrasEncontradas
+      });
+    }
+    copy.texto = updates.texto;
+    copy.caracteres = updates.texto.length;
+  }
+  
+  if (updates.categoria) copy.categoria = updates.categoria;
+  if (updates.status) copy.status = updates.status;
+  
+  if (updates.metricas) {
+    copy.metricas = { ...copy.metricas, ...updates.metricas };
+    // Recalcular CTR
+    if (copy.metricas.impressoes > 0 && copy.metricas.cliques > 0) {
+      copy.metricas.ctr = parseFloat(((copy.metricas.cliques / copy.metricas.impressoes) * 100).toFixed(2));
+    }
+    // Recalcular Taxa de Conversão
+    if (copy.metricas.cliques > 0 && copy.metricas.conversoes > 0) {
+      copy.metricas.convRate = parseFloat(((copy.metricas.conversoes / copy.metricas.cliques) * 100).toFixed(2));
+    }
+    // Reclassificar automaticamente
+    copy.status = classificarCopy(copy);
+  }
+  
+  if (updates.reprovado !== undefined) {
+    copy.validacao.reprovado = updates.reprovado;
+    copy.validacao.motivo_reprovacao = updates.motivo_reprovacao || null;
+    if (updates.reprovado) {
+      copy.status = 'bloqueado';
+    }
+  }
+  
+  copy.atualizadoEm = new Date().toISOString();
+  copy.historico.push({
+    data: new Date().toISOString(),
+    acao: 'atualizado',
+    campos: Object.keys(updates)
+  });
+  
+  copies[tipo][index] = copy;
+  
+  if (saveCopies(copies)) {
+    console.log(`✅ [COPIES] ${tipo.slice(0, -1)} ${id} atualizado`);
+    res.json(copy);
+  } else {
+    res.status(500).json({ error: 'Erro ao salvar' });
+  }
+});
+
+// DELETE /copies/:tipo/:id - Deletar copy
+app.delete('/copies/:tipo/:id', authenticateRequest, (req, res) => {
+  const { tipo, id } = req.params;
+  
+  const copies = readCopies();
+  
+  if (!copies[tipo]) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
+  
+  const index = copies[tipo].findIndex(c => c.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Copy não encontrado' });
+  }
+  
+  const deletado = copies[tipo].splice(index, 1)[0];
+  
+  if (saveCopies(copies)) {
+    console.log(`🗑️ [COPIES] ${tipo.slice(0, -1)} ${id} deletado`);
+    res.json({ success: true, deleted: deletado });
+  } else {
+    res.status(500).json({ error: 'Erro ao deletar' });
+  }
+});
+
+// POST /copies/importar - Importar dados colados do Google Ads
+app.post('/copies/importar', authenticateRequest, (req, res) => {
+  const { dados, tipo, campanha } = req.body;
+  
+  if (!dados) {
+    return res.status(400).json({ error: 'Dados são obrigatórios' });
+  }
+  
+  console.log('📥 [COPIES] POST /copies/importar - Importando dados');
+  
+  try {
+    // Parsear dados colados (formato tabulado)
+    const linhas = dados.trim().split('\n');
+    if (linhas.length < 2) {
+      return res.status(400).json({ error: 'Dados insuficientes. Precisa de cabeçalho + pelo menos 1 linha' });
+    }
+    
+    // Detectar separador (tab ou vírgula)
+    const separador = linhas[0].includes('\t') ? '\t' : ',';
+    
+    // Parsear cabeçalho
+    const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
+    
+    // Detectar tipo de dados automaticamente
+    let tipoDetectado = tipo;
+    if (!tipoDetectado) {
+      if (cabecalho.some(c => c.includes('titulo') || c.includes('headline'))) {
+        tipoDetectado = 'titulos';
+      } else if (cabecalho.some(c => c.includes('descri') || c.includes('description'))) {
+        tipoDetectado = 'descricoes';
+      } else if (cabecalho.some(c => c.includes('palavra') || c.includes('keyword'))) {
+        tipoDetectado = 'keywords';
+      } else if (cabecalho.some(c => c.includes('sitelink'))) {
+        tipoDetectado = 'sitelinks';
+      } else {
+        tipoDetectado = 'titulos'; // Default
+      }
+    }
+    
+    // Mapear índices das colunas
+    const colTexto = cabecalho.findIndex(c => 
+      c.includes('titulo') || c.includes('headline') || c.includes('texto') || 
+      c.includes('descri') || c.includes('palavra') || c.includes('keyword') ||
+      c.includes('sitelink') || c.includes('recurso') || c.includes('asset')
+    );
+    const colImpr = cabecalho.findIndex(c => c.includes('impr'));
+    const colCliques = cabecalho.findIndex(c => c.includes('clique') || c.includes('click'));
+    const colCtr = cabecalho.findIndex(c => c.includes('ctr'));
+    const colConv = cabecalho.findIndex(c => c.includes('conv'));
+    
+    if (colTexto === -1) {
+      return res.status(400).json({ 
+        error: 'Não foi possível identificar coluna de texto',
+        cabecalhoDetectado: cabecalho
+      });
+    }
+    
+    const copies = readCopies();
+    const resultados = {
+      importados: 0,
+      atualizados: 0,
+      duplicados: 0,
+      bloqueados: 0,
+      erros: [],
+      itens: []
+    };
+    
+    // Processar cada linha
+    for (let i = 1; i < linhas.length; i++) {
+      const linha = linhas[i];
+      if (!linha.trim()) continue;
+      
+      const colunas = linha.split(separador).map(c => c.trim());
+      const texto = colunas[colTexto];
+      
+      if (!texto || texto.length < 2) {
+        resultados.erros.push({ linha: i + 1, erro: 'Texto vazio ou muito curto' });
+        continue;
+      }
+      
+      // Verificar GovDocs
+      const govCheck = verificarGovDocs(texto);
+      if (!govCheck.seguro) {
+        resultados.bloqueados++;
+        resultados.itens.push({
+          texto,
+          status: 'BLOQUEADO',
+          motivo: `Palavras GovDocs: ${govCheck.palavrasEncontradas.join(', ')}`
+        });
+        continue;
+      }
+      
+      // Verificar duplicata
+      const existente = copies[tipoDetectado].find(c => 
+        c.texto.toLowerCase() === texto.toLowerCase()
+      );
+      
+      // Extrair métricas
+      const impressoes = colImpr >= 0 ? parseInt(colunas[colImpr]?.replace(/\D/g, '') || 0) : 0;
+      const cliques = colCliques >= 0 ? parseInt(colunas[colCliques]?.replace(/\D/g, '') || 0) : 0;
+      const ctrValor = colCtr >= 0 ? parseFloat(colunas[colCtr]?.replace(',', '.').replace('%', '') || 0) : 0;
+      const conversoes = colConv >= 0 ? parseInt(colunas[colConv]?.replace(/\D/g, '') || 0) : 0;
+      
+      if (existente) {
+        // Atualizar métricas do existente
+        existente.metricas.impressoes += impressoes;
+        existente.metricas.cliques += cliques;
+        existente.metricas.conversoes += conversoes;
+        if (existente.metricas.impressoes > 0) {
+          existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
+        }
+        existente.status = classificarCopy(existente);
+        existente.atualizadoEm = new Date().toISOString();
+        existente.historico.push({
+          data: new Date().toISOString(),
+          acao: 'importacao_atualizado',
+          campanha
+        });
+        
+        resultados.atualizados++;
+        resultados.itens.push({
+          texto,
+          status: 'ATUALIZADO',
+          id: existente.id,
+          novoStatus: existente.status
+        });
+      } else {
+        // Criar novo
+        const novoCopy = {
+          id: generateCopyId(tipoDetectado),
+          texto,
+          caracteres: texto.length,
+          categoria: 'geral',
+          status: 'disponivel',
+          metricas: {
+            impressoes,
+            cliques,
+            ctr: ctrValor || (impressoes > 0 ? parseFloat(((cliques / impressoes) * 100).toFixed(2)) : 0),
+            conversoes,
+            convRate: cliques > 0 ? parseFloat(((conversoes / cliques) * 100).toFixed(2)) : 0
+          },
+          uso: {
+            campanhas: campanha ? [campanha] : [],
+            grupos: [],
+            ativo_em: campanha ? [campanha] : []
+          },
+          historico: [
+            { data: new Date().toISOString(), acao: 'importado', campanha }
+          ],
+          validacao: {
+            govdocs_safe: true,
+            reprovado: false,
+            motivo_reprovacao: null
+          },
+          criadoEm: new Date().toISOString(),
+          atualizadoEm: new Date().toISOString()
+        };
+        
+        // Classificar automaticamente
+        novoCopy.status = classificarCopy(novoCopy);
+        
+        copies[tipoDetectado].push(novoCopy);
+        resultados.importados++;
+        resultados.itens.push({
+          texto,
+          status: 'NOVO',
+          id: novoCopy.id,
+          classificacao: novoCopy.status
+        });
+      }
+    }
+    
+    // Atualizar metadata
+    copies.metadata.totalImportacoes = (copies.metadata.totalImportacoes || 0) + 1;
+    
+    if (saveCopies(copies)) {
+      console.log(`✅ [COPIES] Importação concluída: ${resultados.importados} novos, ${resultados.atualizados} atualizados`);
+      res.json({
+        success: true,
+        tipo: tipoDetectado,
+        ...resultados
+      });
+    } else {
+      res.status(500).json({ error: 'Erro ao salvar importação' });
+    }
+    
+  } catch (error) {
+    console.error('❌ [COPIES] Erro na importação:', error);
+    res.status(500).json({ error: 'Erro ao processar dados', details: error.message });
+  }
+});
+
+// POST /copies/vincular - Vincular copy a uma campanha
+app.post('/copies/vincular', authenticateRequest, (req, res) => {
+  const { tipo, copyId, campanha, grupo } = req.body;
+  
+  if (!tipo || !copyId || !campanha) {
+    return res.status(400).json({ error: 'Tipo, copyId e campanha são obrigatórios' });
+  }
+  
+  const copies = readCopies();
+  
+  if (!copies[tipo]) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
+  
+  const copy = copies[tipo].find(c => c.id === copyId);
+  if (!copy) {
+    return res.status(404).json({ error: 'Copy não encontrado' });
+  }
+  
+  // Adicionar campanha se não existir
+  if (!copy.uso.campanhas.includes(campanha)) {
+    copy.uso.campanhas.push(campanha);
+  }
+  if (!copy.uso.ativo_em.includes(campanha)) {
+    copy.uso.ativo_em.push(campanha);
+  }
+  if (grupo && !copy.uso.grupos.includes(grupo)) {
+    copy.uso.grupos.push(grupo);
+  }
+  
+  // Atualizar status se estava disponível
+  if (copy.status === 'disponivel') {
+    copy.status = 'ativo';
+  }
+  
+  copy.atualizadoEm = new Date().toISOString();
+  copy.historico.push({
+    data: new Date().toISOString(),
+    acao: 'vinculado',
+    campanha,
+    grupo
+  });
+  
+  if (saveCopies(copies)) {
+    res.json({ success: true, copy });
+  } else {
+    res.status(500).json({ error: 'Erro ao vincular' });
+  }
+});
+
+// GET /copies/sugestoes - Obter sugestões de copies para nova campanha
+app.get('/copies/sugestoes', authenticateRequest, (req, res) => {
+  const { tipo, campanha, limite = 15 } = req.query;
+  
+  const copies = readCopies();
+  const tipoAlvo = tipo || 'titulos';
+  
+  if (!copies[tipoAlvo]) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
+  
+  // Filtrar copies disponíveis
+  let sugestoes = copies[tipoAlvo].filter(c => 
+    c.status !== 'bloqueado' && 
+    c.status !== 'baixa_perf'
+  );
+  
+  // Ordenar: campeões primeiro, depois disponíveis, depois ativos
+  sugestoes.sort((a, b) => {
+    const ordem = { campeao: 0, disponivel: 1, ativo: 2, pausado: 3 };
+    const ordemA = ordem[a.status] ?? 4;
+    const ordemB = ordem[b.status] ?? 4;
+    
+    if (ordemA !== ordemB) return ordemA - ordemB;
+    
+    // Dentro da mesma categoria, ordenar por CTR
+    return (b.metricas?.ctr || 0) - (a.metricas?.ctr || 0);
+  });
+  
+  // Marcar se já está em uso na campanha
+  if (campanha) {
+    sugestoes = sugestoes.map(c => ({
+      ...c,
+      jaEmUso: c.uso?.campanhas?.includes(campanha) || false
+    }));
+  }
+  
+  // Limitar resultados
+  sugestoes = sugestoes.slice(0, parseInt(limite));
+  
+  res.json({
+    tipo: tipoAlvo,
+    campanha,
+    sugestoes,
+    total: sugestoes.length,
+    campeoes: sugestoes.filter(c => c.status === 'campeao').length,
+    disponiveis: sugestoes.filter(c => c.status === 'disponivel').length
+  });
+});
+
+// POST /copies/campanhas - Criar/atualizar campanha
+app.post('/copies/campanhas', authenticateRequest, (req, res) => {
+  const { id, nome, produto, status = 'ativa' } = req.body;
+  
+  if (!nome) {
+    return res.status(400).json({ error: 'Nome da campanha é obrigatório' });
+  }
+  
+  const copies = readCopies();
+  
+  const campanha = {
+    id: id || `camp-${Date.now()}`,
+    nome,
+    produto: produto || 'geral',
+    status,
+    criadaEm: new Date().toISOString(),
+    atualizadaEm: new Date().toISOString()
+  };
+  
+  const existente = copies.campanhas.findIndex(c => c.id === campanha.id);
+  if (existente >= 0) {
+    copies.campanhas[existente] = { ...copies.campanhas[existente], ...campanha };
+  } else {
+    copies.campanhas.push(campanha);
+  }
+  
+  if (saveCopies(copies)) {
+    res.json({ success: true, campanha });
+  } else {
+    res.status(500).json({ error: 'Erro ao salvar campanha' });
+  }
+});
+
+// GET /copies/campanhas - Listar campanhas
+app.get('/copies/campanhas', authenticateRequest, (req, res) => {
+  const copies = readCopies();
+  res.json(copies.campanhas || []);
+});
+
+console.log('🎯 [COPIES] Sistema de Gestão de Copies inicializado');
+
 // Iniciar servidor
 app.listen(PORT, () => {
   logger.info(`🚀 Servidor de sincronização iniciado`, {
