@@ -112,6 +112,13 @@ export function CopiesAds() {
   // Novo copy
   const [newCopyText, setNewCopyText] = useState('');
   const [newCopyCategoria, setNewCopyCategoria] = useState('geral');
+  
+  // Entrada rápida
+  const [quickInput, setQuickInput] = useState('');
+  const [quickAdding, setQuickAdding] = useState(false);
+  const [showQuickMetrics, setShowQuickMetrics] = useState(false);
+  const [quickCtr, setQuickCtr] = useState('');
+  const [quickConv, setQuickConv] = useState('');
 
   // Carregar dados
   const loadData = useCallback(async () => {
@@ -243,6 +250,44 @@ export function CopiesAds() {
     }
   };
 
+  // Adicionar rapidamente
+  const handleQuickAdd = async () => {
+    if (!quickInput.trim()) return;
+    
+    setQuickAdding(true);
+    try {
+      const metricas: any = {};
+      if (quickCtr) metricas.ctr = parseFloat(quickCtr.replace(',', '.'));
+      if (quickConv) metricas.conversoes = parseInt(quickConv);
+      
+      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/copies`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tipo: activeTab,
+          texto: quickInput.trim(),
+          categoria: 'geral',
+          metricas: Object.keys(metricas).length > 0 ? metricas : undefined
+        })
+      });
+      
+      const result = await res.json();
+      
+      if (res.ok) {
+        toast({ title: '✓ Adicionado!', description: quickInput.substring(0, 30) + '...' });
+        setQuickInput('');
+        setQuickCtr('');
+        setQuickConv('');
+        loadData();
+      } else {
+        toast({ title: 'Erro', description: result.error, variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Falha ao adicionar', variant: 'destructive' });
+    } finally {
+      setQuickAdding(false);
+    }
+  };
+
   // Marcar como bloqueado
   const handleBloquear = async (copy: Copy) => {
     const motivo = window.prompt('Motivo do bloqueio (opcional):');
@@ -340,6 +385,88 @@ export function CopiesAds() {
           ))}
         </div>
       )}
+
+      {/* Entrada Rápida */}
+      <div className="bg-secondary/30 rounded-xl p-4 border border-border">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 relative">
+            <Plus className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+            <input
+              type="text"
+              value={quickInput}
+              onChange={(e) => setQuickInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleQuickAdd();
+                }
+              }}
+              placeholder={`Digite ou cole um ${activeTab.slice(0, -1)} e pressione Enter...`}
+              className="w-full pl-11 pr-4 py-3 text-lg rounded-lg border-2 border-primary/30 bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+              maxLength={activeTab === 'titulos' ? 30 : activeTab === 'descricoes' ? 90 : 500}
+            />
+          </div>
+          
+          <button
+            onClick={() => setShowQuickMetrics(!showQuickMetrics)}
+            className={`px-3 py-3 rounded-lg border transition-colors ${
+              showQuickMetrics ? 'bg-primary/20 border-primary' : 'border-border hover:border-primary/50'
+            }`}
+            title="Adicionar métricas (opcional)"
+          >
+            <TrendingUp className="w-5 h-5" />
+          </button>
+          
+          <button
+            onClick={handleQuickAdd}
+            disabled={!quickInput.trim() || quickAdding}
+            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-2"
+          >
+            {quickAdding ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            Adicionar
+          </button>
+        </div>
+        
+        {/* Métricas opcionais */}
+        {showQuickMetrics && (
+          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border/50">
+            <span className="text-sm text-muted-foreground">Métricas (opcional):</span>
+            <div className="flex items-center gap-2">
+              <label className="text-sm">CTR %</label>
+              <input
+                type="text"
+                value={quickCtr}
+                onChange={(e) => setQuickCtr(e.target.value)}
+                placeholder="4.5"
+                className="w-20 px-2 py-1 rounded border border-border bg-background text-center text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm">Conversões</label>
+              <input
+                type="text"
+                value={quickConv}
+                onChange={(e) => setQuickConv(e.target.value)}
+                placeholder="10"
+                className="w-20 px-2 py-1 rounded border border-border bg-background text-center text-sm"
+              />
+            </div>
+          </div>
+        )}
+        
+        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+          <span>
+            {quickInput.length} / {activeTab === 'titulos' ? 30 : activeTab === 'descricoes' ? 90 : 500} caracteres
+          </span>
+          <span>
+            Pressione <kbd className="px-1 py-0.5 bg-secondary rounded">Enter</kbd> para adicionar rapidamente
+          </span>
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -475,17 +602,17 @@ export function CopiesAds() {
         </table>
       </div>
 
-      {/* Modal de Importação */}
+      {/* Modal de Importação em Lote */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-background rounded-xl border border-border max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-border">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Upload className="w-5 h-5" />
-                Importar do Google Ads
+                Importar em Lote
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Cole os dados copiados do Google Ads (Ctrl+C)
+                Cole vários {activeTab} de uma vez - um por linha
               </p>
             </div>
             
@@ -505,28 +632,27 @@ export function CopiesAds() {
               
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Dados do Google Ads
+                  Textos (um por linha)
                 </label>
                 <textarea
                   value={importData}
                   onChange={(e) => setImportData(e.target.value)}
-                  placeholder={`Cole aqui os dados copiados do Google Ads...
+                  placeholder={`Cole os textos aqui, um por linha...
 
-Exemplo (separado por tab ou vírgula):
-Título	Impressões	Cliques	CTR
-Certidão Online	15000	675	4.5%
-100% Digital	12000	480	4.0%`}
+Exemplo:
+Certidão Online em 24h
+100% Digital e Seguro
+Receba Rápido por Email
+Atendimento Especializado`}
                   className="w-full h-48 px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
                 />
               </div>
               
-              <div className="bg-secondary/30 rounded-lg p-4 text-sm">
-                <div className="font-medium mb-2">📋 Como copiar do Google Ads:</div>
-                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                  <li>Abra o Google Ads → Campanhas → Anúncios e recursos</li>
-                  <li>Selecione as linhas que deseja importar</li>
-                  <li>Copie (Ctrl+C) e cole aqui</li>
-                </ol>
+              <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 text-sm">
+                <div className="font-medium text-primary mb-2">✨ Modo Simples</div>
+                <p className="text-muted-foreground">
+                  Basta colar os textos, um por linha. Cada linha será adicionada como um {activeTab.slice(0, -1)} separado.
+                </p>
               </div>
               
               {importResult && (

@@ -2833,7 +2833,7 @@ app.delete('/copies/:tipo/:id', authenticateRequest, (req, res) => {
   }
 });
 
-// POST /copies/importar - Importar dados colados do Google Ads
+// POST /copies/importar - Importar dados colados (modo simples: uma linha por texto)
 app.post('/copies/importar', authenticateRequest, (req, res) => {
   const { dados, tipo, campanha } = req.body;
   
@@ -2844,51 +2844,14 @@ app.post('/copies/importar', authenticateRequest, (req, res) => {
   console.log('📥 [COPIES] POST /copies/importar - Importando dados');
   
   try {
-    // Parsear dados colados (formato tabulado)
-    const linhas = dados.trim().split('\n');
-    if (linhas.length < 2) {
-      return res.status(400).json({ error: 'Dados insuficientes. Precisa de cabeçalho + pelo menos 1 linha' });
+    const linhas = dados.trim().split('\n').filter(l => l.trim());
+    
+    if (linhas.length === 0) {
+      return res.status(400).json({ error: 'Nenhum texto para importar' });
     }
     
-    // Detectar separador (tab ou vírgula)
-    const separador = linhas[0].includes('\t') ? '\t' : ',';
-    
-    // Parsear cabeçalho
-    const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
-    
-    // Detectar tipo de dados automaticamente
-    let tipoDetectado = tipo;
-    if (!tipoDetectado) {
-      if (cabecalho.some(c => c.includes('titulo') || c.includes('headline'))) {
-        tipoDetectado = 'titulos';
-      } else if (cabecalho.some(c => c.includes('descri') || c.includes('description'))) {
-        tipoDetectado = 'descricoes';
-      } else if (cabecalho.some(c => c.includes('palavra') || c.includes('keyword'))) {
-        tipoDetectado = 'keywords';
-      } else if (cabecalho.some(c => c.includes('sitelink'))) {
-        tipoDetectado = 'sitelinks';
-      } else {
-        tipoDetectado = 'titulos'; // Default
-      }
-    }
-    
-    // Mapear índices das colunas
-    const colTexto = cabecalho.findIndex(c => 
-      c.includes('titulo') || c.includes('headline') || c.includes('texto') || 
-      c.includes('descri') || c.includes('palavra') || c.includes('keyword') ||
-      c.includes('sitelink') || c.includes('recurso') || c.includes('asset')
-    );
-    const colImpr = cabecalho.findIndex(c => c.includes('impr'));
-    const colCliques = cabecalho.findIndex(c => c.includes('clique') || c.includes('click'));
-    const colCtr = cabecalho.findIndex(c => c.includes('ctr'));
-    const colConv = cabecalho.findIndex(c => c.includes('conv'));
-    
-    if (colTexto === -1) {
-      return res.status(400).json({ 
-        error: 'Não foi possível identificar coluna de texto',
-        cabecalhoDetectado: cabecalho
-      });
-    }
+    // Usar o tipo fornecido ou default para titulos
+    const tipoDetectado = tipo || 'titulos';
     
     const copies = readCopies();
     const resultados = {
@@ -2900,13 +2863,9 @@ app.post('/copies/importar', authenticateRequest, (req, res) => {
       itens: []
     };
     
-    // Processar cada linha
-    for (let i = 1; i < linhas.length; i++) {
-      const linha = linhas[i];
-      if (!linha.trim()) continue;
-      
-      const colunas = linha.split(separador).map(c => c.trim());
-      const texto = colunas[colTexto];
+    // Processar cada linha como um texto individual
+    for (let i = 0; i < linhas.length; i++) {
+      const texto = linhas[i].trim();
       
       if (!texto || texto.length < 2) {
         resultados.erros.push({ linha: i + 1, erro: 'Texto vazio ou muito curto' });
@@ -2930,34 +2889,18 @@ app.post('/copies/importar', authenticateRequest, (req, res) => {
         c.texto.toLowerCase() === texto.toLowerCase()
       );
       
-      // Extrair métricas
-      const impressoes = colImpr >= 0 ? parseInt(colunas[colImpr]?.replace(/\D/g, '') || 0) : 0;
-      const cliques = colCliques >= 0 ? parseInt(colunas[colCliques]?.replace(/\D/g, '') || 0) : 0;
-      const ctrValor = colCtr >= 0 ? parseFloat(colunas[colCtr]?.replace(',', '.').replace('%', '') || 0) : 0;
-      const conversoes = colConv >= 0 ? parseInt(colunas[colConv]?.replace(/\D/g, '') || 0) : 0;
+      // Sem métricas no modo simples
+      const impressoes = 0;
+      const cliques = 0;
+      const conversoes = 0;
       
       if (existente) {
-        // Atualizar métricas do existente
-        existente.metricas.impressoes += impressoes;
-        existente.metricas.cliques += cliques;
-        existente.metricas.conversoes += conversoes;
-        if (existente.metricas.impressoes > 0) {
-          existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
-        }
-        existente.status = classificarCopy(existente);
-        existente.atualizadoEm = new Date().toISOString();
-        existente.historico.push({
-          data: new Date().toISOString(),
-          acao: 'importacao_atualizado',
-          campanha
-        });
-        
-        resultados.atualizados++;
+        // Já existe, marcar como duplicado
+        resultados.duplicados++;
         resultados.itens.push({
           texto,
-          status: 'ATUALIZADO',
-          id: existente.id,
-          novoStatus: existente.status
+          status: 'DUPLICADO',
+          id: existente.id
         });
       } else {
         // Criar novo
@@ -2970,9 +2913,9 @@ app.post('/copies/importar', authenticateRequest, (req, res) => {
           metricas: {
             impressoes,
             cliques,
-            ctr: ctrValor || (impressoes > 0 ? parseFloat(((cliques / impressoes) * 100).toFixed(2)) : 0),
+            ctr: 0,
             conversoes,
-            convRate: cliques > 0 ? parseFloat(((conversoes / cliques) * 100).toFixed(2)) : 0
+            convRate: 0
           },
           uso: {
             campanhas: campanha ? [campanha] : [],
