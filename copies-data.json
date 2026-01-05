@@ -3,7 +3,60 @@
     "criminal_federal": {
       "nome": "Criminal Federal",
       "titulos": [],
-      "descricoes": [],
+      "descricoes": [
+        {
+          "id": "des-1767470248537-qztwt3",
+          "texto": "Evite erro e confusão. Veja o link criminal certo.",
+          "caracteres": 50,
+          "tipoCertidao": "criminal_federal",
+          "tipoRecurso": "descricoes",
+          "status": "baixa_perf",
+          "metricas": {
+            "impressoes": 2443,
+            "cliques": 0,
+            "ctr": 0,
+            "custo": 24.43,
+            "conversoes": 0
+          },
+          "historico": [
+            {
+              "data": "2026-01-03T19:57:28.537Z",
+              "acao": "criado_via_linha"
+            }
+          ],
+          "validacao": {
+            "govdocs_safe": true
+          },
+          "criadoEm": "2026-01-03T19:57:28.537Z",
+          "atualizadoEm": "2026-01-03T19:57:28.537Z"
+        },
+        {
+          "id": "des-1767470337459-ij7xvt",
+          "texto": "Evite erro e confusão. Veja o link criminal certo em segundos.Link pronto do criminal.",
+          "caracteres": 86,
+          "tipoCertidao": "criminal_federal",
+          "tipoRecurso": "descricoes",
+          "status": "disponivel",
+          "metricas": {
+            "impressoes": 38,
+            "cliques": 12,
+            "ctr": 31.58,
+            "custo": 24.43,
+            "conversoes": 0
+          },
+          "historico": [
+            {
+              "data": "2026-01-03T19:58:57.459Z",
+              "acao": "criado_via_linha"
+            }
+          ],
+          "validacao": {
+            "govdocs_safe": true
+          },
+          "criadoEm": "2026-01-03T19:58:57.459Z",
+          "atualizadoEm": "2026-01-03T19:58:57.459Z"
+        }
+      ],
       "keywords": [],
       "sitelinks": [],
       "frases": []
@@ -177,7 +230,7 @@
     "ministério público"
   ],
   "metadata": {
-    "ultimaAtualizacao": "2026-01-03T15:19:05.377Z",
+    "ultimaAtualizacao": "2026-01-03T19:58:57.459Z",
     "totalImportacoes": 0,
     "versao": "2.0"
   }

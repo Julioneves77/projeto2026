@@ -169,7 +169,7 @@ export function CopiesAds() {
   const [importData, setImportData] = useState('');
   const [importCampanha, setImportCampanha] = useState('');
   const [importing, setImporting] = useState(false);
-  
+
   // Modal de duplicação
   const [showDuplicacaoModal, setShowDuplicacaoModal] = useState(false);
   const [duplicataInfo, setDuplicataInfo] = useState<{
@@ -335,9 +335,9 @@ export function CopiesAds() {
       const tipoRecursoFinal = parsedPreview?.tipoRecurso || tipoRecursoManual || 'titulos';
       
       const requestBody: Record<string, unknown> = {
-        linha: linhaColada,
-        tipoCertidaoOverride: tipoCertidaoSelecionado,
-        tipoRecursoOverride: tipoRecursoFinal
+          linha: linhaColada,
+          tipoCertidaoOverride: tipoCertidaoSelecionado,
+          tipoRecursoOverride: tipoRecursoFinal
       };
       
       // Se há ação de duplicação, adicionar parâmetros
@@ -685,20 +685,20 @@ export function CopiesAds() {
                       <AlertCircle className="w-4 h-4" />
                       Tipo de recurso não detectado - selecione manualmente:
                     </div>
-                    <select
-                      value={tipoRecursoManual || 'titulos'}
-                      onChange={(e) => setTipoRecursoManual(e.target.value as TipoTab)}
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                    >
-                      <option value="titulos">Título</option>
-                      <option value="descricoes">Descrição</option>
-                      <option value="keywords">Palavra-chave</option>
-                      <option value="sitelinks">Sitelink</option>
-                      <option value="frases">Frase</option>
-                    </select>
+                  <select
+                    value={tipoRecursoManual || 'titulos'}
+                    onChange={(e) => setTipoRecursoManual(e.target.value as TipoTab)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  >
+                    <option value="titulos">Título</option>
+                    <option value="descricoes">Descrição</option>
+                    <option value="keywords">Palavra-chave</option>
+                    <option value="sitelinks">Sitelink</option>
+                    <option value="frases">Frase</option>
+                  </select>
+                </div>
+              )}
                   </div>
-                )}
-              </div>
               
               {/* Métricas */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-2 border-t border-border">

@@ -11,7 +11,6 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Contact from "./pages/Contact";
 import CertificateForm from "./pages/CertificateForm";
-import ServiceSelection from "./pages/ServiceSelection";
 import Payment from "./pages/Payment";
 import ThankYou from "./pages/ThankYou";
 
@@ -31,7 +30,6 @@ const App = () => (
           <Route path="/termos-uso" element={<Terms />} />
           <Route path="/contato" element={<Contact />} />
           <Route path="/certidao/:category" element={<CertificateForm />} />
-          <Route path="/selecionar-servico" element={<ServiceSelection />} />
           <Route path="/pagamento" element={<Payment />} />
           <Route path="/obrigado" element={<ThankYou />} />
           <Route path="*" element={<NotFound />} />

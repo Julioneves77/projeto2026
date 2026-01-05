@@ -45,3 +45,4 @@ echo "📝 Ver logs: pm2 logs sync-server"
 echo "📊 Monitorar: pm2 monit"
 
 
+

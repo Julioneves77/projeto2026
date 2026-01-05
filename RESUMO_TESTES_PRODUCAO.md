@@ -61,3 +61,4 @@
 - Verificar se `SYNC_SERVER_API_KEY` está configurado em ambos os lados
 
 
+

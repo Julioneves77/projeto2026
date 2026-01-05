@@ -1,13 +1,24 @@
 import { Link } from "react-router-dom";
 
-const Footer = () => {
+interface FooterProps {
+  onOpenSelector?: () => void;
+}
+
+const Footer = ({ onOpenSelector }: FooterProps) => {
   return (
     <footer className="bg-card/50 border-t border-border mt-auto backdrop-blur-sm">
       <div className="max-w-4xl mx-auto px-6 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           {/* Brand */}
           <div>
-            <p className="text-lg font-semibold text-gradient mb-3">Solicite Link</p>
+            <a 
+              href="#solicite"
+              aria-label="Clique para abrir o seletor de certidões"
+              onClick={(e) => { e.preventDefault(); onOpenSelector?.(); }}
+              className="text-lg font-semibold text-gradient mb-3 cursor-pointer hover:text-primary transition-colors block no-underline"
+            >
+              Solicite Link
+            </a>
             <p className="text-sm text-muted-foreground">
               Plataforma simples e direta de direcionamento.
             </p>

@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
-import FormWizard from "@/components/forms/FormWizard";
 import FormField from "@/components/forms/FormField";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Info, AlertCircle } from "lucide-react";
 import {
   validateCPF,
   validateCNPJ,
@@ -37,14 +37,21 @@ import {
 } from "@/lib/constants";
 import { getFormConfig, FormConfig, getAvailableStates } from "@/lib/formConfigs";
 
+// Constantes de preço - atualizado em 05/01/2026
+const BASE_PRICE = 39.90;
+const PRIORIDADE_ADDON = 19.90;
+const PREMIUM_ADDON = 29.90;
+// Forçar novo build
+const BUILD_VERSION = "2026.01.05.2123";
+
 const CertificateForm = () => {
   const { category } = useParams<{ category: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const type = searchParams.get("type") || "";
+  const formRef = useRef<HTMLDivElement>(null);
   
   const [selectedState, setSelectedState] = useState<string>("");
-  const [currentStep, setCurrentStep] = useState(0);
   
   // Pre-fill tipoCertidao based on URL type parameter for federais and estaduais
   const getInitialFormData = (): Record<string, string | boolean> => {
@@ -64,6 +71,8 @@ const CertificateForm = () => {
   
   const [formData, setFormData] = useState<Record<string, string | boolean>>(getInitialFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isPrioridade, setIsPrioridade] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
 
   // Get available states for estaduais category
   const availableStates = useMemo(() => {
@@ -79,7 +88,6 @@ const CertificateForm = () => {
       if (!selectedState) return null;
       const config = getFormConfig(category, selectedState);
       if (config && type === "civel") {
-        // Modificar título para Cível quando type=civel
         return {
           ...config,
           title: config.title.replace("Criminal", "Cível"),
@@ -93,7 +101,6 @@ const CertificateForm = () => {
   const getCertificateTitle = () => {
     switch (category) {
       case "estaduais":
-        // Se type=civel, retornar Cível Estadual, senão Criminal Estadual
         if (type === "civel") {
           return "Certidão Cível Estadual";
         }
@@ -174,8 +181,6 @@ const CertificateForm = () => {
     );
   }
 
-  const currentStepConfig = formConfig.steps[currentStep];
-
   const updateField = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: "" }));
@@ -202,86 +207,129 @@ const CertificateForm = () => {
     }
   };
 
-  const validateStep = (): boolean => {
-    const newErrors: Record<string, string> = {};
-    const stepFields = currentStepConfig.fields;
+  const validateAllSteps = (): { isValid: boolean; missingFields: string[] } => {
+    const allErrors: Record<string, string> = {};
+    const missingFields: string[] = [];
 
-    // Usar for...of ao invés de forEach para permitir controle de fluxo correto
-    for (const field of stepFields) {
-      // Skip validation for hidden conditional fields
-      if (field.showWhen) {
-        const conditionValue = formData[field.showWhen.field];
-        if (conditionValue !== field.showWhen.value) {
-          continue; // Skip this field, it's not visible
+    // Validar todos os steps
+    for (const step of formConfig.steps) {
+      for (const field of step.fields) {
+        // Skip validation for hidden conditional fields
+        if (field.showWhen) {
+          const conditionValue = formData[field.showWhen.field];
+          if (conditionValue !== field.showWhen.value) {
+            continue;
+          }
+        }
+
+        const value = formData[field.name];
+
+        if (field.required && (!value || (typeof value === "string" && !value.trim()))) {
+          allErrors[field.name] = `${field.label} é obrigatório`;
+          missingFields.push(field.label);
+          continue;
+        }
+
+        if (value && typeof value === "string" && value.trim()) {
+          switch (field.name) {
+            case "cpf":
+              if (!validateCPF(value)) {
+                allErrors[field.name] = "CPF inválido";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
+            case "cnpj":
+              if (!validateCNPJ(value)) {
+                allErrors[field.name] = "CNPJ inválido";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
+            case "cpfOuCnpj":
+            case "documento":
+              const clean = value.replace(/\D/g, "");
+              if (clean.length <= 11) {
+                if (!validateCPF(value)) {
+                  allErrors[field.name] = "CPF inválido";
+                  missingFields.push(`${field.label} (inválido)`);
+                }
+              } else {
+                if (!validateCNPJ(value)) {
+                  allErrors[field.name] = "CNPJ inválido";
+                  missingFields.push(`${field.label} (inválido)`);
+                }
+              }
+              break;
+            case "email":
+              if (!validateEmail(value)) {
+                allErrors[field.name] = "E-mail inválido";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
+            case "telefone":
+              if (!validatePhone(value)) {
+                allErrors[field.name] = "Telefone inválido";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
+            case "dataNascimento":
+              if (!validateDate(value)) {
+                allErrors[field.name] = "Data inválida (DD/MM/AAAA)";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
+          }
         }
       }
-
-      const value = formData[field.name];
-
-      if (field.required && (!value || (typeof value === "string" && !value.trim()))) {
-        newErrors[field.name] = `${field.label} é obrigatório`;
-        continue; // Continue para próximo campo
-      }
-
-      if (value && typeof value === "string" && value.trim()) {
-        switch (field.name) {
-          case "cpf":
-            if (!validateCPF(value)) newErrors[field.name] = "CPF inválido";
-            break;
-          case "cnpj":
-            if (!validateCNPJ(value)) newErrors[field.name] = "CNPJ inválido";
-            break;
-          case "cpfOuCnpj":
-          case "documento":
-            const clean = value.replace(/\D/g, "");
-            if (clean.length <= 11) {
-              if (!validateCPF(value)) newErrors[field.name] = "CPF inválido";
-            } else {
-              if (!validateCNPJ(value)) newErrors[field.name] = "CNPJ inválido";
-            }
-            break;
-          case "email":
-            if (!validateEmail(value)) newErrors[field.name] = "E-mail inválido";
-            break;
-          case "telefone":
-            if (!validatePhone(value)) newErrors[field.name] = "Telefone inválido";
-            break;
-          case "dataNascimento":
-            if (!validateDate(value)) newErrors[field.name] = "Data inválida (DD/MM/AAAA)";
-            break;
-        }
-      }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleNext = () => {
-    if (validateStep()) {
-      setCurrentStep((prev) => Math.min(prev + 1, formConfig.steps.length - 1));
+    // Verificar termos
+    if (!formData.termos) {
+      allErrors.termos = "Você deve aceitar os termos";
+      missingFields.push("Aceite dos Termos");
     }
-  };
 
-  const handleBack = () => {
-    if (currentStep === 0 && category === "estaduais") {
-      setSelectedState("");
-    } else {
-      setCurrentStep((prev) => Math.max(prev - 1, 0));
-    }
+    setErrors(allErrors);
+    return {
+      isValid: Object.keys(allErrors).length === 0,
+      missingFields,
+    };
   };
 
   const handleSubmit = async () => {
-    if (!validateStep()) return;
-
-    // Check terms acceptance
-    if (!formData.termos) {
-      setErrors((prev) => ({ ...prev, termos: "Você deve aceitar os termos" }));
+    // Validar todos os campos antes de submeter
+    const validation = validateAllSteps();
+    
+    if (!validation.isValid) {
+      const missingFieldsText = validation.missingFields.length > 0
+        ? validation.missingFields.join(", ")
+        : "alguns campos obrigatórios";
+      
+      toast({
+        title: "Campos obrigatórios não preenchidos",
+        description: `Por favor, preencha os seguintes campos: ${missingFieldsText}`,
+        variant: "destructive",
+      });
+      
+      // Scroll para o primeiro campo com erro
+      setTimeout(() => {
+        if (formRef.current) {
+          const firstErrorField = formRef.current.querySelector('[data-error="true"]');
+          if (firstErrorField) {
+            firstErrorField.scrollIntoView({ behavior: "smooth", block: "center" });
+          } else {
+            // Se não encontrar por data-error, procurar pelo primeiro campo com erro visível
+            const firstErrorInput = formRef.current.querySelector('.text-destructive');
+            if (firstErrorInput) {
+              firstErrorInput.closest('.space-y-2')?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          }
+        }
+      }, 100);
+      
       return;
     }
 
-    // Construir tipo de certidão completo para passar adiante
-    // Se for estadual com type=civel, garantir que tipoCertidao está definido
+    // Construir tipo de certidão completo
     const finalFormData = { ...formData };
     if (category === "estaduais" && type === "civel" && !finalFormData.tipoCertidao) {
       finalFormData.tipoCertidao = "Cível";
@@ -289,12 +337,42 @@ const CertificateForm = () => {
       finalFormData.tipoCertidao = "Criminal";
     }
 
-    // Navigate to service selection
-    navigate("/selecionar-servico", {
+    // Calcular preço e plano selecionado
+    let finalPrice = BASE_PRICE;
+    let planId = "padrao";
+    let planName = "Certidão Atendimento Padrão";
+    let deliveryTime = "até 3 dias úteis";
+    let features: string[] = ["Atendimento Fila Normal", "Envio por E-mail em PDF"];
+
+    if (isPremium) {
+      finalPrice = BASE_PRICE + PREMIUM_ADDON; // 69.80
+      planId = "premium";
+      planName = "Certidão Premium WhatsApp";
+      deliveryTime = "até 4 horas";
+      features = ["Atendimento Urgente (à frente de todos)", "Envio por E-mail e WhatsApp"];
+    } else if (isPrioridade) {
+      finalPrice = BASE_PRICE + PRIORIDADE_ADDON; // 59.80
+      planId = "prioridade";
+      planName = "Certidão Atendimento Prioritário";
+      deliveryTime = "até 24 horas";
+      features = ["Atendimento Prioridade (frente da fila Normal)", "Envio por E-mail e WhatsApp"];
+    }
+
+    const selectedPlan = {
+      id: planId,
+      name: planName,
+      price: finalPrice,
+      deliveryTime,
+      features,
+    };
+
+    // Navigate direto para pagamento
+    navigate("/pagamento", {
       state: {
         formData: finalFormData,
         certificateType: getCertificateTitle(),
         state: selectedState,
+        selectedPlan,
       },
     });
   };
@@ -343,8 +421,9 @@ const CertificateForm = () => {
     }
   };
 
-  const renderField = (field: FormConfig["steps"][0]["fields"][0]) => {
+  const renderField = (field: FormConfig["steps"][0]["fields"][0], stepIndex: number) => {
     const value = formData[field.name] || "";
+    const hasError = !!errors[field.name];
 
     // Check conditional visibility
     if (field.showWhen) {
@@ -359,7 +438,7 @@ const CertificateForm = () => {
         const options = getSelectOptions(field.options);
         return (
           <FormField
-            key={field.name}
+            key={`${stepIndex}-${field.name}`}
             label={field.label}
             required={field.required}
             error={errors[field.name]}
@@ -368,7 +447,7 @@ const CertificateForm = () => {
               value={value as string}
               onValueChange={(val) => updateField(field.name, val)}
             >
-              <SelectTrigger className="bg-card">
+              <SelectTrigger className="bg-card" data-error={hasError ? "true" : undefined}>
                 <SelectValue placeholder={field.placeholder || `Selecione ${field.label.toLowerCase()}`} />
               </SelectTrigger>
               <SelectContent className="bg-card border-border z-50 max-h-60">
@@ -384,13 +463,13 @@ const CertificateForm = () => {
 
       case "checkbox":
         return (
-          <div key={field.name} className="flex items-start gap-3">
+          <div key={`${stepIndex}-${field.name}`} className="flex items-start gap-3" data-error={hasError ? "true" : undefined}>
             <Checkbox
               id={field.name}
               checked={value as boolean}
               onCheckedChange={(checked) => updateField(field.name, checked as boolean)}
             />
-            <div>
+            <div className="flex-1">
               <label
                 htmlFor={field.name}
                 className="text-sm text-muted-foreground cursor-pointer leading-relaxed"
@@ -408,7 +487,7 @@ const CertificateForm = () => {
       default:
         return (
           <FormField
-            key={field.name}
+            key={`${stepIndex}-${field.name}`}
             label={field.label}
             required={field.required}
             error={errors[field.name]}
@@ -417,24 +496,20 @@ const CertificateForm = () => {
               value={value as string}
               onChange={(e) => updateField(field.name, formatField(field.name, e.target.value))}
               placeholder={field.placeholder}
+              data-error={hasError ? "true" : undefined}
+              className={hasError ? "border-destructive" : ""}
             />
           </FormField>
         );
     }
   };
 
-  const isLastStep = currentStep === formConfig.steps.length - 1;
-  const hasAllRequiredFilled = currentStepConfig.fields
-    .filter((f) => f.required)
-    .every((f) => {
-      if (f.showWhen) {
-        const conditionValue = formData[f.showWhen.field];
-        if (conditionValue !== f.showWhen.value) return true;
-      }
-      const val = formData[f.name];
-      if (typeof val === "boolean") return val;
-      return val && (val as string).trim();
-    });
+  // Agrupar campos por step para manter organização visual
+  const fieldsByStep = formConfig.steps.map((step, stepIndex) => ({
+    step,
+    stepIndex,
+    fields: step.fields,
+  }));
 
   return (
     <Layout>
@@ -443,7 +518,7 @@ const CertificateForm = () => {
         <div className="container relative">
           <button
             onClick={() => {
-              if (currentStep === 0 && category === "estaduais") {
+              if (category === "estaduais") {
                 setSelectedState("");
               } else {
                 navigate(-1);
@@ -466,20 +541,128 @@ const CertificateForm = () => {
 
       {/* Form */}
       <section className="py-10">
-        <div className="container">
-          <FormWizard
-            steps={formConfig.steps.map((s) => ({ title: s.title, description: s.description }))}
-            currentStep={currentStep}
-            onNext={handleNext}
-            onBack={handleBack}
-            onSubmit={handleSubmit}
-            isNextDisabled={!hasAllRequiredFilled}
-            isSubmitting={false}
-          >
-            <div className="space-y-5">
-              {currentStepConfig.fields.map(renderField)}
+        <div className="container max-w-2xl mx-auto">
+          {/* Explicação de Campos Obrigatórios */}
+          <Card className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+            <div className="flex items-start gap-3">
+              <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                  Campos Obrigatórios
+                </h3>
+                <p className="text-xs text-blue-800 dark:text-blue-200">
+                  Os campos marcados com <span className="text-destructive font-semibold">*</span> são obrigatórios e devem ser preenchidos corretamente para prosseguir com a solicitação da certidão.
+                </p>
+              </div>
             </div>
-          </FormWizard>
+          </Card>
+
+          {/* Formulário */}
+          <div ref={formRef} className="rounded-xl border border-border bg-card p-6 card-shadow animate-fade-in space-y-8">
+            {/* Renderizar campos agrupados por step */}
+            {fieldsByStep.map(({ step, stepIndex, fields }) => (
+              <div key={stepIndex} className="space-y-5">
+                {/* Título da seção */}
+                {step.title && (
+                  <div className="border-b border-border pb-2 mb-4">
+                    <h3 className="font-semibold text-foreground text-base">
+                      {stepIndex === 0 && step.title === "Tipo de Certidão"
+                        ? `Preencha ${getCertificateTitle()} para Baixar`
+                        : step.title}
+                    </h3>
+                    {step.description && (
+                      <p className="text-sm text-muted-foreground mt-1">{step.description}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Campos do step */}
+                <div className="space-y-5">
+                  {fields.map((field) => renderField(field, stepIndex))}
+                </div>
+              </div>
+            ))}
+
+            {/* Seção de Prioridade */}
+            <div className="border-t border-border pt-6 mt-6">
+              <h3 className="font-semibold text-foreground text-base mb-4">
+                Opções de Atendimento (Opcional)
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Escolha uma opção adicional para receber sua certidão com mais rapidez:
+              </p>
+              
+              <div className="space-y-3">
+                {/* Checkbox Prioridade */}
+                <div className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                  <Checkbox
+                    id="prioridade"
+                    checked={isPrioridade}
+                    onCheckedChange={(checked) => {
+                      setIsPrioridade(checked as boolean);
+                      if (checked) setIsPremium(false); // Desmarcar premium se prioridade for selecionada
+                    }}
+                  />
+                  <div className="flex-1">
+                    <label
+                      htmlFor="prioridade"
+                      className="text-sm font-medium text-foreground cursor-pointer flex items-center gap-2"
+                    >
+                      Atendimento Prioritário
+                      <span className="text-xs font-semibold text-primary">
+                        (+R$ {PRIORIDADE_ADDON.toFixed(2).replace(".", ",")})
+                      </span>
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Atendimento prioritário - Baixe no Email e WhatsApp
+                    </p>
+                  </div>
+                </div>
+
+                {/* Checkbox Premium */}
+                <div className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                  <Checkbox
+                    id="premium"
+                    checked={isPremium}
+                    onCheckedChange={(checked) => {
+                      setIsPremium(checked as boolean);
+                      if (checked) setIsPrioridade(false); // Desmarcar prioridade se premium for selecionada
+                    }}
+                  />
+                  <div className="flex-1">
+                    <label
+                      htmlFor="premium"
+                      className="text-sm font-medium text-foreground cursor-pointer flex items-center gap-2"
+                    >
+                      <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded uppercase">
+                        URGENTE
+                      </span>
+                      Atendimento Premium
+                      <span className="text-xs font-semibold text-primary">
+                        (+R$ {PREMIUM_ADDON.toFixed(2).replace(".", ",")})
+                      </span>
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Atendimento urgente - Baixe no Email e WhatsApp
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Botão de Submeter */}
+            <div className="pt-6 border-t border-border">
+              <Button
+                type="button"
+                variant="success"
+                size="lg"
+                onClick={handleSubmit}
+                className="w-full"
+              >
+                Emitir Certidão
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
     </Layout>

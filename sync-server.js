@@ -3136,19 +3136,19 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
   if (acaoDuplicacao === 'atualizar_existente' && duplicataId && duplicataTipoCertidao && duplicataTipoRecurso) {
     // Atualizar o copy existente onde ele está
     const existente = copies.tipos[duplicataTipoCertidao]?.[duplicataTipoRecurso]?.find(c => c.id === duplicataId);
-    
-    if (existente) {
-      existente.metricas.impressoes += parsed.metricas.impressoes;
-      existente.metricas.cliques += parsed.metricas.cliques;
-      existente.metricas.custo += parsed.metricas.custo;
-      if (existente.metricas.impressoes > 0) {
-        existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
-      }
-      existente.status = classificarCopy(existente);
-      existente.atualizadoEm = new Date().toISOString();
+  
+  if (existente) {
+    existente.metricas.impressoes += parsed.metricas.impressoes;
+    existente.metricas.cliques += parsed.metricas.cliques;
+    existente.metricas.custo += parsed.metricas.custo;
+    if (existente.metricas.impressoes > 0) {
+      existente.metricas.ctr = parseFloat(((existente.metricas.cliques / existente.metricas.impressoes) * 100).toFixed(2));
+    }
+    existente.status = classificarCopy(existente);
+    existente.atualizadoEm = new Date().toISOString();
       existente.historico = existente.historico || [];
-      existente.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
-      
+    existente.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
+    
       resultado = { acao: 'atualizado', copy: existente, localExistente: true };
     } else {
       return res.status(404).json({ error: 'Copy original não encontrado' });
@@ -3203,26 +3203,26 @@ app.post('/copies/colar-linha', authenticateRequest, (req, res) => {
       existenteNoTipo.historico.push({ data: new Date().toISOString(), acao: 'atualizado_via_linha' });
       
       resultado = { acao: 'atualizado', copy: existenteNoTipo };
-    } else {
-      // Criar novo
-      const novoCopy = {
-        id: generateCopyId(tipoRecurso),
-        texto: parsed.texto,
-        caracteres: parsed.texto.length,
-        tipoCertidao: tipoCert,
-        tipoRecurso: tipoRecurso,
-        status: 'disponivel',
-        metricas: parsed.metricas,
-        historico: [{ data: new Date().toISOString(), acao: 'criado_via_linha' }],
-        validacao: { govdocs_safe: true },
-        criadoEm: new Date().toISOString(),
-        atualizadoEm: new Date().toISOString()
-      };
-      
-      novoCopy.status = classificarCopy(novoCopy);
-      copies.tipos[tipoCert][tipoRecurso].push(novoCopy);
-      
-      resultado = { acao: 'criado', copy: novoCopy };
+  } else {
+    // Criar novo
+    const novoCopy = {
+      id: generateCopyId(tipoRecurso),
+      texto: parsed.texto,
+      caracteres: parsed.texto.length,
+      tipoCertidao: tipoCert,
+      tipoRecurso: tipoRecurso,
+      status: 'disponivel',
+      metricas: parsed.metricas,
+      historico: [{ data: new Date().toISOString(), acao: 'criado_via_linha' }],
+      validacao: { govdocs_safe: true },
+      criadoEm: new Date().toISOString(),
+      atualizadoEm: new Date().toISOString()
+    };
+    
+    novoCopy.status = classificarCopy(novoCopy);
+    copies.tipos[tipoCert][tipoRecurso].push(novoCopy);
+    
+    resultado = { acao: 'criado', copy: novoCopy };
     }
   }
   

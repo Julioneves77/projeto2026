@@ -29,3 +29,4 @@ ssh $SERVER "pm2 logs sync-server --lines 0 --nostream 2>&1" | grep --line-buffe
 done
 
 
+

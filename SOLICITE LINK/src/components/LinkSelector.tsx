@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useImperativeHandle, forwardRef } from "react";
 import {
   Select,
   SelectContent,
@@ -9,58 +9,80 @@ import {
 import { ChevronRight } from "lucide-react";
 import { pushDL } from "@/lib/dataLayer";
 
+export interface LinkSelectorRef {
+  openSelect: () => void;
+}
 
-// URL do Portal - todos os serviços vão para a home
-const PORTAL_HOME = 'https://www.portalcertidao.org';
+// URL base do Portal
+const PORTAL_BASE = 'https://www.portalcertidao.org';
 
-// Mapeamento de serviços do SOLICITE LINK
+// Mapeamento de serviços do SOLICITE LINK para formulários específicos do Portal
 const linkOptions = [
   { 
     id: "criminal-federal", 
     label: "Certidão Criminal Federal", 
-    portalPath: ""
+    portalPath: "/certidao/federais?type=criminal"
   },
   { 
     id: "quitacao-eleitoral", 
     label: "Certidão Quitação Eleitoral", 
-    portalPath: ""
+    portalPath: "/certidao/federais?type=eleitoral"
   },
   { 
     id: "antecedencia-pf", 
     label: "Certidão Antecedência Criminal – PF", 
-    portalPath: ""
+    portalPath: "/certidao/policia-federal"
   },
   { 
     id: "criminal-estadual", 
     label: "Certidão Criminal Estadual", 
-    portalPath: ""
+    portalPath: "/certidao/estaduais"
   },
   { 
     id: "civel-federal", 
     label: "Certidão Cível Federal", 
-    portalPath: ""
+    portalPath: "/certidao/federais?type=civel"
   },
   { 
     id: "civel-estadual", 
     label: "Certidão Cível Estadual", 
-    portalPath: ""
+    portalPath: "/certidao/estaduais?type=civel"
   },
   { 
     id: "cnd", 
     label: "Certidão CND", 
-    portalPath: ""
+    portalPath: "/certidao/cnd"
   },
   { 
     id: "cpf-regular", 
     label: "Certidão CPF Regular", 
-    portalPath: ""
+    portalPath: "/certidao/cpf-regular"
   },
 ];
 
-const LinkSelector = () => {
+const LinkSelector = forwardRef<LinkSelectorRef>((props, ref) => {
   const [selectedLink, setSelectedLink] = useState<string>("");
+  const [open, setOpen] = useState(false);
 
   const selectedOption = linkOptions.find((opt) => opt.id === selectedLink);
+
+  // Expõe método para abrir o dropdown programaticamente
+  useImperativeHandle(ref, () => ({
+    openSelect: () => {
+      // Scroll suave para o elemento selector
+      const trigger = document.getElementById('certidao-select-trigger');
+      if (trigger) {
+        trigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Aguarda o scroll terminar e então abre
+        setTimeout(() => {
+          setOpen(true);
+        }, 300);
+      } else {
+        // Se não encontrar, abre direto
+        setOpen(true);
+      }
+    },
+  }));
 
   const handleSelectChange = (value: string) => {
     setSelectedLink(value);
@@ -83,8 +105,9 @@ const LinkSelector = () => {
         funnel_step: 'access_clicked'
       });
       
-      // Redirecionar para a home do PORTAL
-      window.location.href = PORTAL_HOME;
+      // Redirecionar para o formulário específico da certidão no Portal
+      const portalUrl = `${PORTAL_BASE}${selectedOption.portalPath}`;
+      window.location.href = portalUrl;
     }
   };
 
@@ -99,8 +122,10 @@ const LinkSelector = () => {
         </h2>
       </div>
 
-      <Select value={selectedLink} onValueChange={handleSelectChange}>
-        <SelectTrigger className="w-full h-16 text-lg font-medium bg-white border-2 border-primary/30 hover:border-primary shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl focus:ring-4 focus:ring-primary/20">
+      <Select value={selectedLink} onValueChange={handleSelectChange} open={open} onOpenChange={setOpen}>
+        <SelectTrigger 
+          id="certidao-select-trigger"
+          className="w-full h-16 text-lg font-medium bg-white border-2 border-primary/30 hover:border-primary shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl focus:ring-4 focus:ring-primary/20">
           <SelectValue placeholder="Selecione qual Documento precisa pedir" />
         </SelectTrigger>
         <SelectContent className="bg-white border-2 border-primary/20 shadow-2xl rounded-xl z-50 max-h-80">
@@ -119,14 +144,16 @@ const LinkSelector = () => {
       {selectedLink && (
         <button
           onClick={handleAccessClick}
-          className="btn-action mt-6 animate-scale-in flex items-center justify-center gap-2"
+          className="btn-action btn-blink mt-6 animate-scale-in flex items-center justify-center gap-2"
         >
-          Acessar a página de solicitação
+          Clique Aqui para Solicitar {selectedOption?.label}
           <ChevronRight className="w-5 h-5" />
         </button>
       )}
     </div>
   );
-};
+});
+
+LinkSelector.displayName = "LinkSelector";
 
 export default LinkSelector;

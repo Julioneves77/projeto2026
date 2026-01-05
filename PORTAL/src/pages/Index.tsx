@@ -113,7 +113,7 @@ const Index = () => {
                         className="w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
                       >
                         <Link to={getLink(cert)}>
-                          Solicitar Certidão
+                          Emitir Certidão
                         </Link>
                       </Button>
                     </div>

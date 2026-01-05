@@ -149,3 +149,4 @@ echo ""
 echo -e "${GREEN}🎉 Upload concluído! Agora configure o servidor.${NC}"
 
 
+

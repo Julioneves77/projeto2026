@@ -86,3 +86,4 @@ No código (`PLATAFORMA/src/components/Tickets.tsx`):
    - CORS e autenticação
 
 
+

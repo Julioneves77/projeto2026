@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ interface ServicePlan {
   id: string;
   name: string;
   price: number;
-  description: string;
   features: string[];
   icon: React.ReactNode;
   recommended?: boolean;
@@ -20,9 +19,8 @@ interface ServicePlan {
 const servicePlans: ServicePlan[] = [
   {
     id: "padrao",
-    name: "Atendimento Padrão",
+    name: "Certidão Atendimento Padrão",
     price: 39.97,
-    description: "Processamento em fila única conforme demanda. Certidão enviada por e-mail em formato PDF.",
     deliveryTime: "até 3 dias úteis",
     features: [
       "Atendimento Fila Normal",
@@ -32,9 +30,8 @@ const servicePlans: ServicePlan[] = [
   },
   {
     id: "prioridade",
-    name: "Atendimento Prioritário",
-    price: 54.87,
-    description: "Processamento prioritário com especialista dedicado. Certidão enviada em prioridade na fila.",
+    name: "Certidão Atendimento Prioritário",
+    price: 54.97,
     deliveryTime: "até 24 horas",
     features: [
       "Atendimento Prioridade (frente da fila Normal)",
@@ -45,9 +42,8 @@ const servicePlans: ServicePlan[] = [
   },
   {
     id: "premium",
-    name: "Premium WhatsApp",
-    price: 79.97,
-    description: "Atendimento urgente com máxima prioridade. Envio por e-mail e WhatsApp.",
+    name: "Certidão Premium WhatsApp",
+    price: 69.97,
     deliveryTime: "até 4 horas",
     features: [
       "Atendimento Urgente (à frente de todos)",
@@ -63,6 +59,7 @@ const ServiceSelection = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { formData, certificateType, state } = location.state || {};
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("padrao");
 
   useEffect(() => {
     if (!formData) {
@@ -75,6 +72,8 @@ const ServiceSelection = () => {
   }
 
   const handleSelectPlan = (plan: ServicePlan) => {
+    setSelectedPlanId(plan.id);
+    
     // Remove icon (React element) before passing to navigate state
     // React elements cannot be serialized/cloned in history state
     const { icon, ...planWithoutIcon } = plan;
@@ -114,7 +113,7 @@ const ServiceSelection = () => {
               Escolha o Tipo de Atendimento
             </h1>
             <p className="mt-2 text-primary-foreground/80">
-              Selecione a opção que melhor atende suas necessidades
+              o <span className="font-bold">{certificateType || "Certidão"}</span> em PDF
             </p>
           </div>
         </div>
@@ -124,11 +123,13 @@ const ServiceSelection = () => {
       <section className="py-12">
         <div className="container">
           <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
-            {servicePlans.map((plan) => (
+            {servicePlans.map((plan) => {
+              const isSelected = selectedPlanId === plan.id;
+              return (
               <Card
                 key={plan.id}
                 className={`relative flex flex-col p-6 transition-all duration-300 hover:shadow-lg ${
-                  plan.recommended
+                  isSelected || plan.recommended
                     ? "border-2 border-primary ring-2 ring-primary/20"
                     : "border-border hover:border-primary/50"
                 }`}
@@ -151,14 +152,24 @@ const ServiceSelection = () => {
                 </div>
 
                 <div className="mb-4">
-                  <span className="font-heading text-3xl font-bold text-foreground">
-                    {formatPrice(plan.price)}
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-heading text-3xl font-bold text-foreground">
+                        {plan.id === "premium" ? "R$ 69,97" : formatPrice(plan.price)}
+                      </span>
+                      {plan.id === "premium" && (
+                        <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded uppercase">
+                          URGENTE
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {plan.id === "padrao" && "Baixe no seu Email"}
+                      {plan.id === "prioridade" && "Baixe no Email e WhatsApp"}
+                      {plan.id === "premium" && "Baixe no Email e WhatsApp"}
+                    </span>
+                  </div>
                 </div>
-
-                <p className="text-sm text-muted-foreground mb-6">
-                  {plan.description}
-                </p>
 
                 <ul className="space-y-3 mb-6 flex-1">
                   {plan.features.map((feature, idx) => (
@@ -171,13 +182,14 @@ const ServiceSelection = () => {
 
                 <Button
                   onClick={() => handleSelectPlan(plan)}
-                  variant={plan.recommended ? "default" : "outline"}
-                  className="w-full"
+                  variant={isSelected || plan.recommended ? "default" : "outline"}
+                  className="w-full whitespace-normal break-words h-auto min-h-[44px] py-3 px-4 text-center"
                 >
-                  Escolher
+                  Emitir Certidão
                 </Button>
               </Card>
-            ))}
+            );
+            })}
           </div>
         </div>
       </section>

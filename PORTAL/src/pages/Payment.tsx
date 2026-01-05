@@ -18,7 +18,7 @@ import {
 // Mock data for testing
 const mockPlan = {
   id: "prioridade",
-  name: "Atendimento Prioritário",
+  name: "Certidão Atendimento Prioritário",
   price: 54.87,
   description: "Processamento prioritário com especialista dedicado.",
   deliveryTime: "até 24 horas",
@@ -58,7 +58,7 @@ const Payment = () => {
   useEffect(() => {
     // Only redirect if we're not in test mode and missing required data
     if (!isTestMode && (!locationState.formData || !locationState.selectedPlan)) {
-      navigate("/selecionar-servico", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [locationState.formData, locationState.selectedPlan, isTestMode, navigate]);
 
@@ -350,12 +350,19 @@ const Payment = () => {
   };
 
   const handleChangePlan = () => {
-    navigate("/selecionar-servico", {
+    // Voltar para o formulário da certidão (não há mais tela de seleção de serviço)
+    const category = certificateType.includes('federal') ? 'federais' : 
+                     certificateType.includes('estadual') ? 'estaduais' :
+                     certificateType.includes('policia') ? 'policia-federal' :
+                     certificateType.includes('cnd') ? 'cnd' : 'cpf-regular';
+    
+    navigate(`/certidao/${category}`, {
       state: {
         formData,
         certificateType,
         state,
       },
+      replace: true,
     });
   };
 

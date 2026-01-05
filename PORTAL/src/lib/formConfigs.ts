@@ -227,7 +227,7 @@ const federaisConfig: FormConfig = {
   steps: [
     { title: "Tipo de Certidão", fields: [
       { name: "tipoCertidao", label: "Tipo de Certidão", type: "select", required: true, options: "tipoCertidao" },
-      { name: "estadoEmissao", label: "Estado de Emissão", type: "select", required: true, options: "estados" },
+      { name: "estadoEmissao", label: "Estado de Emissão da certidão", type: "select", required: true, options: "estados" },
       { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
       { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
       { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },

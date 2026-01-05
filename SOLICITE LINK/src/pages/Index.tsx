@@ -1,9 +1,17 @@
 import { Link } from "react-router-dom";
-import LinkSelector from "@/components/LinkSelector";
+import { useRef } from "react";
+import LinkSelector, { LinkSelectorRef } from "@/components/LinkSelector";
 import Footer from "@/components/Footer";
 import { ListChecks, MousePointerClick } from "lucide-react";
 
 const Index = () => {
+  const linkSelectorRef = useRef<LinkSelectorRef>(null);
+
+  const handleOpenSelector = () => {
+    console.log('[Index] handleOpenSelector chamado');
+    linkSelectorRef.current?.openSelect();
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Logo/Brand */}
@@ -15,7 +23,7 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-12">
-        <LinkSelector />
+        <LinkSelector ref={linkSelectorRef} />
 
         {/* Como Funciona Section */}
         <section className="mt-20 max-w-2xl w-full animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
@@ -32,7 +40,14 @@ const Index = () => {
                 <span className="text-primary font-bold">1</span>
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Selecione</h3>
+                <a 
+                  href="#escolha"
+                  aria-label="Clique para abrir o seletor de certidões"
+                  onClick={(e) => { e.preventDefault(); handleOpenSelector(); }}
+                  className="font-semibold text-foreground mb-1 cursor-pointer hover:text-primary transition-colors block no-underline"
+                >
+                  Escolha
+                </a>
                 <p className="text-sm text-muted-foreground">
                   Escolha uma das opções disponíveis na lista.
                 </p>
@@ -44,7 +59,14 @@ const Index = () => {
                 <span className="text-primary font-bold">2</span>
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Acesse</h3>
+                <a 
+                  href="#acesse"
+                  aria-label="Clique para abrir o seletor de certidões"
+                  onClick={(e) => { e.preventDefault(); handleOpenSelector(); }}
+                  className="font-semibold text-foreground mb-1 cursor-pointer hover:text-primary transition-colors block no-underline"
+                >
+                  Acesse
+                </a>
                 <p className="text-sm text-muted-foreground">
                   Clique no botão para ir à página correspondente.
                 </p>
@@ -54,7 +76,7 @@ const Index = () => {
         </section>
       </main>
 
-      <Footer />
+      <Footer onOpenSelector={handleOpenSelector} />
     </div>
   );
 };
