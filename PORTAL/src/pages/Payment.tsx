@@ -53,6 +53,7 @@ const Payment = () => {
   const [isLoadingPix, setIsLoadingPix] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const certificateTitleRef = useRef<HTMLHeadingElement>(null);
   const isTestMode = !locationState.formData;
 
   // Redirect if no formData or selectedPlan (unless in test mode which uses mock data)
@@ -62,6 +63,38 @@ const Payment = () => {
       navigate("/", { replace: true });
     }
   }, [locationState.formData, locationState.selectedPlan, isTestMode, navigate]);
+
+  // Ajustar tamanho da fonte do nome da certidão para caber em uma linha
+  useEffect(() => {
+    const adjustFontSize = () => {
+      const element = certificateTitleRef.current;
+      if (!element) return;
+
+      // Reset para tamanho original
+      element.style.fontSize = '';
+      element.style.lineHeight = '';
+
+      // Verificar se o texto está quebrando
+      const isOverflowing = element.scrollWidth > element.clientWidth;
+
+      if (isOverflowing) {
+        // Começar com tamanho menor e ir ajustando
+        let fontSize = 24; // text-2xl = 1.5rem = 24px
+        element.style.fontSize = `${fontSize}px`;
+        element.style.lineHeight = '1.2';
+
+        // Reduzir até caber
+        while (element.scrollWidth > element.clientWidth && fontSize > 14) {
+          fontSize -= 1;
+          element.style.fontSize = `${fontSize}px`;
+        }
+      }
+    };
+
+    adjustFontSize();
+    window.addEventListener('resize', adjustFontSize);
+    return () => window.removeEventListener('resize', adjustFontSize);
+  }, [certificateType]);
 
   // Criar ticket e transação PIX ao carregar Payment
   useEffect(() => {
@@ -393,9 +426,12 @@ const Payment = () => {
             <h1 className="font-heading text-2xl font-bold text-primary-foreground">
               Pagamento via PIX
             </h1>
-            <p className="mt-1 text-sm text-primary-foreground/80">
-              Siga os passos abaixo para realizar o pagamento
-            </p>
+            <h2 
+              ref={certificateTitleRef}
+              className="mt-1 font-heading text-2xl font-bold text-primary-foreground whitespace-nowrap"
+            >
+              {certificateType}
+            </h2>
           </div>
         </div>
       </section>
@@ -449,8 +485,8 @@ const Payment = () => {
                 
                 {/* QR Code PIX */}
                 {isLoadingPix ? (
-                  <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
-                    <div className="w-40 h-40 bg-foreground/5 rounded-lg flex items-center justify-center">
+                  <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
+                    <div className="w-48 h-48 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
                       <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                     </div>
                   </div>
@@ -459,10 +495,10 @@ const Payment = () => {
                     <div className="bg-white border-2 border-border rounded-xl p-4 inline-block mb-3 max-w-full overflow-hidden">
                       <QRCodeSVG 
                         value={pixQrCode}
-                        size={160}
+                        size={220}
                         level="M"
                         includeMargin={false}
-                        className="mx-auto w-32 h-32 sm:w-40 sm:h-40"
+                        className="mx-auto w-48 h-48 sm:w-56 sm:h-56"
                         style={{ maxWidth: '100%', height: 'auto' }}
                       />
                     </div>
@@ -472,9 +508,9 @@ const Payment = () => {
                   </>
                 ) : (
                   <>
-                    <div className="bg-card border-2 border-border rounded-xl p-3 inline-block mb-3">
-                      <div className="w-40 h-40 bg-foreground/5 rounded-lg flex items-center justify-center">
-                        <QrCode className="h-28 w-28 text-foreground/40" />
+                    <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
+                      <div className="w-48 h-48 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
+                        <QrCode className="h-32 w-32 sm:h-36 sm:w-36 text-foreground/40" />
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">
@@ -488,7 +524,11 @@ const Payment = () => {
                   <div className="bg-muted rounded-lg p-3">
                     <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 text-sm bg-background rounded px-3 py-2 font-mono truncate">
+                      <code className={`flex-1 bg-background rounded px-3 py-2 font-mono truncate ${
+                        pixQrCode 
+                          ? 'text-sm' 
+                          : 'text-base font-semibold text-primary border-2 border-primary/30'
+                      }`}>
                         {pixQrCode || 'Aguardando geração...'}
                       </code>
                       <Button

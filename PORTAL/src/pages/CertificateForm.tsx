@@ -591,7 +591,7 @@ const CertificateForm = () => {
                   <div className="border-b border-border pb-2 mb-4">
                     <h3 className="font-semibold text-foreground text-base">
                       {stepIndex === 0
-                        ? `Formulário (${getCertificateTitle()})`
+                        ? `Formulário ${getCertificateTitle()}`
                         : step.title}
                     </h3>
                     {step.description && (
