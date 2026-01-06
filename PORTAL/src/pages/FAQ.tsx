@@ -8,6 +8,7 @@ import {
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { MessageCircle } from "lucide-react";
+import SEOHead from "@/components/SEOHead";
 
 const faqs = [
   {
@@ -47,6 +48,10 @@ const faqs = [
 const FAQ = () => {
   return (
     <Layout>
+      <SEOHead
+        title="Perguntas Frequentes - Portal Certidão"
+        description="Encontre respostas para as principais dúvidas sobre certidões, prazos, validade e muito mais."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
         <div className="container relative">

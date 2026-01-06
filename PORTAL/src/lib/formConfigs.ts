@@ -33,7 +33,7 @@ const termsFields: FieldConfig[] = [
 // ESTADUAIS
 const estaduaisConfigs: Record<string, FormConfig> = {
   df: {
-    title: "Certidão Criminal - Distrito Federal",
+    title: "Certidão Negativa Criminal - Distrito Federal",
     description: "Tribunal de Justiça do Distrito Federal e Territórios",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -52,7 +52,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   go: {
-    title: "Certidão Criminal - Goiás",
+    title: "Certidão Negativa Criminal - Goiás",
     description: "Tribunal de Justiça do Estado de Goiás",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -71,7 +71,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   mt: {
-    title: "Certidão Criminal - Mato Grosso",
+    title: "Certidão Negativa Criminal - Mato Grosso",
     description: "Tribunal de Justiça do Estado de Mato Grosso",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -90,7 +90,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   to: {
-    title: "Certidão Criminal - Tocantins",
+    title: "Certidão Negativa Criminal - Tocantins",
     description: "Tribunal de Justiça do Estado de Tocantins",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -107,7 +107,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   ba: {
-    title: "Certidão Criminal - Bahia",
+    title: "Certidão Negativa Criminal - Bahia",
     description: "Tribunal de Justiça do Estado da Bahia",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -130,7 +130,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   rr: {
-    title: "Certidão Criminal - Roraima",
+    title: "Certidão Negativa Criminal - Roraima",
     description: "Tribunal de Justiça do Estado de Roraima",
     steps: [
       { title: "Tipo de Documento", fields: [
@@ -147,7 +147,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   rj: {
-    title: "Certidão Criminal - Rio de Janeiro",
+    title: "Certidão Negativa Criminal - Rio de Janeiro",
     description: "Tribunal de Justiça do Estado do Rio de Janeiro",
     steps: [
       { title: "Comarca", fields: [
@@ -170,13 +170,9 @@ const estaduaisConfigs: Record<string, FormConfig> = {
     ],
   },
   sp: {
-    title: "Certidão Criminal - São Paulo",
+    title: "Certidão Negativa Criminal - São Paulo",
     description: "Tribunal de Justiça do Estado de São Paulo",
     steps: [
-      { title: "Modelo e Pessoa", fields: [
-        { name: "modelo", label: "Modelo", type: "text", required: true },
-        { name: "pessoa", label: "Pessoa", type: "text", required: true },
-      ]},
       { title: "Tipo de Documento", fields: [
         { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
         { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
@@ -199,7 +195,7 @@ const estaduaisConfigs: Record<string, FormConfig> = {
 ["ro", "ap", "es", "ms", "rs", "sc", "al", "ce", "pb", "pe", "rn", "se", "ma"].forEach((state) => {
   if (!estaduaisConfigs[state]) {
     estaduaisConfigs[state] = {
-      title: `Certidão Criminal - ${state.toUpperCase()}`,
+      title: `Certidão Negativa Criminal - ${state.toUpperCase()}`,
       description: `Tribunal de Justiça do Estado`,
       steps: [
         { title: "Tipo de Documento", fields: [
@@ -334,7 +330,16 @@ export function getFormConfig(category: string, type: string): FormConfig | null
     case "estaduais":
       return estaduaisConfigs[type] || null;
     case "federais":
-      return { ...federaisConfig, title: `Certidão Federal - ${type.toUpperCase()}` };
+      const tipoMap: Record<string, string> = {
+        "criminal": "Certidão Negativa Criminal Federal",
+        "eleitoral": "Certidão Negativa Eleitoral",
+        "civel": "Certidão Negativa Cível Federal",
+        "cível": "Certidão Negativa Cível Federal",
+      };
+      return { 
+        ...federaisConfig, 
+        title: tipoMap[type.toLowerCase()] || `Certidão Negativa ${type.toUpperCase()} Federal`
+      };
     case "policia-federal":
       return policiaFederalConfig;
     case "cnd":

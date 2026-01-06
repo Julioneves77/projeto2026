@@ -2,6 +2,7 @@ import Layout from "@/components/layout/Layout";
 import { CheckCircle, FileText, CreditCard, Mail, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import SEOHead from "@/components/SEOHead";
 
 const steps = [
   {
@@ -33,6 +34,10 @@ const steps = [
 const HowItWorks = () => {
   return (
     <Layout>
+      <SEOHead
+        title="Como Funciona - Portal Certidão"
+        description="Entenda como funciona o processo de solicitação de certidões no Portal Certidão. Processo rápido, seguro e 100% online."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
         <div className="container relative">

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import FormField from "@/components/forms/FormField";
+import SEOHead from "@/components/SEOHead";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -90,7 +91,7 @@ const CertificateForm = () => {
       if (config && type === "civel") {
         return {
           ...config,
-          title: config.title.replace("Criminal", "Cível"),
+          title: config.title.replace("Negativa Criminal", "Negativa Cível"),
         };
       }
       return config;
@@ -102,11 +103,24 @@ const CertificateForm = () => {
     switch (category) {
       case "estaduais":
         if (type === "civel") {
-          return "Certidão Cível Estadual";
+          return "Certidão Negativa Cível Estadual";
         }
-        return "Certidão Criminal Estadual";
+        return "Certidão Negativa Criminal Estadual";
       case "federais":
-        return `Certidão Federal - ${type?.toUpperCase() || ""}`;
+        const tipoCertidao = formData.tipoCertidao as string || type;
+        const estadoEmissao = formData.estadoEmissao as string || "";
+        
+        if (tipoCertidao?.toLowerCase() === "criminal") {
+          return "Certidão Negativa Criminal Federal";
+        }
+        if (tipoCertidao?.toLowerCase() === "eleitoral") {
+          const estadoNome = estadoEmissao ? ` (${estadoEmissao})` : "";
+          return `Certidão Negativa Eleitoral${estadoNome}`;
+        }
+        if (tipoCertidao?.toLowerCase() === "cível" || tipoCertidao?.toLowerCase() === "civel") {
+          return "Certidão Negativa Cível Federal";
+        }
+        return `Certidão Negativa ${tipoCertidao || type?.toUpperCase() || ""} Federal`;
       case "policia-federal":
         return "Antecedentes - Polícia Federal";
       case "cnd":
@@ -513,6 +527,10 @@ const CertificateForm = () => {
 
   return (
     <Layout>
+      <SEOHead
+        title={`${getCertificateTitle()} - Portal Certidão`}
+        description={formConfig.description || "Preencha o formulário para solicitar sua certidão. Processo rápido, seguro e 100% online."}
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-10 lg:py-12">
         <div className="container relative">
@@ -532,9 +550,15 @@ const CertificateForm = () => {
 
           <div className="animate-slide-up">
             <h1 className="font-heading text-2xl font-bold text-primary-foreground sm:text-3xl">
-              {formConfig.title}
+              {getCertificateTitle()}
             </h1>
-            <p className="mt-1 text-primary-foreground/80">{formConfig.description}</p>
+            <p className="mt-1 text-primary-foreground/80">
+              {category === "federais" && formData.estadoEmissao
+                ? `Tribunal Regional Federal (${formData.estadoEmissao})`
+                : category === "federais"
+                ? "Tribunal Regional Federal"
+                : formConfig.description}
+            </p>
           </div>
         </div>
       </section>
@@ -566,8 +590,8 @@ const CertificateForm = () => {
                 {step.title && (
                   <div className="border-b border-border pb-2 mb-4">
                     <h3 className="font-semibold text-foreground text-base">
-                      {stepIndex === 0 && step.title === "Tipo de Certidão"
-                        ? `Preencha ${getCertificateTitle()} para Baixar`
+                      {stepIndex === 0
+                        ? `Formulário (${getCertificateTitle()})`
                         : step.title}
                     </h3>
                     {step.description && (

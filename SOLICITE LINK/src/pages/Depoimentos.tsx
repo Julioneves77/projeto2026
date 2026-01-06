@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import Footer from "@/components/Footer";
+import SEOHead from "@/components/SEOHead";
 import { ArrowLeft, Quote, Star } from "lucide-react";
 
 const testimonials = [
@@ -26,26 +27,32 @@ const testimonials = [
 const Depoimentos = () => {
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="page-header">
+      <SEOHead
+        title="Depoimentos - Solicite Link"
+        description="Veja o que nossos usuários têm a dizer sobre a experiência com o Solicite Link."
+        ogTitle="Depoimentos - Solicite Link"
+        ogDescription="Veja o que nossos usuários têm a dizer sobre a experiência com o Solicite Link."
+      />
+      <header className="page-header">
         <Link to="/" className="back-link">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-lg font-semibold text-gradient">Solicite Link</span>
         </Link>
-      </div>
+      </header>
 
       <main className="page-content">
         <div className="page-container">
-          <div className="text-center mb-12 animate-fade-in-up">
+          <section className="text-center mb-12 animate-fade-in-up">
             <span className="badge">O que dizem sobre nós</span>
             <h1 className="section-title mt-2 mb-4">Depoimentos</h1>
             <p className="section-subtitle max-w-xl mx-auto">
               Veja o que nossos usuários têm a dizer sobre a experiência com o Solicite Link.
             </p>
-          </div>
+          </section>
           
-          <div className="grid gap-6 md:grid-cols-3">
+          <section className="grid gap-6 md:grid-cols-3">
             {testimonials.map((testimonial, index) => (
-              <div 
+              <article 
                 key={index} 
                 className="card-main relative animate-fade-in-up"
                 style={{ animationDelay: `${0.1 * (index + 1)}s` }}
@@ -66,16 +73,16 @@ const Depoimentos = () => {
                   <p className="font-semibold text-foreground">{testimonial.name}</p>
                   <p className="text-sm text-muted-foreground">{testimonial.role}</p>
                 </div>
-              </div>
+              </article>
             ))}
-          </div>
+          </section>
 
-          <div className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+          <nav className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }} aria-label="Navegação principal">
             <Link to="/" className="btn-secondary">
               Voltar para a página principal
               <ArrowLeft className="w-4 h-4 rotate-180" />
             </Link>
-          </div>
+          </nav>
         </div>
       </main>
 

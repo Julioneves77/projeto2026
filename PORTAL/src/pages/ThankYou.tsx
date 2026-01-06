@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
+import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CheckCircle, Mail, MessageCircle, Clock, ArrowRight, Home } from "lucide-react";
@@ -90,6 +91,10 @@ const ThankYou = () => {
 
   return (
     <Layout>
+      <SEOHead
+        title="Pagamento Confirmado - Portal Certidão"
+        description="Sua solicitação foi recebida com sucesso. Você receberá sua certidão em breve."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-20">
         <div className="container relative">

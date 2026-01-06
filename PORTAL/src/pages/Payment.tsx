@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import Layout from "@/components/layout/Layout";
+import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
@@ -368,6 +369,10 @@ const Payment = () => {
 
   return (
     <Layout>
+      <SEOHead
+        title="Pagamento - Portal Certidão"
+        description="Complete o pagamento para finalizar sua solicitação de certidão. Processo seguro e rápido."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-8">
         <div className="container relative">

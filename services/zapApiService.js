@@ -167,11 +167,16 @@ async function sendWhatsAppMessage(ticketData) {
         } else {
           // Tentar usar instanceId ou valores das outras chaves fornecidas
           // Baseado nas credenciais fornecidas: 3EAB7866FE55B1BEB70D52B01C4B842D:01A24B106EE5EB2500D9EA86:F8337947b89a14ae78d92f6365523269bS
-          // Parece ser: instance:token:outro
+          // Parece ser: instance:token:clientToken
           const allParts = apiKey.split(':');
           if (allParts.length >= 2) {
             instance = allParts[0];
             token = allParts[1];
+            // Se tiver terceiro valor, pode ser o Client-Token
+            if (allParts.length >= 3 && !clientToken) {
+              console.log(`📱 [Zap API] Detectado Client-Token na API Key (terceiro valor)`);
+              // Não usar aqui, mas logar para referência
+            }
           } else {
             instance = instanceId || 'default';
             token = apiKey;
@@ -180,11 +185,15 @@ async function sendWhatsAppMessage(ticketData) {
         
         console.log(`📱 [Zap API] Tentando Z-API: instance=${instance}, token=${token.substring(0, 10)}...`);
         
-        // Z-API endpoint correto conforme painel: https://api.z-api.io/instances/{instance}/token/{token}/send-text
+        // Z-API endpoint correto: https://api.z-api.io/instances/{instance}/token/{token}/send-text
+        // OU: https://api.z-api.io/instances/{instance}/token/{token}/send-text (sem /v1)
+        // Tentar primeiro sem /v1, depois com /v1 se necessário
         const baseUrl = apiUrl.replace('/v1', '').replace(/\/$/, '');
-        const endpoint = `${baseUrl}/instances/${instance}/token/${token}/send-text`;
         
-        console.log(`📱 [Zap API] Endpoint: ${endpoint}`);
+        // Tentar formato 1: /instances/{instance}/token/{token}/send-text
+        let endpoint = `${baseUrl}/instances/${instance}/token/${token}/send-text`;
+        
+        console.log(`📱 [Zap API] Tentando endpoint Z-API formato 1: ${endpoint}`);
         console.log(`📱 [Zap API] Payload: phone=${phoneNumber}, message length=${message.length}`);
         
         // Preparar headers - incluir Client-Token se configurado
@@ -199,18 +208,41 @@ async function sendWhatsAppMessage(ticketData) {
           console.log(`⚠️ [Zap API] Client-Token não configurado. Configure ZAP_CLIENT_TOKEN no .env`);
         }
         
-        // Enviar mensagem com Client-Token no header
-        response = await axios.post(
-          endpoint,
-          {
-            phone: phoneNumber,
-            message: message
-          },
-          {
-            headers: headers,
-            timeout: 15000
+        // Tentar enviar mensagem
+        try {
+          response = await axios.post(
+            endpoint,
+            {
+              phone: phoneNumber,
+              message: message
+            },
+            {
+              headers: headers,
+              timeout: 15000
+            }
+          );
+        } catch (firstError) {
+          // Se falhar, tentar formato alternativo: /v1/instances/{instance}/token/{token}/send-text
+          if (firstError.response?.status === 404 || firstError.response?.data?.message?.includes('Unable to find')) {
+            console.log(`⚠️ [Zap API] Formato 1 falhou, tentando formato alternativo...`);
+            endpoint = `${apiUrl}/instances/${instance}/token/${token}/send-text`;
+            console.log(`📱 [Zap API] Tentando endpoint Z-API formato 2: ${endpoint}`);
+            
+            response = await axios.post(
+              endpoint,
+              {
+                phone: phoneNumber,
+                message: message
+              },
+              {
+                headers: headers,
+                timeout: 15000
+              }
+            );
+          } else {
+            throw firstError;
           }
-        );
+        }
         successFormat = 'Z-API';
       } catch (error) {
         lastError = error;
@@ -305,19 +337,27 @@ async function sendWhatsAppMessage(ticketData) {
 
     // Verificar se a resposta indica sucesso ou erro
     const responseData = response.data || {};
+    
+    // Verificar múltiplos indicadores de erro
     const hasError = responseData.error || 
                     responseData.is_error || 
+                    responseData.status === 'error' ||
+                    responseData.status === 'failed' ||
                     (responseData.message && (
                       responseData.message.toLowerCase().includes('error') ||
                       responseData.message.toLowerCase().includes('not found') ||
-                      responseData.message.toLowerCase().includes('failed')
+                      responseData.message.toLowerCase().includes('failed') ||
+                      responseData.message.toLowerCase().includes('unable to find') ||
+                      responseData.message.toLowerCase().includes('matching target')
                     )) ||
                     (response.status >= 400);
     
-    if (hasError && !responseData.success) {
+    // Se tem erro OU não tem indicador de sucesso, considerar como falha
+    if (hasError || (!responseData.success && !responseData.result && !responseData.id && !responseData.messageId)) {
       // Resposta com erro mas não lançou exceção
       const errorMsg = responseData.message || responseData.error || 'Erro desconhecido';
       console.error(`❌ [Zap API] Resposta com erro: ${errorMsg}`);
+      console.error('❌ [Zap API] Status HTTP:', response.status);
       console.error('❌ [Zap API] Detalhes:', JSON.stringify(responseData, null, 2));
       
       return {
@@ -432,7 +472,7 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
       const baseUrl = apiUrl.replace('/v1', '').replace(/\/$/, '');
       // Se não tem instância na URL, usar formato correto
       const instanceBaseUrl = baseUrl.includes('/instances/') ? baseUrl : `${baseUrl}/instances/${instance}/token/${token}`;
-      const textEndpoint = `${instanceBaseUrl}/send-text`;
+      let textEndpoint = `${instanceBaseUrl}/send-text`;
       
       const headers = {
         'Content-Type': 'application/json'
@@ -442,18 +482,41 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
         headers['Client-Token'] = clientToken;
       }
       
-      // Enviar mensagem de texto primeiro
-      response = await axios.post(
-        textEndpoint,
-        {
-          phone: phoneNumber,
-          message: message
-        },
-        {
-          headers: headers,
-          timeout: 15000
+      // Tentar enviar mensagem de texto primeiro
+      try {
+        response = await axios.post(
+          textEndpoint,
+          {
+            phone: phoneNumber,
+            message: message
+          },
+          {
+            headers: headers,
+            timeout: 15000
+          }
+        );
+      } catch (firstError) {
+        // Se falhar, tentar formato alternativo com /v1
+        if (firstError.response?.status === 404 || firstError.response?.data?.message?.includes('Unable to find')) {
+          console.log(`⚠️ [Zap API] Formato 1 falhou, tentando formato alternativo com /v1...`);
+          textEndpoint = `${apiUrl}/instances/${instance}/token/${token}/send-text`;
+          console.log(`📱 [Zap API] Tentando endpoint Z-API formato 2: ${textEndpoint}`);
+          
+          response = await axios.post(
+            textEndpoint,
+            {
+              phone: phoneNumber,
+              message: message
+            },
+            {
+              headers: headers,
+              timeout: 15000
+            }
+          );
+        } else {
+          throw firstError;
         }
-      );
+      }
       
       successFormat = 'Z-API';
       

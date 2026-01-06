@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import SEOHead from "@/components/SEOHead";
+import StructuredData from "@/components/StructuredData";
 
 // All certificate types configuration
 const certificates = [
@@ -73,9 +75,13 @@ const Index = () => {
 
   return (
     <Layout>
-      <main className="flex-1">
-        {/* Main Content */}
-        <section className="py-12 lg:py-16 bg-muted/20">
+      <SEOHead
+        title="Portal Certidão"
+        description="Portal Certidão - Todas as suas certidões direto no seu E-mail e WhatsApp. Processo rápido, seguro e 100% online."
+      />
+      <StructuredData />
+      {/* Main Content */}
+      <section className="py-12 lg:py-16 bg-muted/20">
           <div className="container">
             {/* Header */}
             <div className="text-center mb-10">
@@ -123,7 +129,6 @@ const Index = () => {
             </div>
           </div>
         </section>
-      </main>
     </Layout>
   );
 };

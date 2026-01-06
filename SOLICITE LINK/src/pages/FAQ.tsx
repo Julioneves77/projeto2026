@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import Footer from "@/components/Footer";
+import SEOHead from "@/components/SEOHead";
 import { ArrowLeft, HelpCircle, Zap, ShieldCheck, CreditCard } from "lucide-react";
 
 const faqItems = [
@@ -28,26 +29,32 @@ const faqItems = [
 const FAQ = () => {
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="page-header">
+      <SEOHead
+        title="Perguntas Frequentes - Solicite Link"
+        description="Encontre respostas para as dúvidas mais comuns sobre nossa plataforma."
+        ogTitle="Perguntas Frequentes - Solicite Link"
+        ogDescription="Encontre respostas para as dúvidas mais comuns sobre nossa plataforma."
+      />
+      <header className="page-header">
         <Link to="/" className="back-link">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-lg font-semibold text-gradient">Solicite Link</span>
         </Link>
-      </div>
+      </header>
 
       <main className="page-content">
         <div className="page-container">
-          <div className="text-center mb-12 animate-fade-in-up">
+          <section className="text-center mb-12 animate-fade-in-up">
             <span className="badge">Tire suas dúvidas</span>
             <h1 className="section-title mt-2 mb-4">Perguntas Frequentes</h1>
             <p className="section-subtitle max-w-xl mx-auto">
               Encontre respostas para as dúvidas mais comuns sobre nossa plataforma.
             </p>
-          </div>
+          </section>
           
-          <div className="grid gap-4 md:grid-cols-2">
+          <section className="grid gap-4 md:grid-cols-2">
             {faqItems.map((item, index) => (
-              <div 
+              <article 
                 key={index} 
                 className="card-main animate-fade-in-up"
                 style={{ animationDelay: `${0.1 * (index + 1)}s` }}
@@ -61,16 +68,16 @@ const FAQ = () => {
                     <p className="text-muted-foreground text-sm">{item.answer}</p>
                   </div>
                 </div>
-              </div>
+              </article>
             ))}
-          </div>
+          </section>
 
-          <div className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
+          <nav className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.5s' }} aria-label="Navegação principal">
             <Link to="/" className="btn-secondary">
               Voltar para a página principal
               <ArrowLeft className="w-4 h-4 rotate-180" />
             </Link>
-          </div>
+          </nav>
         </div>
       </main>
 

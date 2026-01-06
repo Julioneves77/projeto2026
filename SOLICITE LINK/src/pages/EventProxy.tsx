@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { pushDL } from '@/lib/dataLayer';
+import SEOHead from '@/components/SEOHead';
 
 // Whitelist de eventos permitidos
 const ALLOWED_EVENTS = [
@@ -74,7 +75,15 @@ const EventProxy = () => {
   }, [searchParams, navigate]);
   
   // Não renderizar nada (tela invisível)
-  return null;
+  return (
+    <>
+      <SEOHead
+        title="Solicite Link"
+        description="Solicite Link"
+        noindex={true}
+      />
+    </>
+  );
 };
 
 interface RedirectParams {

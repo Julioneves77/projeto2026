@@ -12,3 +12,10 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Bloquear páginas dinâmicas/privadas
+Disallow: /event
+Disallow: /obrigado
+
+# Sitemap
+Sitemap: https://solicite.link/sitemap.xml

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Footer from "@/components/Footer";
+import SEOHead from "@/components/SEOHead";
 import { ArrowLeft, CheckCircle, Mail, MessageCircle, Clock, Home } from "lucide-react";
 import { pushDL } from "@/lib/dataLayer";
 
@@ -74,19 +75,26 @@ const Obrigado = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEOHead
+        title="Pagamento Confirmado - Solicite Link"
+        description="Sua solicitação foi recebida com sucesso"
+        noindex={true}
+        ogTitle="Pagamento Confirmado - Solicite Link"
+        ogDescription="Sua solicitação foi recebida com sucesso"
+      />
       {/* Header */}
-      <div className="page-header">
+      <header className="page-header">
         <Link to="/" className="back-link">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-lg font-semibold text-gradient">Solicite Link</span>
         </Link>
-      </div>
+      </header>
 
       {/* Main Content */}
       <main className="page-content">
         <div className="page-container">
           {/* Hero Section */}
-          <div className="text-center mb-12 animate-fade-in-up">
+          <section className="text-center mb-12 animate-fade-in-up">
             <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-6 mx-auto">
               <CheckCircle className="h-10 w-10 text-primary" />
             </div>
@@ -96,12 +104,12 @@ const Obrigado = () => {
             <p className="section-subtitle max-w-xl mx-auto">
               Sua solicitação foi recebida com sucesso
             </p>
-          </div>
+          </section>
 
           {/* Card de Confirmação */}
-          <div className="card-main max-w-2xl mx-auto">
+          <article className="card-main max-w-2xl mx-auto">
             {/* Informações do Plano */}
-            <div className="text-center mb-8">
+            <section className="text-center mb-8">
               <h2 className="text-xl font-bold text-foreground mb-2">
                 {planoNome}
               </h2>
@@ -110,10 +118,10 @@ const Obrigado = () => {
                   Código do pedido: <span className="font-semibold text-foreground">{ticketCodigo}</span>
                 </p>
               )}
-            </div>
+            </section>
 
             {/* Informações de Entrega */}
-            <div className="bg-muted rounded-xl p-6 mb-8">
+            <section className="bg-muted rounded-xl p-6 mb-8">
               <h3 className="font-semibold text-foreground mb-4 text-center">
                 Informações de Entrega
               </h3>
@@ -139,22 +147,22 @@ const Obrigado = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </section>
 
             {/* Email Info */}
             {email && (
-              <div className="text-center mb-8 p-4 bg-accent/50 rounded-lg">
+              <section className="text-center mb-8 p-4 bg-accent/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">
                   A solicitação será enviada para:
                 </p>
                 <p className="font-medium text-foreground">
                   {email}
                 </p>
-              </div>
+              </section>
             )}
 
             {/* Próximos Passos */}
-            <div className="space-y-4 mb-8">
+            <section className="space-y-4 mb-8">
               <h3 className="font-semibold text-foreground">
                 Próximos Passos
               </h3>
@@ -184,11 +192,11 @@ const Obrigado = () => {
                   </p>
                 </li>
               </ul>
-            </div>
+            </section>
 
 
             {/* CTA */}
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <nav className="flex flex-col sm:flex-row gap-3 justify-center" aria-label="Navegação principal">
               <Link
                 to="/"
                 className="btn-action flex items-center justify-center gap-2"
@@ -202,8 +210,8 @@ const Obrigado = () => {
               >
                 Precisa de Ajuda?
               </Link>
-            </div>
-          </div>
+            </nav>
+          </article>
         </div>
       </main>
 

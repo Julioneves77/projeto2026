@@ -1,29 +1,36 @@
 import { Link } from "react-router-dom";
 import Footer from "@/components/Footer";
+import SEOHead from "@/components/SEOHead";
 import { ArrowLeft, FileText, Scale, RefreshCw } from "lucide-react";
 
 const Termos = () => {
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="page-header">
+      <SEOHead
+        title="Termos de Uso - Solicite Link"
+        description="Ao utilizar o Solicite Link, você concorda com os seguintes termos."
+        ogTitle="Termos de Uso - Solicite Link"
+        ogDescription="Ao utilizar o Solicite Link, você concorda com os seguintes termos."
+      />
+      <header className="page-header">
         <Link to="/" className="back-link">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-lg font-semibold text-gradient">Solicite Link</span>
         </Link>
-      </div>
+      </header>
 
       <main className="page-content">
         <div className="page-container">
-          <div className="text-center mb-12 animate-fade-in-up">
+          <section className="text-center mb-12 animate-fade-in-up">
             <span className="badge">Acordo</span>
             <h1 className="section-title mt-2 mb-4">Termos de Uso</h1>
             <p className="section-subtitle max-w-xl mx-auto">
               Ao utilizar o Solicite Link, você concorda com os seguintes termos.
             </p>
-          </div>
+          </section>
           
-          <div className="space-y-6">
-            <div className="card-main animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+          <section className="space-y-6">
+            <article className="card-main animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
               <div className="flex items-start gap-4">
                 <div className="icon-box-sm bg-primary/10">
                   <FileText className="w-5 h-5 text-primary" />
@@ -35,9 +42,9 @@ const Termos = () => {
                   </p>
                 </div>
               </div>
-            </div>
+            </article>
 
-            <div className="card-main animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <article className="card-main animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
               <div className="flex items-start gap-4">
                 <div className="icon-box-sm bg-primary/10">
                   <Scale className="w-5 h-5 text-primary" />
@@ -49,9 +56,9 @@ const Termos = () => {
                   </p>
                 </div>
               </div>
-            </div>
+            </article>
 
-            <div className="card-main animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+            <article className="card-main animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
               <div className="flex items-start gap-4">
                 <div className="icon-box-sm bg-primary/10">
                   <RefreshCw className="w-5 h-5 text-primary" />
@@ -63,15 +70,15 @@ const Termos = () => {
                   </p>
                 </div>
               </div>
-            </div>
-          </div>
+            </article>
+          </section>
 
-          <div className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+          <nav className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }} aria-label="Navegação principal">
             <Link to="/" className="btn-secondary">
               Voltar para a página principal
               <ArrowLeft className="w-4 h-4 rotate-180" />
             </Link>
-          </div>
+          </nav>
         </div>
       </main>
 

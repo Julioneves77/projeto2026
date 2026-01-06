@@ -1,8 +1,13 @@
 import Layout from "@/components/layout/Layout";
+import SEOHead from "@/components/SEOHead";
 
 const Privacy = () => {
   return (
     <Layout>
+      <SEOHead
+        title="Política de Privacidade - Portal Certidão"
+        description="Conheça nossa política de privacidade e como protegemos seus dados pessoais."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
         <div className="container relative">

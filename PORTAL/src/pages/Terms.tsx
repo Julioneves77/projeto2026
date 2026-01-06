@@ -1,8 +1,13 @@
 import Layout from "@/components/layout/Layout";
+import SEOHead from "@/components/SEOHead";
 
 const Terms = () => {
   return (
     <Layout>
+      <SEOHead
+        title="Termos de Uso - Portal Certidão"
+        description="Leia os termos de uso do Portal Certidão antes de utilizar nossos serviços."
+      />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
         <div className="container relative">

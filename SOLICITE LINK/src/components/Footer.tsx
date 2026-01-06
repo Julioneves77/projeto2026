@@ -25,7 +25,7 @@ const Footer = ({ onOpenSelector }: FooterProps) => {
           </div>
 
           {/* A Empresa */}
-          <div>
+          <nav aria-label="A Empresa">
             <h3 className="font-semibold text-foreground mb-4 text-sm uppercase tracking-wider">A Empresa</h3>
             <ul className="space-y-3">
               <li>
@@ -44,10 +44,10 @@ const Footer = ({ onOpenSelector }: FooterProps) => {
                 </Link>
               </li>
             </ul>
-          </div>
+          </nav>
           
           {/* Links */}
-          <div>
+          <nav aria-label="Links">
             <h3 className="font-semibold text-foreground mb-4 text-sm uppercase tracking-wider">Links</h3>
             <ul className="space-y-3">
               <li>
@@ -66,7 +66,7 @@ const Footer = ({ onOpenSelector }: FooterProps) => {
                 </Link>
               </li>
             </ul>
-          </div>
+          </nav>
         </div>
         
         <div className="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">

@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import ReCAPTCHA from "react-google-recaptcha";
 import Layout from "@/components/layout/Layout";
+import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -110,6 +111,10 @@ const Contact = () => {
 
   return (
     <Layout>
+      <SEOHead
+        title="Contato - Portal Certidão"
+        description="Entre em contato conosco. Estamos prontos para ajudar com suas dúvidas sobre certidões."
+      />
       <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
         <div className="container relative">
           <div className="mx-auto max-w-2xl text-center animate-slide-up">
