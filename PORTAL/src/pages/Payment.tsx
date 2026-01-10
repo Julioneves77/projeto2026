@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
@@ -8,13 +8,15 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
-import { 
+import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
+import {
   createPixTransaction, 
   getTransactionStatus, 
   formatAmountToCents,
   parsePhoneNumber,
   type PagarmeTransaction 
 } from "@/lib/pagarmeService";
+import { validateEmail } from "@/lib/validations";
 
 // Mock data for testing
 const mockPlan = {
@@ -35,14 +37,71 @@ const mockFormData = {
   email: "teste@email.com",
 };
 
+// Função para formatar o nome da certidão
+const formatCertificateName = (certificateType: string): string => {
+  const typeMap: Record<string, string> = {
+    'criminal-federal': 'Certidão Negativa Criminal Federal',
+    'criminal-estadual': 'Certidão Negativa Criminal Estadual',
+    'civel-federal': 'Certidão Negativa Cível Federal',
+    'civel-estadual': 'Certidão Negativa Cível Estadual',
+    'policia-federal': 'Antecedentes Criminais de Polícia Federal',
+    'eleitoral': 'Certidão de Quitação Eleitoral',
+    'cnd': 'Certidão Negativa de Débito (CND)',
+    'cpf-regular': 'Certidão CPF Regular',
+  };
+  
+  return typeMap[certificateType] || certificateType;
+};
+
+// Função para formatar o tipo de serviço
+const formatServiceType = (planName: string): string => {
+  if (planName.includes('Prioritário')) {
+    return 'Atendimento Prioritário';
+  }
+  if (planName.includes('Padrão')) {
+    return 'Atendimento Padrão';
+  }
+  return planName;
+};
+
 const Payment = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const locationState = location.state || {};
+  const [searchParams] = useSearchParams();
+  
+  // Detectar origem: parâmetro URL ou referrer
+  const detectOrigin = (): 'portalcacesso' | 'solicite' => {
+    // 1. Verificar parâmetro na URL
+    const urlSource = searchParams.get('source');
+    if (urlSource === 'portalcacesso') {
+      return 'portalcacesso';
+    }
+    
+    // 2. Verificar referrer como fallback
+    const referrer = document.referrer || '';
+    if (referrer.includes('portalcacesso.online') || referrer.includes('portalcacesso')) {
+      return 'portalcacesso';
+    }
+    if (referrer.includes('solicite.link') || referrer.includes('solicite')) {
+      return 'solicite';
+    }
+    
+    // 3. Padrão: solicite
+    return 'solicite';
+  };
+  
+  const origem = detectOrigin();
+  
+  // Salvar origem no localStorage para uso posterior
+  useEffect(() => {
+    localStorage.setItem('payment_origin', origem);
+  }, [origem]);
   
   // Use mock data if real data is not available (for testing)
   const formData = locationState.formData || mockFormData;
   const certificateType = locationState.certificateType || "criminal-estadual";
+  const originalCategory = locationState.category || ""; // Categoria original do formulário
   const state = locationState.state || "SP";
   const selectedPlan = locationState.selectedPlan || mockPlan;
   
@@ -55,6 +114,104 @@ const Payment = () => {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const certificateTitleRef = useRef<HTMLHeadingElement>(null);
   const isTestMode = !locationState.formData;
+
+  // Garantir que a página sempre comece no topo ao carregar (mobile/desktop)
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    const forceScrollToTop = () => {
+      // Múltiplas tentativas para garantir scroll no topo
+      try {
+        window.scrollTo(0, 0);
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      
+      if (document.documentElement) {
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+      }
+      if (document.body) {
+        document.body.scrollTop = 0;
+        document.body.scrollLeft = 0;
+      }
+      
+      // Forçar em todos os elementos scrolláveis
+      const scrollableElements = document.querySelectorAll('main, section, div[class*="container"], div[class*="scroll"]');
+      scrollableElements.forEach(el => {
+        if (el instanceof HTMLElement) {
+          el.scrollTop = 0;
+        }
+      });
+    };
+
+    // Executar imediatamente
+    forceScrollToTop();
+    
+    // Executar em múltiplos frames para garantir
+    requestAnimationFrame(() => {
+      forceScrollToTop();
+      requestAnimationFrame(forceScrollToTop);
+    });
+    
+    // Múltiplos timeouts para dispositivos móveis lentos
+    const timeouts = [
+      setTimeout(forceScrollToTop, 0),
+      setTimeout(forceScrollToTop, 50),
+      setTimeout(forceScrollToTop, 100),
+      setTimeout(forceScrollToTop, 200),
+      setTimeout(forceScrollToTop, 300),
+      setTimeout(forceScrollToTop, 500),
+      setTimeout(forceScrollToTop, 1000),
+    ];
+
+    // Remover hash que possa causar scroll automático
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      setTimeout(forceScrollToTop, 50);
+    }
+
+    // Observer para detectar quando o conteúdo muda e reforçar scroll
+    const observer = new MutationObserver(() => {
+      forceScrollToTop();
+    });
+    
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: true,
+      attributes: false 
+    });
+    
+    // Desconectar observer após 2 segundos para não impactar performance
+    const observerTimeout = setTimeout(() => {
+      observer.disconnect();
+    }, 2000);
+
+    return () => {
+      timeouts.forEach(t => clearTimeout(t));
+      clearTimeout(observerTimeout);
+      observer.disconnect();
+    };
+  }, []);
+
+  // Reforço: ao gerar/atualizar o QRCode, garantir topo
+  useEffect(() => {
+    const scrollToTop = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      if (document.documentElement) {
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+      }
+      if (document.body) {
+        document.body.scrollTop = 0;
+        document.body.scrollLeft = 0;
+      }
+    };
+    scrollToTop();
+  }, [pixQrCode]);
 
   // Redirect if no formData or selectedPlan (unless in test mode which uses mock data)
   useEffect(() => {
@@ -96,6 +253,19 @@ const Payment = () => {
     return () => window.removeEventListener('resize', adjustFontSize);
   }, [certificateType]);
 
+  // Disparar evento quando página de checkout carrega (se origem = portalcacesso)
+  useEffect(() => {
+    if (formData && selectedPlan) {
+      pushDLPortalcacesso('portalcacesso_checkout_viewed', {
+        funnel_step: 'checkout_view',
+        certificateType: certificateType,
+        planId: selectedPlan.id,
+        planName: selectedPlan.name,
+        price: selectedPlan.price,
+      });
+    }
+  }, [formData, selectedPlan, certificateType]);
+
   // Criar ticket e transação PIX ao carregar Payment
   useEffect(() => {
     const initializePayment = async () => {
@@ -106,7 +276,7 @@ const Payment = () => {
         
         // Verificar se já existe ticket para esta sessão
         const existingTicketId = sessionStorage.getItem(sessionKey);
-        let ticketId = existingTicketId;
+        let ticketId: string | null = null; // Inicializar como null - só atribuir se ticket existir no servidor
         
         if (existingTicketId) {
           const existingTicket = await findTicket(existingTicketId);
@@ -114,13 +284,17 @@ const Payment = () => {
             console.log('🔵 [PORTAL Payment] Ticket já existe:', existingTicket.codigo);
             setCurrentTicketId(existingTicketId);
             ticketId = existingTicketId;
+          } else {
+            // Ticket não existe mais no servidor ou não está em GERAL - limpar cache
+            console.log('⚠️ [PORTAL Payment] Ticket não encontrado ou não está em GERAL, criando novo...');
+            sessionStorage.removeItem(sessionKey);
           }
         }
 
         // Criar novo ticket se não existir
         if (!ticketId) {
           console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
-          const ticket = await createTicket(formData, certificateType, state, selectedPlan);
+          const ticket = await createTicket(formData, certificateType, state, selectedPlan, origem);
           
           if (ticket) {
             console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
@@ -143,12 +317,41 @@ const Payment = () => {
           try {
             const docNumber = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
             const phone = parsePhoneNumber(formData.telefone || '');
+            const customerName = formData.nomeCompleto || formData.nome || 'Cliente';
+            
+            // Email informado
+            const customerEmail = (formData.email || '').toString().trim();
+            
+            // Validar dados antes de enviar
+            if (!docNumber || docNumber.length < 11) {
+              throw new Error('CPF/CNPJ inválido ou não informado');
+            }
+            
+            if (!customerEmail) {
+              throw new Error('Email não informado');
+            }
+            
+            // Validar formato do email (bloquear caracteres especiais inválidos)
+            if (!validateEmail(customerEmail)) {
+              throw new Error('Email inválido. Remova caracteres especiais e verifique o formato (use apenas letras, números, ., _, -).');
+            }
+            
+            if (!customerName || customerName.trim().length < 3) {
+              throw new Error('Nome inválido ou não informado');
+            }
+            
+            console.log('📦 [PORTAL Payment] Dados do cliente para PIX:', {
+              name: customerName,
+              email: customerEmail,
+              document: docNumber.substring(0, 3) + '***' + docNumber.substring(docNumber.length - 2),
+              hasPhone: !!phone
+            });
             
             const transaction = await createPixTransaction({
               amount: formatAmountToCents(selectedPlan.price),
               customer: {
-                name: formData.nomeCompleto || formData.nome || 'Cliente',
-                email: formData.email || '',
+                name: customerName,
+                email: customerEmail,
                 document_number: docNumber,
                 ...(phone && { phone }),
               },
@@ -163,6 +366,18 @@ const Payment = () => {
             setPixTransaction(transaction);
             setPixQrCode(transaction.pix_qr_code || null);
             
+            // Disparar evento quando PIX é gerado (se origem = portalcacesso)
+            const ticket = await findTicket(ticketId);
+            if (ticket) {
+              pushDLPortalcacesso('portalcacesso_payment_initiated', {
+                funnel_step: 'payment_initiated',
+                ticketCodigo: ticket.codigo,
+                planId: selectedPlan.id,
+                price: selectedPlan.price,
+                certificateType: certificateType,
+              });
+            }
+            
             // Iniciar polling para verificar status do pagamento
             startPolling(transaction.id, ticketId);
             
@@ -172,9 +387,25 @@ const Payment = () => {
             });
           } catch (error) {
             console.error('❌ [PORTAL Payment] Erro ao criar transação PIX:', error);
+            
+            // Mensagem de erro mais amigável
+            let errorMessage = "Erro ao gerar PIX. Tente novamente.";
+            if (error instanceof Error) {
+              const errorMsg = error.message.toLowerCase();
+              if (errorMsg.includes('invalid') || errorMsg.includes('inválido') || errorMsg.includes('the request is invalid')) {
+                errorMessage = "Dados inválidos. Verifique se preencheu corretamente CPF/CNPJ, nome e email.";
+              } else if (errorMsg.includes('incompletos') || errorMsg.includes('incomplete')) {
+                errorMessage = "Dados incompletos. Verifique se preencheu todos os campos obrigatórios.";
+              } else if (errorMsg.includes('document')) {
+                errorMessage = "CPF/CNPJ inválido ou não informado. Verifique os dados.";
+              } else {
+                errorMessage = error.message;
+              }
+            }
+            
             toast({
               title: "Erro ao gerar PIX",
-              description: error instanceof Error ? error.message : "Tente novamente ou use o botão de teste.",
+              description: errorMessage,
               variant: "destructive",
             });
           } finally {
@@ -183,6 +414,15 @@ const Payment = () => {
         }
       } catch (error) {
         console.error('❌ [PORTAL Payment] Erro ao inicializar pagamento:', error);
+        
+        // Mostrar erro apenas se não for erro de validação já tratado
+        if (error instanceof Error && !error.message.includes('inválido') && !error.message.includes('incompletos')) {
+          toast({
+            title: "Erro",
+            description: "Erro ao processar pagamento. Tente novamente.",
+            variant: "destructive",
+          });
+        }
       }
     };
 
@@ -313,7 +553,12 @@ const Payment = () => {
 
   // Função para redirecionar para página de obrigado via /event (dispara evento GTM)
   const redirectToThankYou = async (ticket: any) => {
+    // Determinar URL base baseado na origem
+    const currentOrigin = origem || localStorage.getItem('payment_origin') || 'solicite';
     const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
+    const PORTAL_ACESSO_URL = import.meta.env.VITE_PORTAL_ACESSO_URL || 'https://portalcacesso.online';
+    
+    const baseUrl = currentOrigin === 'portalcacesso' ? PORTAL_ACESSO_URL : SOLICITE_LINK_URL;
     
     const ticketCodigo = ticket?.codigo || '';
     const planoNome = selectedPlan.name || '';
@@ -326,13 +571,13 @@ const Payment = () => {
     if (planoId) localStorage.setItem('planoId', planoId);
     if (email) localStorage.setItem('ticketEmail', email);
     if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
+    if (currentOrigin) localStorage.setItem('payment_origin', currentOrigin);
     
     // Gerar session ID único para anti-duplicidade
     const sessionId = `${ticketCodigo}_${Date.now()}`;
     
     // Redirecionar para /event primeiro (dispara evento GTM) e depois vai para /obrigado
-    // O EventProxy no solicite.link vai disparar o evento e redirecionar para /obrigado
-    const eventUrl = new URL(`${SOLICITE_LINK_URL}/event`);
+    const eventUrl = new URL(`${baseUrl}/event`);
     eventUrl.searchParams.set('type', 'payment_completed');
     eventUrl.searchParams.set('sid', sessionId);
     eventUrl.searchParams.set('codigo', ticketCodigo);
@@ -341,9 +586,9 @@ const Payment = () => {
     eventUrl.searchParams.set('email', email);
     eventUrl.searchParams.set('tipo', certificateType);
     
-    console.log('🚀 [PORTAL Payment] Redirecionando para solicite.link/event:', eventUrl.toString());
+    console.log(`🚀 [PORTAL Payment] Origem: ${currentOrigin}, Redirecionando para ${baseUrl}/event:`, eventUrl.toString());
     
-    // Redirecionar para SOLICITE LINK /event (que dispara o evento e redireciona para /obrigado)
+    // Redirecionar para o domínio correto baseado na origem
     window.location.href = eventUrl.toString();
   };
 
@@ -370,10 +615,10 @@ const Payment = () => {
       await navigator.clipboard.writeText(pixKeyToCopy);
       setCopied(true);
       toast({
-        title: "Chave PIX copiada!",
-        description: "Cole no seu aplicativo de banco.",
+        title: "Código PIX copiado!",
+        description: "Abra o app do seu banco e cole na área PIX.",
       });
-      setTimeout(() => setCopied(false), 3000);
+      setTimeout(() => setCopied(false), 5000);
     } catch {
       toast({
         title: "Erro ao copiar",
@@ -385,15 +630,34 @@ const Payment = () => {
 
   const handleChangePlan = () => {
     // Voltar para o formulário da certidão (não há mais tela de seleção de serviço)
-    const category = certificateType.includes('federal') ? 'federais' : 
-                     certificateType.includes('estadual') ? 'estaduais' :
-                     certificateType.includes('policia') ? 'policia-federal' :
-                     certificateType.includes('cnd') ? 'cnd' : 'cpf-regular';
+    // Usar categoria original se disponível, senão inferir do certificateType
+    let category = originalCategory;
+    
+    // Se não temos categoria original, tentar inferir do certificateType
+    if (!category) {
+      const certTypeLower = certificateType.toLowerCase();
+      
+      if (certTypeLower.includes('criminal federal') || certTypeLower.includes('cível federal') || certTypeLower.includes('eleitoral')) {
+        category = 'federais';
+      } else if (certTypeLower.includes('criminal estadual') || certTypeLower.includes('cível estadual')) {
+        category = 'estaduais';
+      } else if (certTypeLower.includes('polícia federal') || certTypeLower.includes('policia federal') || certTypeLower.includes('antecedentes')) {
+        category = 'policia-federal';
+      } else if (certTypeLower.includes('cnd') || certTypeLower.includes('débito')) {
+        category = 'cnd';
+      } else if (certTypeLower.includes('cpf') || certTypeLower.includes('cadastral')) {
+        category = 'cpf-regular';
+      } else {
+        // Fallback: tentar determinar pela URL ou formData
+        category = 'cpf-regular';
+      }
+    }
     
     navigate(`/certidao/${category}`, {
       state: {
         formData,
         certificateType,
+        category, // Passar categoria de volta também
         state,
       },
       replace: true,
@@ -406,6 +670,23 @@ const Payment = () => {
         title="Pagamento - Portal Certidão"
         description="Complete o pagamento para finalizar sua solicitação de certidão. Processo seguro e rápido."
       />
+      {/* Estilo inline para garantir scroll no topo */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          html, body {
+            scroll-behavior: auto !important;
+            overflow-x: hidden;
+          }
+          html {
+            scroll-padding-top: 0 !important;
+          }
+          @media (max-width: 768px) {
+            html, body {
+              scroll-behavior: auto !important;
+            }
+          }
+        `
+      }} />
       {/* Hero */}
       <section className="relative overflow-hidden hero-gradient py-8">
         <div className="container relative">
@@ -423,12 +704,9 @@ const Payment = () => {
                 🧪 Modo de Teste
               </div>
             )}
-            <h1 className="font-heading text-2xl font-bold text-primary-foreground">
-              Pagamento via PIX
-            </h1>
             <h2 
               ref={certificateTitleRef}
-              className="mt-1 font-heading text-2xl font-bold text-primary-foreground whitespace-nowrap"
+              className="font-heading text-2xl font-bold text-primary-foreground whitespace-nowrap"
             >
               {certificateType}
             </h2>
@@ -439,137 +717,76 @@ const Payment = () => {
       {/* Payment Content */}
       <section className="py-8">
         <div className="container max-w-5xl">
-          {/* Step by Step Instructions */}
-          <div className="mb-6 bg-accent/30 rounded-xl p-4 border border-border">
-            <h3 className="font-heading font-bold text-foreground mb-3 text-center">
-              Como pagar com PIX
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-                  1
-                </div>
-                <div>
-                  <p className="font-medium text-foreground text-sm">Abra o app do seu banco</p>
-                  <p className="text-xs text-muted-foreground">Acesse a área PIX</p>
-                </div>
+          {/* Resumo Curto Mobile - Aparece antes do QR no mobile */}
+          <div className="md:hidden mb-4">
+            <Card className="p-4">
+              <h2 className="font-heading text-lg font-bold text-foreground mb-3">
+                Resumo
+              </h2>
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/50">
+                <span className="font-medium text-foreground text-sm">
+                  {formatCertificateName(certificateType)} ({formatServiceType(selectedPlan.name)})
+                </span>
+                <span className="font-heading font-bold text-primary text-base">
+                  {formatPrice(selectedPlan.price)}
+                </span>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-                  2
-                </div>
-                <div>
-                  <p className="font-medium text-foreground text-sm">Escaneie ou cole a chave</p>
-                  <p className="text-xs text-muted-foreground">Use o QR Code ou copie a chave</p>
-                </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className="font-heading font-bold text-foreground">
+                  Total
+                </span>
+                <span className="font-heading font-bold text-primary text-lg">
+                  {formatPrice(selectedPlan.price)}
+                </span>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-                  3
-                </div>
-                <div>
-                  <p className="font-medium text-foreground text-sm">Confirme o pagamento</p>
-                  <p className="text-xs text-muted-foreground">Valor: {formatPrice(selectedPlan.price)}</p>
-                </div>
-              </div>
-            </div>
+            </Card>
+          </div>
+
+          {/* Seção Pagamento Mobile - Título e Botão PIX */}
+          <div className="md:hidden mb-4">
+            <Card className="p-4">
+              <h2 className="font-heading text-lg font-bold text-foreground mb-4">
+                Pagamento
+              </h2>
+              <Button
+                variant="default"
+                size="lg"
+                className="w-full bg-primary text-primary-foreground font-bold text-base py-3"
+                disabled
+              >
+                PIX
+              </Button>
+            </Card>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
-            {/* QR Code Section */}
-            <Card className="p-4 sm:p-5 overflow-hidden">
-              <div className="text-center overflow-hidden">
-                <h2 className="font-heading text-base font-bold text-foreground mb-3">
-                  QR Code PIX
-                </h2>
-                
-                {/* QR Code PIX */}
-                {isLoadingPix ? (
-                  <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
-                    <div className="w-48 h-48 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
-                      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  </div>
-                ) : pixQrCode ? (
-                  <>
-                    <div className="bg-white border-2 border-border rounded-xl p-4 inline-block mb-3 max-w-full overflow-hidden">
-                      <QRCodeSVG 
-                        value={pixQrCode}
-                        size={220}
-                        level="M"
-                        includeMargin={false}
-                        className="mx-auto w-48 h-48 sm:w-56 sm:h-56"
-                        style={{ maxWidth: '100%', height: 'auto' }}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Aponte a câmera do seu celular para o QR Code
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
-                      <div className="w-48 h-48 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
-                        <QrCode className="h-32 w-32 sm:h-36 sm:w-36 text-foreground/40" />
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      {isTestMode ? 'Modo de teste - Use o botão abaixo para simular pagamento' : 'Aguarde o QR Code ser gerado...'}
-                    </p>
-                  </>
-                )}
-
-                {/* PIX Key */}
-                {(pixQrCode || isTestMode) && (
-                  <div className="bg-muted rounded-lg p-3">
-                    <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
-                    <div className="flex items-center gap-2">
-                      <code className={`flex-1 bg-background rounded px-3 py-2 font-mono truncate ${
-                        pixQrCode 
-                          ? 'text-sm' 
-                          : 'text-base font-semibold text-primary border-2 border-primary/30'
-                      }`}>
-                        {pixQrCode || 'Aguardando geração...'}
-                      </code>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCopyPix}
-                        className="flex-shrink-0"
-                        disabled={!pixQrCode}
-                      >
-                        {copied ? (
-                          <Check className="h-4 w-4 text-primary" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            {/* Order Summary */}
-            <Card className="p-5">
-              <h2 className="font-heading text-base font-bold text-foreground mb-3">
-                Resumo do Pedido
+            {/* Order Summary - Desktop */}
+            <Card className="hidden md:block p-5 order-2 md:order-2">
+              <h2 className="font-heading text-xl font-bold text-foreground mb-4">
+                Resumo
               </h2>
 
               <div className="space-y-3">
                 {/* Plan Info */}
-                <div className="bg-muted rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
+                <div className="pb-3 border-b border-border/50">
+                  <div className="flex items-center justify-between mb-2">
                     <span className="font-medium text-foreground text-sm">
                       {selectedPlan.name}
                     </span>
-                    <span className="font-heading font-bold text-primary">
+                    <span className="font-heading font-bold text-primary text-base">
                       {formatPrice(selectedPlan.price)}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedPlan.description}
-                  </p>
+                </div>
+                
+                {/* Total */}
+                <div className="flex items-center justify-between pt-2">
+                  <span className="font-heading font-bold text-foreground">
+                    Total
+                  </span>
+                  <span className="font-heading font-bold text-primary text-lg">
+                    {formatPrice(selectedPlan.price)}
+                  </span>
                 </div>
 
                 {/* Features */}
@@ -583,12 +800,32 @@ const Payment = () => {
                 </div>
 
                 {/* Timer Notice */}
-                {pixTransaction?.pix_expiration_date && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/50 rounded-lg p-2">
-                    <Clock className="h-3 w-3 flex-shrink-0" />
-                    <span>
-                      O PIX expira em {new Date(pixTransaction.pix_expiration_date).toLocaleString('pt-BR')}
-                    </span>
+                {pixTransaction?.pix_expiration_date ? (
+                  <div className="flex items-start gap-2 text-xs text-foreground bg-accent/50 rounded-lg p-3 border border-border/50">
+                    <Clock className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium mb-1">
+                        ⏳ Este PIX expira automaticamente.
+                      </p>
+                      <p className="text-muted-foreground">
+                        O processamento só inicia após a confirmação do pagamento.
+                      </p>
+                      <p className="text-muted-foreground mt-1.5 text-[10px]">
+                        Expira em: {new Date(pixTransaction.pix_expiration_date).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 text-xs text-foreground bg-accent/50 rounded-lg p-3 border border-border/50">
+                    <Clock className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium mb-1">
+                        ⏳ Este PIX expira automaticamente.
+                      </p>
+                      <p className="text-muted-foreground">
+                        O processamento só inicia após a confirmação do pagamento.
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -599,8 +836,153 @@ const Payment = () => {
                 </div>
               </div>
             </Card>
+
+            {/* QR Code Section */}
+            <Card className="p-4 sm:p-5 overflow-hidden order-1 md:order-1">
+              <div className="text-center overflow-hidden">
+                <h2 className="font-heading text-xl font-bold text-foreground mb-4 hidden md:block">
+                  Pagamento
+                </h2>
+                
+                {/* Botão PIX Destacado - Desktop */}
+                <div className="mb-4 hidden md:block">
+                  <Button
+                    variant="default"
+                    size="lg"
+                    className="w-full bg-primary text-primary-foreground font-bold text-base py-3"
+                    disabled
+                  >
+                    PIX
+                  </Button>
+                </div>
+                
+                {/* QR Code PIX */}
+                {isLoadingPix ? (
+                  <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
+                    <div className="w-40 h-40 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
+                      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  </div>
+                ) : pixQrCode ? (
+                  <>
+                    <div className="bg-white border-2 border-border rounded-xl p-4 inline-block mb-3 max-w-full overflow-hidden">
+                      <QRCodeSVG 
+                        value={pixQrCode}
+                        size={220}
+                        level="M"
+                        includeMargin={false}
+                        className="mx-auto w-40 h-40 sm:w-56 sm:h-56"
+                        style={{ maxWidth: '100%', height: 'auto' }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Aponte a câmera do seu celular para o QR Code
+                    </p>
+                    
+                    {/* Bloco de Confiança - Desktop */}
+                    <div className="hidden md:block mt-4 mb-3 bg-accent/40 border border-border/50 rounded-lg p-3 text-left">
+                      <p className="text-sm font-medium text-foreground mb-2">
+                        🔒 Pagamento seguro via PIX
+                      </p>
+                      <div className="space-y-1.5 text-xs text-foreground/90">
+                        <p className="flex items-start gap-1.5">
+                          <span className="flex-shrink-0">✔️</span>
+                          <span>Solicitação monitorada automaticamente</span>
+                        </p>
+                        <p className="flex items-start gap-1.5">
+                          <span className="flex-shrink-0">❗</span>
+                          <span>Em caso de qualquer problema, o pagamento é verificado e reembolsado</span>
+                        </p>
+                        <p className="flex items-start gap-1.5 pt-1 border-t border-border/30">
+                          <span className="flex-shrink-0">✔️</span>
+                          <span>Solicitações processadas diariamente</span>
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
+                      <div className="w-40 h-40 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
+                        <QrCode className="h-32 w-32 sm:h-36 sm:w-36 text-foreground/40" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {isTestMode ? 'Modo de teste - Use o botão abaixo para simular pagamento' : 'Aguarde o QR Code ser gerado...'}
+                    </p>
+                    
+                    {/* Bloco de Confiança - Desktop (quando não há QR Code ainda) */}
+                    {isTestMode && (
+                      <div className="hidden md:block mt-4 mb-3 bg-accent/40 border border-border/50 rounded-lg p-3 text-left">
+                        <p className="text-sm font-medium text-foreground mb-2">
+                          🔒 Pagamento seguro via PIX
+                        </p>
+                        <div className="space-y-1.5 text-xs text-foreground/90">
+                          <p className="flex items-start gap-1.5">
+                            <span className="flex-shrink-0">✔️</span>
+                            <span>Solicitação monitorada automaticamente</span>
+                          </p>
+                          <p className="flex items-start gap-1.5">
+                            <span className="flex-shrink-0">❗</span>
+                            <span>Em caso de qualquer problema, o pagamento é verificado e reembolsado</span>
+                          </p>
+                          <p className="flex items-start gap-1.5 pt-1 border-t border-border/30">
+                            <span className="flex-shrink-0">✔️</span>
+                            <span>Solicitações processadas diariamente</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* PIX Key */}
+                {(pixQrCode || isTestMode) && (
+                  <div className="bg-muted rounded-lg p-3 md:p-3">
+                    <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <code className={`flex-1 bg-background rounded px-3 py-2 font-mono truncate text-xs sm:text-sm ${
+                        pixQrCode 
+                          ? '' 
+                          : 'font-semibold text-primary border-2 border-primary/30'
+                      }`}>
+                        {pixQrCode || 'Aguardando geração...'}
+                      </code>
+                      <Button
+                        variant="default"
+                        size="default"
+                        onClick={handleCopyPix}
+                        className="w-full sm:w-auto sm:flex-shrink-0 font-medium"
+                        disabled={!pixQrCode}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="h-4 w-4 mr-2" />
+                            Copiado!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copiar código PIX
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {copied && (
+                      <p className="text-xs text-primary mt-2 font-medium">
+                        Código PIX copiado. Abra o app do seu banco e cole na área PIX.
+                      </p>
+                    )}
+                    
+                  </div>
+                )}
+              </div>
+            </Card>
           </div>
         </div>
+        
+        {/* Espaçamento adicional no mobile para garantir que o rodapé seja visível */}
+        <div className="md:hidden pb-8"></div>
       </section>
     </Layout>
   );

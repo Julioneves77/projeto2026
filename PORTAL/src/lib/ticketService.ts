@@ -154,7 +154,8 @@ async function mapFormDataToTicket(
   formData: PortalFormData,
   certificateType: string,
   state: string | undefined,
-  selectedPlan: SelectedPlan
+  selectedPlan: SelectedPlan,
+  origem?: 'portalcacesso' | 'solicite'
 ): Promise<TicketData> {
   // Determinar tipo de pessoa (CPF ou CNPJ)
   const cpfOuCnpj = formData.cpf || formData.cnpj || formData.cpfOuCnpj || formData.documento || '';
@@ -283,6 +284,10 @@ async function mapFormDataToTicket(
   if (state) {
     dadosFormulario['estadoSelecionado'] = state;
   }
+  // Adicionar origem se disponível
+  if (origem) {
+    dadosFormulario['origem'] = origem;
+  }
   
   console.log('🔵 [PORTAL] Dados do formulário preservados:', Object.keys(dadosFormulario));
   
@@ -333,7 +338,8 @@ export async function createTicket(
   formData: PortalFormData,
   certificateType: string,
   state: string | undefined,
-  selectedPlan: SelectedPlan
+  selectedPlan: SelectedPlan,
+  origem?: 'portalcacesso' | 'solicite'
 ): Promise<TicketData | null> {
   try {
     const TICKETS_KEY = 'av_tickets';
@@ -346,7 +352,7 @@ export async function createTicket(
     });
     
     // Criar ticket (aguardar geração de código)
-    const newTicket = await mapFormDataToTicket(formData, certificateType, state, selectedPlan);
+    const newTicket = await mapFormDataToTicket(formData, certificateType, state, selectedPlan, origem);
     
     console.log('🔵 [PORTAL] Ticket criado:', newTicket);
 
@@ -643,6 +649,7 @@ export async function sendPaymentConfirmation(ticketId: string): Promise<{
 
 /**
  * Busca um ticket por ID ou código
+ * IMPORTANTE: Para verificação de pagamento, só retorna ticket se existir no SERVIDOR
  */
 export async function findTicket(ticketId: string): Promise<TicketData | null> {
   // Tentar buscar no servidor primeiro
@@ -652,30 +659,35 @@ export async function findTicket(ticketId: string): Promise<TicketData | null> {
       const ticket = await response.json();
       console.log(`✅ [PORTAL] Ticket ${ticketId} encontrado no servidor`);
       return ticket;
+    } else if (response.status === 404) {
+      // Ticket não existe no servidor - retornar null sem fallback
+      console.log(`⚠️ [PORTAL] Ticket ${ticketId} não encontrado no servidor (404)`);
+      return null;
     }
   } catch (error) {
     console.warn('⚠️ [PORTAL] Servidor não disponível, buscando no localStorage:', error);
+    // Só usar fallback para localStorage se o servidor não estiver disponível (erro de conexão)
+    try {
+      const TICKETS_KEY = 'av_tickets';
+      const stored = localStorage.getItem(TICKETS_KEY);
+      
+      if (!stored) {
+        return null;
+      }
+
+      const tickets = JSON.parse(stored);
+      if (!Array.isArray(tickets)) {
+        return null;
+      }
+
+      const ticket = tickets.find((t: any) => t.id === ticketId || t.codigo === ticketId);
+      return ticket || null;
+    } catch (localError) {
+      console.error('❌ [PORTAL] Erro ao buscar ticket no localStorage:', localError);
+      return null;
+    }
   }
   
-  // Fallback para localStorage
-  try {
-    const TICKETS_KEY = 'av_tickets';
-    const stored = localStorage.getItem(TICKETS_KEY);
-    
-    if (!stored) {
-      return null;
-    }
-
-    const tickets = JSON.parse(stored);
-    if (!Array.isArray(tickets)) {
-      return null;
-    }
-
-    const ticket = tickets.find((t: any) => t.id === ticketId || t.codigo === ticketId);
-    return ticket || null;
-  } catch (error) {
-    console.error('❌ [PORTAL] Erro ao buscar ticket:', error);
-    return null;
-  }
+  return null;
 }
 
