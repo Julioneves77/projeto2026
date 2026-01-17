@@ -6,6 +6,8 @@ export interface FieldConfig {
   placeholder?: string;
   options?: string;
   showWhen?: { field: string; value: string };
+  // Tipo condicional: quando showWhenType está definido, o tipo muda baseado no valor do campo referenciado
+  showWhenType?: { field: string; whenValue: string; type: "text" | "select" };
 }
 
 export interface StepConfig {
@@ -250,9 +252,51 @@ const policiaFederalConfig: FormConfig = {
       { name: "nacionalidade", label: "Nacionalidade", type: "select", required: true, options: "nacionalidades" },
     ]},
     { title: "Naturalidade, Contato e Confirmação", fields: [
-      { name: "paisNascimento", label: "País de Nascimento", type: "select", required: true, options: "paises" },
-      { name: "ufNascimento", label: "UF de Nascimento", type: "select", required: true, options: "estados" },
+      // País de Nascimento: select para brasileiro, text para estrangeiro
+      { 
+        name: "paisNascimento", 
+        label: "País de Nascimento", 
+        type: "select", 
+        required: true, 
+        options: "paises",
+        showWhen: { field: "nacionalidade", value: "Brasileiro(a)" }
+      },
+      { 
+        name: "paisNascimento", 
+        label: "País de Nascimento", 
+        type: "text", 
+        required: true,
+        placeholder: "Digite o país de nascimento",
+        showWhen: { field: "nacionalidade", value: "Estrangeiro(a)" }
+      },
+      // Estado de Nascimento: select para brasileiro, text para estrangeiro
+      { 
+        name: "ufNascimento", 
+        label: "Estado de Nascimento", 
+        type: "select", 
+        required: true, 
+        options: "estados",
+        showWhen: { field: "nacionalidade", value: "Brasileiro(a)" }
+      },
+      { 
+        name: "ufNascimento", 
+        label: "Estado de Nascimento", 
+        type: "text", 
+        required: true,
+        placeholder: "Digite o estado/província de nascimento",
+        showWhen: { field: "nacionalidade", value: "Estrangeiro(a)" }
+      },
+      // Município de Nascimento: sempre texto
       { name: "municipioNascimento", label: "Município de Nascimento", type: "text", required: true },
+      // Cidade de Nascimento: apenas para brasileiros
+      { 
+        name: "cidadeNascimento", 
+        label: "Cidade de Nascimento", 
+        type: "text", 
+        required: true,
+        placeholder: "Digite a cidade de nascimento",
+        showWhen: { field: "nacionalidade", value: "Brasileiro(a)" }
+      },
       { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true },
       ...globalContactFields.slice(1),
       ...termsFields,

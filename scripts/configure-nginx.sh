@@ -74,6 +74,27 @@ server {
 }
 EOF
 
+# Configuração PORTAL_ACESSO
+cat > $NGINX_SITES/portalcacesso.online << 'EOF'
+server {
+    listen 80;
+    server_name www.portalcacesso.online portalcacesso.online portalacesso.online;
+    
+    root /var/www/portal-acesso/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
+}
+EOF
+
 # Configuração API
 cat > $NGINX_SITES/api.portalcertidao.org << 'EOF'
 server {
@@ -101,6 +122,7 @@ echo "🔗 Habilitando sites..."
 ln -sf $NGINX_SITES/portalcertidao.org $NGINX_ENABLED/
 ln -sf $NGINX_SITES/plataforma.portalcertidao.org $NGINX_ENABLED/
 ln -sf $NGINX_SITES/solicite.link $NGINX_ENABLED/
+ln -sf $NGINX_SITES/portalcacesso.online $NGINX_ENABLED/
 ln -sf $NGINX_SITES/api.portalcertidao.org $NGINX_ENABLED/
 
 # Remover site padrão se existir
@@ -115,6 +137,7 @@ echo "🔄 Recarregando Nginx..."
 systemctl reload nginx
 
 echo "✅ Nginx configurado com sucesso!"
+
 
 
 

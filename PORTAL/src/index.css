@@ -97,7 +97,20 @@
   }
 
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
+    scroll-padding-top: 0;
+  }
+  
+  body {
+    scroll-behavior: auto;
+    overflow-x: hidden;
+  }
+  
+  @media (max-width: 768px) {
+    html, body {
+      scroll-behavior: auto !important;
+      overflow-x: hidden;
+    }
   }
 
   body {

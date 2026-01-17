@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Automático - utm_campaign</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .info {
+            background: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid #dee2e6;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.ok { background: #28a745; color: white; }
+        .status.fail { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Teste Automático: utm_campaign e Duas Contas</h1>
+    
+    <div id="results"></div>
+    
+    <div style="margin: 20px 0;">
+        <button onclick="runAllTests()">▶️ Executar Todos os Testes</button>
+        <button onclick="clearResults()">🗑️ Limpar Resultados</button>
+    </div>
+
+    <script>
+        // Simular dataLayer
+        window.dataLayer = window.dataLayer || [];
+        
+        // Simular função getUtmCampaign do código
+        function getUtmCampaign() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlCampaign = urlParams.get('utm_campaign');
+            if (urlCampaign) {
+                try {
+                    localStorage.setItem('utm_campaign', urlCampaign);
+                } catch (e) {}
+                return urlCampaign;
+            }
+            try {
+                return localStorage.getItem('utm_campaign') || undefined;
+            } catch (e) {
+                return undefined;
+            }
+        }
+        
+        // Simular função pushDL do código
+        function pushDL(eventName, payload = {}) {
+            const utmCampaign = payload.utm_campaign || getUtmCampaign();
+            
+            const eventData = {
+                event: eventName,
+                funnel_stage: 'links',
+                funnel_step: payload.funnel_step || eventName,
+                source: payload.source || 'links',
+                timestamp: Date.now(),
+                ...(utmCampaign && { utm_campaign: utmCampaign }),
+                ...payload
+            };
+            
+            window.dataLayer.push(eventData);
+            return eventData;
+        }
+        
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = message;
+            resultsDiv.appendChild(div);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        function runAllTests() {
+            clearResults();
+            addResult('<h2>🚀 Iniciando Testes Automáticos...</h2>', 'info');
+            
+            // Teste 1: Verificar se utm_campaign está na URL
+            setTimeout(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const utmCampaign = urlParams.get('utm_campaign');
+                
+                if (utmCampaign) {
+                    addResult(`✅ Teste 1: utm_campaign encontrado na URL: "${utmCampaign}"`, 'success');
+                } else {
+                    addResult(`⚠️ Teste 1: utm_campaign não encontrado na URL. Adicione ?utm_campaign=teste_conta_1`, 'info');
+                }
+                
+                // Teste 2: Verificar se getUtmCampaign funciona
+                const retrievedCampaign = getUtmCampaign();
+                if (retrievedCampaign) {
+                    addResult(`✅ Teste 2: getUtmCampaign() retornou: "${retrievedCampaign}"`, 'success');
+                } else {
+                    addResult(`❌ Teste 2: getUtmCampaign() retornou undefined`, 'error');
+                }
+                
+                // Teste 3: Verificar localStorage
+                const storedCampaign = localStorage.getItem('utm_campaign');
+                if (storedCampaign) {
+                    addResult(`✅ Teste 3: utm_campaign salvo no localStorage: "${storedCampaign}"`, 'success');
+                } else {
+                    addResult(`⚠️ Teste 3: utm_campaign não está no localStorage`, 'info');
+                }
+                
+                // Teste 4: Testar pushDL com utm_campaign
+                const testEvent = pushDL('test_event', {
+                    funnel_step: 'test',
+                    source: 'test'
+                });
+                
+                if (testEvent.utm_campaign) {
+                    addResult(`✅ Teste 4: pushDL() incluiu utm_campaign: "${testEvent.utm_campaign}"`, 'success');
+                    addResult(`<pre>${JSON.stringify(testEvent, null, 2)}</pre>`, 'info');
+                } else {
+                    addResult(`❌ Teste 4: pushDL() NÃO incluiu utm_campaign`, 'error');
+                    addResult(`<pre>${JSON.stringify(testEvent, null, 2)}</pre>`, 'error');
+                }
+                
+                // Teste 5: Simular payment_completed
+                const paymentEvent = pushDL('payment_completed', {
+                    funnel_step: 'payment_success',
+                    source: 'links',
+                    value: 'padrao'
+                });
+                
+                if (paymentEvent.utm_campaign) {
+                    addResult(`✅ Teste 5: payment_completed incluiu utm_campaign: "${paymentEvent.utm_campaign}"`, 'success');
+                    
+                    // Verificar qual conta deveria receber
+                    let accountId = '';
+                    if (paymentEvent.utm_campaign.includes('conta_1')) {
+                        accountId = '591-659-0517';
+                    } else if (paymentEvent.utm_campaign.includes('conta_2')) {
+                        accountId = '471-059-5347';
+                    }
+                    
+                    if (accountId) {
+                        addResult(`✅ Teste 6: Conta identificada corretamente: ${accountId}`, 'success');
+                    } else {
+                        addResult(`⚠️ Teste 6: Conta não identificada (campanha deve conter "conta_1" ou "conta_2")`, 'info');
+                    }
+                    
+                    addResult(`<pre>${JSON.stringify(paymentEvent, null, 2)}</pre>`, 'info');
+                } else {
+                    addResult(`❌ Teste 5: payment_completed NÃO incluiu utm_campaign`, 'error');
+                }
+                
+                // Teste 7: Verificar dataLayer
+                const dataLayerEvents = window.dataLayer.filter(e => e.event && e.utm_campaign);
+                if (dataLayerEvents.length > 0) {
+                    addResult(`✅ Teste 7: ${dataLayerEvents.length} evento(s) com utm_campaign no dataLayer`, 'success');
+                } else {
+                    addResult(`❌ Teste 7: Nenhum evento com utm_campaign encontrado no dataLayer`, 'error');
+                }
+                
+                // Resumo final
+                const allTests = document.querySelectorAll('.test-result');
+                const successCount = Array.from(allTests).filter(r => r.classList.contains('success')).length;
+                const errorCount = Array.from(allTests).filter(r => r.classList.contains('error')).length;
+                
+                addResult(`<h2>📊 Resumo dos Testes</h2>
+                    <p>✅ Sucessos: ${successCount}</p>
+                    <p>❌ Erros: ${errorCount}</p>
+                    <p>📋 Total: ${allTests.length - 1}</p>`, 'info');
+                
+            }, 100);
+        }
+        
+        // Executar automaticamente ao carregar se tiver utm_campaign na URL
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('utm_campaign')) {
+                setTimeout(() => {
+                    addResult('<h3>🔄 Teste automático iniciado (utm_campaign detectado na URL)</h3>', 'info');
+                    runAllTests();
+                }, 500);
+            } else {
+                addResult('<h3>💡 Adicione ?utm_campaign=teste_conta_1 na URL e recarregue para testar automaticamente</h3>', 'info');
+            }
+        });
+    </script>
+</body>
+</html>
+

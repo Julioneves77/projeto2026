@@ -10,6 +10,7 @@ export interface ColumnWidths {
   status: number;
   operador: number;
   prioridade: number;
+  origem: number;
   acoes: number;
 }
 
@@ -23,6 +24,7 @@ const DEFAULT_WIDTHS: ColumnWidths = {
   status: 128,
   operador: 112,
   prioridade: 96,
+  origem: 140,
   acoes: 80,
 };
 
@@ -132,6 +134,7 @@ export function useColumnResize() {
       'status',
       'operador',
       'prioridade',
+      'origem',
       'acoes',
     ];
     

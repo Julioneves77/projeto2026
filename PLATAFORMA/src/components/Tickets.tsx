@@ -511,6 +511,22 @@ export function Tickets() {
                     }}
                   />
                 </th>
+                {userRole === 'admin' && (
+                  <th 
+                    className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
+                    style={{ width: columnWidths.origem }}
+                  >
+                    Domínio de Origem
+                    <div
+                      className="resize-handle"
+                      onMouseDown={(e) => handleResizeStart('origem', e)}
+                      onDoubleClick={(e) => handleDoubleClick('origem', e)}
+                      style={{
+                        opacity: resizingColumn === 'origem' ? 1 : 0.5,
+                      }}
+                    />
+                  </th>
+                )}
                 <th 
                   className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap relative"
                   style={{ width: columnWidths.acoes }}
@@ -606,6 +622,48 @@ export function Tickets() {
                       );
                     })()}
                   </td>
+                  {userRole === 'admin' && (
+                    <td className="px-3 py-3" style={{ width: columnWidths.origem }}>
+                      {(() => {
+                        // Priorizar campo dominio (campo principal do ticket)
+                        const dominio = ticket.dominio;
+                        // Fallback para dadosFormulario.origem (compatibilidade com tickets antigos)
+                        const origem = ticket.dadosFormulario?.origem;
+                        
+                        // Formatar domínio para exibição
+                        if (dominio) {
+                          // Formatações específicas para domínios conhecidos
+                          if (dominio === 'www.verificacaoassistida.online' || dominio === 'verificacaoassistida.online') {
+                            return <span className="text-sm text-foreground truncate block">Verificação Assistida</span>;
+                          }
+                          if (dominio === 'portalcertidao.com.br' || dominio === 'www.portalcertidao.org') {
+                            return <span className="text-sm text-foreground truncate block">Portal Certidão</span>;
+                          }
+                          if (dominio.includes('portalcacesso')) {
+                            return <span className="text-sm text-foreground truncate block">Portal Acesso</span>;
+                          }
+                          if (dominio.includes('solicite')) {
+                            return <span className="text-sm text-foreground truncate block">Solicite Link</span>;
+                          }
+                          // Exibir domínio completo se não houver formatação específica
+                          return <span className="text-sm text-foreground truncate block" title={dominio}>{dominio}</span>;
+                        }
+                        
+                        // Fallback para origem (tickets antigos)
+                        if (origem === 'portalcacesso') {
+                          return <span className="text-sm text-foreground truncate block">Portal Acesso</span>;
+                        }
+                        if (origem === 'solicite') {
+                          return <span className="text-sm text-foreground truncate block">Solicite Link</span>;
+                        }
+                        if (origem) {
+                          return <span className="text-sm text-foreground truncate block">{String(origem)}</span>;
+                        }
+                        
+                        return <span className="text-sm text-muted-foreground truncate block">Não especificado</span>;
+                      })()}
+                    </td>
+                  )}
                   <td className="px-3 py-3 text-center" style={{ width: columnWidths.acoes }}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

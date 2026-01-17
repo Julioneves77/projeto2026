@@ -168,6 +168,23 @@ server {
 }
 EOF
 
+# PORTAL_ACESSO
+sudo tee /etc/nginx/sites-available/portalcacesso.online > /dev/null << 'EOF'
+server {
+    listen 80;
+    server_name www.portalcacesso.online portalcacesso.online portalacesso.online;
+    root /var/www/portal-acesso/dist;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
+}
+EOF
+
 # API
 sudo tee /etc/nginx/sites-available/api.portalcertidao.org > /dev/null << 'EOF'
 server {
@@ -192,6 +209,7 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/plataforma.portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/solicite.link /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/portalcacesso.online /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/api.portalcertidao.org /etc/nginx/sites-enabled/
 
 # Remover default
@@ -213,6 +231,7 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d www.portalcertidao.org -d portalcertidao.org
 sudo certbot --nginx -d plataforma.portalcertidao.org
 sudo certbot --nginx -d www.solicite.link -d solicite.link
+sudo certbot --nginx -d www.portalcacesso.online -d portalcacesso.online -d portalacesso.online
 sudo certbot --nginx -d api.portalcertidao.org
 ```
 
@@ -316,6 +335,7 @@ Depois que tudo estiver funcionando, configure o webhook do Pagar.me:
 ---
 
 **Pronto! Siga os passos acima e seus sites estarão funcionando! 🚀**
+
 
 
 

@@ -20,6 +20,7 @@ echo "📜 Obtendo certificados SSL..."
 certbot --nginx -d www.portalcertidao.org -d portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org || true
 certbot --nginx -d plataforma.portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org || true
 certbot --nginx -d www.solicite.link -d solicite.link --non-interactive --agree-tos --email contato@portalcertidao.org || true
+certbot --nginx -d www.portalcacesso.online -d portalcacesso.online -d portalacesso.online --non-interactive --agree-tos --email contato@portalcertidao.org || true
 certbot --nginx -d api.portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org || true
 
 echo "✅ SSL configurado!"
@@ -28,9 +29,11 @@ echo "📋 Certificados configurados para:"
 echo "  - www.portalcertidao.org"
 echo "  - plataforma.portalcertidao.org"
 echo "  - www.solicite.link"
+echo "  - www.portalcacesso.online / portalcacesso.online / portalacesso.online"
 echo "  - api.portalcertidao.org"
 echo ""
 echo "🔄 Renovação automática já está configurada pelo Certbot"
+
 
 
 

@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: 217 91% 25%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 160 84% 39%;
+    --secondary-foreground: 0 0% 100%;
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-gray-200;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans antialiased;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+  }
+}
+
+@layer components {
+  .btn-access {
+    @apply w-full py-4 px-6 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-semibold text-lg rounded-xl;
+    @apply hover:opacity-90 active:scale-[0.98];
+    @apply transition-all duration-300 ease-out;
+    @apply shadow-lg hover:shadow-xl;
+  }
+
+  .btn-access:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn-blink {
+    animation: blink-attention 0.4s ease-in-out infinite !important;
+  }
+
+  @keyframes blink-attention {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+      box-shadow: 0 8px 32px -4px hsl(var(--primary) / 0.5), 0 0 0 0px rgba(30, 58, 138, 0);
+      filter: brightness(1) drop-shadow(0 0 0px rgba(30, 58, 138, 0));
+    }
+    50% {
+      opacity: 0.15;
+      transform: scale(1.2);
+      box-shadow: 0 24px 96px -4px hsl(var(--primary) / 1), 0 0 0 20px rgba(30, 58, 138, 0.7), 0 0 50px rgba(30, 58, 138, 1), 0 0 80px rgba(30, 58, 138, 0.8);
+      filter: brightness(2) drop-shadow(0 0 30px rgba(30, 58, 138, 1));
+    }
+  }
+
+  .selector-container {
+    @apply max-w-2xl w-full mx-auto p-8 rounded-2xl;
+    @apply bg-white border border-gray-200;
+    @apply shadow-xl;
+  }
+
+  .selector-trigger {
+    @apply w-full h-14 text-base font-medium;
+    @apply bg-white border-2 border-[hsl(var(--primary))]/30;
+    @apply hover:border-[hsl(var(--primary))];
+    @apply shadow-md hover:shadow-lg;
+    @apply transition-all duration-300;
+    @apply rounded-lg;
+  }
+}

@@ -9,6 +9,7 @@ import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
 import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
+import { trackEvent, getFunnelId } from "@/lib/funnelTracker";
 import {
   createPixTransaction, 
   getTransactionStatus, 
@@ -62,6 +63,36 @@ const formatServiceType = (planName: string): string => {
     return 'Atendimento Padrão';
   }
   return planName;
+};
+
+// Função para formatar descrição do tipo de serviço
+const formatServiceDescription = (selectedPlan: any): string => {
+  const planId = selectedPlan.id || '';
+  
+  if (planId === 'padrao') {
+    return 'no email + certidão em Pdf';
+  }
+  if (planId === 'prioridade') {
+    return 'envio prioridade + receba no email e whatsapp em Pdf';
+  }
+  if (planId === 'premium') {
+    return 'envio urgente + receba no email e whatsapp em Pdf';
+  }
+  
+  // Fallback: verificar features se id não estiver disponível
+  const features = selectedPlan.features || [];
+  const hasWhatsApp = features.some((f: string) => f.toLowerCase().includes('whatsapp'));
+  
+  if (hasWhatsApp) {
+    if (selectedPlan.name?.includes('Prioritário')) {
+      return 'envio prioridade + receba no email e whatsapp em Pdf';
+    }
+    if (selectedPlan.name?.includes('Premium') || selectedPlan.name?.includes('Urgente')) {
+      return 'envio urgente + receba no email e whatsapp em Pdf';
+    }
+  }
+  
+  return 'no email + certidão em Pdf';
 };
 
 const Payment = () => {
@@ -256,6 +287,14 @@ const Payment = () => {
   // Disparar evento quando página de checkout carrega (se origem = portalcacesso)
   useEffect(() => {
     if (formData && selectedPlan) {
+      // Evento: pix_view - ao carregar página de pagamento
+      trackEvent('pix_view', {
+        certificate_type: certificateType,
+        plan_id: selectedPlan.id,
+        plan_name: selectedPlan.name,
+        price: selectedPlan.price
+      });
+
       pushDLPortalcacesso('portalcacesso_checkout_viewed', {
         funnel_step: 'checkout_view',
         certificateType: certificateType,
@@ -294,7 +333,9 @@ const Payment = () => {
         // Criar novo ticket se não existir
         if (!ticketId) {
           console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
-          const ticket = await createTicket(formData, certificateType, state, selectedPlan, origem);
+          // Obter funnel_id do locationState ou gerar novo
+          const funnelId = locationState.funnel_id || getFunnelId();
+          const ticket = await createTicket(formData, certificateType, state, selectedPlan, origem, funnelId);
           
           if (ticket) {
             console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
@@ -312,7 +353,15 @@ const Payment = () => {
         }
 
         // Criar transação PIX via Pagar.me
+        console.log('🔵 [PORTAL Payment] Verificando condições para criar PIX:');
+        console.log('  - ticketId:', ticketId ? `SIM (${ticketId})` : 'NÃO');
+        console.log('  - isTestMode:', isTestMode);
+        console.log('  - formData existe:', !!formData);
+        console.log('  - selectedPlan existe:', !!selectedPlan);
+        console.log('  - Condição ticketId && !isTestMode:', ticketId && !isTestMode);
+        
         if (ticketId && !isTestMode) {
+          console.log('✅ [PORTAL Payment] Condições atendidas, criando PIX...');
           setIsLoadingPix(true);
           try {
             const docNumber = (formData.cpf || formData.cnpj || '').toString().replace(/\D/g, '');
@@ -369,6 +418,16 @@ const Payment = () => {
             // Disparar evento quando PIX é gerado (se origem = portalcacesso)
             const ticket = await findTicket(ticketId);
             if (ticket) {
+              // Evento: pix_initiated - ao gerar QR Code PIX
+              trackEvent('pix_initiated', {
+                ticket_id: ticketId,
+                ticket_codigo: ticket.codigo,
+                plan_id: selectedPlan.id,
+                plan_name: selectedPlan.name,
+                price: selectedPlan.price,
+                certificate_type: certificateType
+              });
+
               pushDLPortalcacesso('portalcacesso_payment_initiated', {
                 funnel_step: 'payment_initiated',
                 ticketCodigo: ticket.codigo,
@@ -452,6 +511,32 @@ const Payment = () => {
         const status = await getTransactionStatus(transactionId);
         console.log('🔍 [PORTAL Payment] Status do pagamento:', status.status);
 
+        // Verificar se PIX expirou
+        if (status.pix_expiration_date) {
+          const expirationDate = new Date(status.pix_expiration_date);
+          const now = new Date();
+          if (now > expirationDate) {
+            console.warn('⚠️ [PORTAL Payment] PIX expirado');
+            
+            // Parar polling
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+
+            toast({
+              title: "PIX expirado",
+              description: "O QR Code PIX expirou. Gere um novo código para continuar.",
+              variant: "destructive",
+            });
+            
+            setIsLoadingPix(false);
+            setPixQrCode(null);
+            setPixTransaction(null);
+            return;
+          }
+        }
+
         if (status.status === 'paid') {
           // Pagamento confirmado!
           console.log('✅ [PORTAL Payment] Pagamento confirmado!');
@@ -480,8 +565,10 @@ const Payment = () => {
             variant: "destructive",
           });
         }
+        // Se status for 'pending_payment' ou 'processing', continuar polling (não fazer nada)
       } catch (error) {
         console.error('❌ [PORTAL Payment] Erro ao verificar status:', error);
+        // Não parar polling em caso de erro - pode ser temporário
       }
     }, 5000); // Verificar a cada 5 segundos
   };
@@ -565,6 +652,26 @@ const Payment = () => {
     const planoId = selectedPlan.id || 'padrao';
     const email = formData.email || '';
     
+    // Recuperar utm_campaign do localStorage ou URL
+    let utmCampaign: string | null = null;
+    try {
+      // Tentar da URL primeiro
+      const urlParams = new URLSearchParams(window.location.search);
+      utmCampaign = urlParams.get('utm_campaign');
+      
+      // Se não encontrou na URL, tentar do localStorage
+      if (!utmCampaign) {
+        utmCampaign = localStorage.getItem('utm_campaign');
+      }
+      
+      // Se encontrou, salvar no localStorage para preservar
+      if (utmCampaign) {
+        localStorage.setItem('utm_campaign', utmCampaign);
+      }
+    } catch (e) {
+      // Ignorar erro
+    }
+    
     // Salvar no localStorage como fallback (será lido pela página /obrigado)
     if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
     if (planoNome) localStorage.setItem('planoNome', planoNome);
@@ -585,6 +692,11 @@ const Payment = () => {
     eventUrl.searchParams.set('planoId', planoId);
     eventUrl.searchParams.set('email', email);
     eventUrl.searchParams.set('tipo', certificateType);
+    
+    // Incluir utm_campaign na URL se disponível
+    if (utmCampaign) {
+      eventUrl.searchParams.set('utm_campaign', utmCampaign);
+    }
     
     console.log(`🚀 [PORTAL Payment] Origem: ${currentOrigin}, Redirecionando para ${baseUrl}/event:`, eventUrl.toString());
     
@@ -723,13 +835,18 @@ const Payment = () => {
               <h2 className="font-heading text-lg font-bold text-foreground mb-3">
                 Resumo
               </h2>
-              <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/50">
-                <span className="font-medium text-foreground text-sm">
-                  {formatCertificateName(certificateType)} ({formatServiceType(selectedPlan.name)})
-                </span>
-                <span className="font-heading font-bold text-primary text-base">
-                  {formatPrice(selectedPlan.price)}
-                </span>
+              <div className="mb-2 pb-2 border-b border-border/50">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-foreground text-sm">
+                    {formatCertificateName(certificateType)} ({formatServiceType(selectedPlan.name)})
+                  </span>
+                  <span className="font-heading font-bold text-primary text-base">
+                    {formatPrice(selectedPlan.price)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatServiceDescription(selectedPlan)}
+                </p>
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="font-heading font-bold text-foreground">
@@ -777,6 +894,9 @@ const Payment = () => {
                       {formatPrice(selectedPlan.price)}
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatServiceDescription(selectedPlan)}
+                  </p>
                 </div>
                 
                 {/* Total */}

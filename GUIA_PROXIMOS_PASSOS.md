@@ -213,6 +213,21 @@ server {
 }
 ```
 
+**Configuração para PORTAL_ACESSO** (`/etc/nginx/sites-available/portalcacesso.online`):
+```nginx
+server {
+    listen 80;
+    server_name www.portalcacesso.online portalcacesso.online portalacesso.online;
+    
+    root /var/www/portal-acesso/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
 **Configuração para API** (`/etc/nginx/sites-available/api.portalcertidao.org`):
 ```nginx
 server {
@@ -238,6 +253,7 @@ server {
 sudo ln -s /etc/nginx/sites-available/portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/plataforma.portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/solicite.link /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/portalcacesso.online /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/api.portalcertidao.org /etc/nginx/sites-enabled/
 sudo nginx -t  # Testar configuração
 sudo systemctl reload nginx
@@ -253,6 +269,7 @@ sudo apt-get install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d www.portalcertidao.org -d portalcertidao.org
 sudo certbot --nginx -d plataforma.portalcertidao.org
 sudo certbot --nginx -d www.solicite.link -d solicite.link
+sudo certbot --nginx -d www.portalcacesso.online -d portalcacesso.online -d portalacesso.online
 sudo certbot --nginx -d api.portalcertidao.org
 
 # Renovação automática (já configurado automaticamente)
@@ -366,6 +383,7 @@ sudo tail -f /var/log/nginx/access.log
 **Comece gerando a API Key e configurando as variáveis de ambiente localmente.**
 
 Depois, quando estiver pronto para deploy, siga os passos de infraestrutura.
+
 
 
 

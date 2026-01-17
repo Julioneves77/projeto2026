@@ -706,7 +706,13 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {Object.entries(ticket.dadosFormulario)
-                        .filter(([, value]) => value !== '' && value !== false)
+                        .filter(([key, value]) => {
+                          // Admin vê tudo, outros não veem origem
+                          if (key === 'origem' && userRole !== 'admin') {
+                            return false;
+                          }
+                          return value !== '' && value !== false;
+                        })
                         .map(([key, value]) => {
                           // Formatar nome do campo para exibição
                           const labelMap: Record<string, string> = {
@@ -735,10 +741,23 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                             municipioNascimento: 'Município de Nascimento',
                             telefone: 'Telefone',
                             email: 'E-mail',
-                            sexo: 'Sexo'
+                            sexo: 'Sexo',
+                            origem: 'Domínio de Origem'
                           };
                           const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                          const displayValue = typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value);
+                          
+                          // Formatar valor para exibição
+                          let displayValue: string;
+                          if (typeof value === 'boolean') {
+                            displayValue = value ? 'Sim' : 'Não';
+                          } else if (key === 'origem') {
+                            // Formatar origem para exibição amigável
+                            displayValue = value === 'portalcacesso' ? 'Portal Acesso' 
+                                         : value === 'solicite' ? 'Solicite Link'
+                                         : String(value);
+                          } else {
+                            displayValue = String(value);
+                          }
                           
                           return (
                             <div key={key} className="flex items-start justify-between p-3 bg-primary/5 rounded-lg border border-primary/10">

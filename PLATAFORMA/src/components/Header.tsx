@@ -14,7 +14,8 @@ import {
   Headset,
   Mail,
   Activity,
-  Target
+  Target,
+  Heart
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -44,6 +45,9 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
     { id: 'suporte-email', label: 'Suporte Email', icon: Mail, roles: ['admin', 'financeiro'], badge: unreadEmails },
     { id: 'ads', label: 'Ads', icon: Target, roles: ['admin'] },
     { id: 'estabilidade', label: 'Estabilidade', icon: Activity, roles: ['admin', 'financeiro'], showStatus: true },
+    ...(import.meta.env.VITE_FUNNEL_HEART_ENABLED !== 'false' ? [
+      { id: 'coracao', label: 'Coração', icon: Heart, roles: ['admin'] }
+    ] : []),
   ];
 
   const visibleItems = menuItems.filter(item => item.roles.includes(userRole || ''));

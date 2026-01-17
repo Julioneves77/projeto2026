@@ -25,13 +25,40 @@
     <!-- Google reCAPTCHA -->
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     
-    <!-- Microsoft Clarity -->
+    <!-- Microsoft Clarity - Carregado após o CSS estar pronto para evitar páginas quebradas nas gravações -->
     <script type="text/javascript">
-        (function(c,l,a,r,i,t,y){
-            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-        })(window, document, "clarity", "script", "uwafq6fo78");
+        // Aguarda o CSS estar carregado antes de iniciar o Clarity
+        // Isso evita que o Clarity capture a página antes do CSS estar aplicado
+        (function() {
+            function initClarity() {
+                // Verifica se há stylesheets carregados
+                var hasStylesheets = document.styleSheets.length > 0;
+                
+                // Se não houver stylesheets e a página ainda estiver carregando, tenta novamente
+                if (!hasStylesheets && document.readyState !== 'complete') {
+                    setTimeout(initClarity, 50);
+                    return;
+                }
+                
+                // Inicia o Clarity após garantir que o CSS está carregado
+                (function(c,l,a,r,i,t,y){
+                    c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+                    t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+                    y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+                })(window, document, "clarity", "script", "uwafq6fo78");
+            }
+            
+            // Aguarda o evento load para garantir que todos os recursos estão carregados
+            if (document.readyState === 'complete') {
+                // Página já carregou completamente
+                setTimeout(initClarity, 100);
+            } else {
+                // Aguarda o evento load
+                window.addEventListener('load', function() {
+                    setTimeout(initClarity, 100);
+                });
+            }
+        })();
     </script>
     <!-- End Microsoft Clarity -->
   </head>

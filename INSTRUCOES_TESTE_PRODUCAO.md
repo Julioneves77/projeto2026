@@ -87,3 +87,4 @@ No código (`PLATAFORMA/src/components/Tickets.tsx`):
 
 
 
+

@@ -16,20 +16,11 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // Desabilitar code splitting para evitar erros de inicialização circular
+    // O bundle será um pouco maior mas carregará sem erros
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            return 'vendor';
-          }
-          if (id.includes('src/pages')) {
-            const pageName = path.basename(id, path.extname(id));
-            // Group common pages, or keep separate for specific lazy loading
-            if (['HowItWorks', 'FAQ', 'Privacy', 'Terms', 'Contact', 'NotFound'].includes(pageName)) {
-              return `page-${pageName.toLowerCase()}`;
-            }
-          }
-        },
+        manualChunks: undefined,
       },
     },
   },

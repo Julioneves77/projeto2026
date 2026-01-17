@@ -17,13 +17,20 @@ import {
   ChevronUp,
   HardDrive,
   Cpu,
-  MemoryStick
+  MemoryStick,
+  Settings
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ServiceManager } from '@/components/ServiceManager';
+import { 
+  loadServices, 
+  checkServiceStatus
+} from '@/lib/monitoredServices';
+import { MonitoredService } from '@/types/monitoring';
 
 const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
 const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
@@ -86,51 +93,20 @@ interface ServiceStatus {
   lastCheck: Date;
   responseTime?: number;
   icon: React.ElementType;
-  category: 'domain' | 'email' | 'whatsapp';
+  category: 'domain' | 'email' | 'whatsapp' | 'other';
 }
 
-const initialServices: ServiceStatus[] = [
-  {
-    id: 'portal-certidao',
-    name: 'PortalCertidao.org',
-    description: 'Portal principal de solicitação de certidões',
-    status: 'checking',
-    lastCheck: new Date(),
-    icon: Globe,
-    category: 'domain'
-  },
-  {
-    id: 'solicite-link',
-    name: 'Solicite.link',
-    description: 'Domínio de links curtos e redirecionamento',
-    status: 'checking',
-    lastCheck: new Date(),
-    icon: Globe,
-    category: 'domain'
-  },
-  {
-    id: 'sendpulse',
-    name: 'SendPulse',
-    description: 'Emails de confirmação de pagamento e certidões prontas',
-    status: 'checking',
-    lastCheck: new Date(),
-    icon: Mail,
-    category: 'email'
-  },
-  {
-    id: 'zap-api',
-    name: 'Zap API',
-    description: 'WhatsApp de confirmação e notificações',
-    status: 'checking',
-    lastCheck: new Date(),
-    icon: MessageSquare,
-    category: 'whatsapp'
-  }
-];
+// Mapa de ícones do lucide-react
+const iconMap: Record<string, React.ElementType> = {
+  Globe,
+  Mail,
+  MessageSquare,
+  Settings,
+};
 
 export function SystemStability() {
   const { tickets } = useTickets();
-  const [services, setServices] = useState<ServiceStatus[]>(initialServices);
+  const [services, setServices] = useState<ServiceStatus[]>([]);
   const [isChecking, setIsChecking] = useState(false);
   const [lastFullCheck, setLastFullCheck] = useState<Date | null>(null);
   const [showAllEmissions, setShowAllEmissions] = useState(false);
@@ -139,36 +115,100 @@ export function SystemStability() {
   const [sseConnected, setSseConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const checkServices = async () => {
+  // Carregar serviços configurados
+  const loadConfiguredServices = useCallback(() => {
+    const monitoredServices = loadServices();
+    const serviceStatuses: ServiceStatus[] = monitoredServices.map(service => ({
+      id: service.id,
+      name: service.name,
+      description: service.description,
+      status: 'checking' as const,
+      lastCheck: new Date(),
+      icon: iconMap[service.icon] || Globe,
+      category: service.category,
+    }));
+    setServices(serviceStatuses);
+  }, []);
+
+  // Carregar serviços ao montar componente
+  useEffect(() => {
+    loadConfiguredServices();
+  }, [loadConfiguredServices]);
+
+  const checkServices = useCallback(async () => {
     setIsChecking(true);
     
-    // Simular verificação de cada serviço
-    const updatedServices = [...services];
+    // Carregar serviços atualizados
+    const monitoredServices = loadServices();
+    const enabledServices = monitoredServices.filter(s => s.enabled);
     
-    for (let i = 0; i < updatedServices.length; i++) {
-      updatedServices[i] = { ...updatedServices[i], status: 'checking' };
+    // Verificar status real de cada serviço
+    const updatedServices: ServiceStatus[] = [];
+    
+    for (const monitoredService of enabledServices) {
+      // Marcar como checking
+      const checkingStatus: ServiceStatus = {
+        id: monitoredService.id,
+        name: monitoredService.name,
+        description: monitoredService.description,
+        status: 'checking',
+        lastCheck: new Date(),
+        icon: iconMap[monitoredService.icon] || Globe,
+        category: monitoredService.category,
+      };
+      updatedServices.push(checkingStatus);
       setServices([...updatedServices]);
       
-      // Simular delay de verificação
-      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+      // Verificar status real
+      try {
+        const result = await checkServiceStatus(monitoredService);
+        const index = updatedServices.findIndex(s => s.id === monitoredService.id);
+        if (index !== -1) {
+          updatedServices[index] = {
+            ...updatedServices[index],
+            status: result.status,
+            lastCheck: result.lastCheck,
+            responseTime: result.responseTime,
+          };
+        }
+      } catch (error) {
+        console.error(`Erro ao verificar serviço ${monitoredService.name}:`, error);
+        const index = updatedServices.findIndex(s => s.id === monitoredService.id);
+        if (index !== -1) {
+          updatedServices[index] = {
+            ...updatedServices[index],
+            status: 'offline',
+            lastCheck: new Date(),
+          };
+        }
+      }
       
-      // Simular resultado (90% online, 5% warning, 5% offline)
-      const random = Math.random();
-      let status: 'online' | 'offline' | 'warning' = 'online';
-      if (random > 0.95) status = 'offline';
-      else if (random > 0.90) status = 'warning';
-      
-      updatedServices[i] = {
-        ...updatedServices[i],
-        status,
-        lastCheck: new Date(),
-        responseTime: Math.floor(50 + Math.random() * 200)
-      };
       setServices([...updatedServices]);
     }
     
+    // Adicionar serviços desabilitados (sem verificação)
+    const disabledServices = monitoredServices.filter(s => !s.enabled);
+    disabledServices.forEach(service => {
+      if (!updatedServices.find(s => s.id === service.id)) {
+        updatedServices.push({
+          id: service.id,
+          name: service.name,
+          description: service.description,
+          status: 'checking',
+          lastCheck: new Date(),
+          icon: iconMap[service.icon] || Globe,
+          category: service.category,
+        });
+      }
+    });
+    
+    setServices(updatedServices);
     setLastFullCheck(new Date());
     setIsChecking(false);
+  }, []);
+
+  const handleServicesChange = () => {
+    loadConfiguredServices();
   };
 
   // Buscar capacidade do sistema (fallback)
@@ -266,7 +306,7 @@ export function SystemStability() {
     // Verificar serviços a cada 5 minutos
     const interval = setInterval(checkServices, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkServices]);
 
   const allOnline = services.every(s => s.status === 'online');
   const hasWarning = services.some(s => s.status === 'warning');
@@ -316,7 +356,7 @@ export function SystemStability() {
   const overallStatus = getOverallStatus();
   const domainServices = services.filter(s => s.category === 'domain');
   const emailServices = services.filter(s => s.category === 'email');
-  const whatsappServices = services.filter(s => s.category === 'whatsapp');
+  const whatsappServices = services.filter(s => s.category === 'whatsapp' || s.category === 'other');
 
   return (
     <div className="space-y-6">
@@ -337,14 +377,17 @@ export function SystemStability() {
                 </p>
               </div>
             </div>
-            <Button 
-              onClick={checkServices} 
-              disabled={isChecking}
-              className="gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
-              {isChecking ? 'Verificando...' : 'Verificar Agora'}
-            </Button>
+            <div className="flex gap-2">
+              <ServiceManager onServicesChange={handleServicesChange} />
+              <Button 
+                onClick={checkServices} 
+                disabled={isChecking}
+                className="gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
+                {isChecking ? 'Verificando...' : 'Verificar Agora'}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

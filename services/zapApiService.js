@@ -18,6 +18,24 @@ const ZAP_API_URL = process.env.ZAP_API_URL || process.env.ZAP_API_BASE_URL || '
 function createCompletionWhatsAppMessage(ticketData, mensagemInteracao) {
   const { nomeCompleto, codigo, tipoCertidao } = ticketData;
   
+  // Obter informações do domínio de origem
+  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+  const normalizedDomain = dominio.replace(/^www\./, '').toLowerCase();
+  
+  // Mapear domínio para informações da marca
+  const domainInfo = {
+    'verificacaoassistida.online': {
+      name: 'Verificação Assistida',
+      website: 'www.verificacaoassistida.online'
+    },
+    'portalcertidao.org': {
+      name: 'Portal Certidão',
+      website: 'www.portalcertidao.org'
+    }
+  };
+  
+  const senderInfo = domainInfo[normalizedDomain] || domainInfo['portalcertidao.org'];
+  
   const tipoCertidaoNome = {
     'criminal-federal': 'Certidão Negativa Criminal Federal',
     'criminal-estadual': 'Certidão Negativa Criminal Estadual',
@@ -26,7 +44,8 @@ function createCompletionWhatsAppMessage(ticketData, mensagemInteracao) {
     'civil-federal': 'Certidão Negativa Cível Federal',
     'civil-estadual': 'Certidão Negativa Cível Estadual',
     'cnd': 'Certidão Negativa de Débito (CND)',
-    'cpf-regular': 'Certidão CPF Regular'
+    'cpf-regular': 'Certidão CPF Regular',
+    'Certidão Criminal Federal': 'Certidão Criminal Federal'
   }[tipoCertidao] || tipoCertidao;
 
   let mensagem = `✅ *Certidão Pronta!*
@@ -43,8 +62,8 @@ Olá ${nomeCompleto.split(' ')[0]}, sua certidão está pronta! 🎉
 ${mensagemInteracao}`;
   }
 
-  mensagem += `\n\nPortal Certidão
-www.portalcertidao.org`;
+  mensagem += `\n\n${senderInfo.name}
+${senderInfo.website}`;
 
   return mensagem;
 }
@@ -54,6 +73,25 @@ www.portalcertidao.org`;
  */
 function createWhatsAppMessage(ticketData) {
   const { nomeCompleto, codigo, tipoCertidao, prioridade } = ticketData;
+  
+  // Obter informações do domínio de origem
+  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+  const normalizedDomain = dominio.replace(/^www\./, '').toLowerCase();
+  
+  // Mapear domínio para informações da marca
+  const domainInfo = {
+    'verificacaoassistida.online': {
+      name: 'Verificação Assistida',
+      website: 'www.verificacaoassistida.online'
+    },
+    'portalcertidao.org': {
+      name: 'Portal Certidão',
+      website: 'www.portalcertidao.org'
+    }
+  }[normalizedDomain] || {
+    name: 'Portal Certidão',
+    website: 'www.portalcertidao.org'
+  };
   
   // Prazo de entrega fixo conforme solicitado
   const prazoEntrega = 'Depende da sua Comarca maioria até 2 horas';
@@ -67,7 +105,8 @@ function createWhatsAppMessage(ticketData) {
     'civil-federal': 'Certidão Negativa Cível Federal',
     'civil-estadual': 'Certidão Negativa Cível Estadual',
     'cnd': 'Certidão Negativa de Débito (CND)',
-    'cpf-regular': 'Certidão CPF Regular'
+    'cpf-regular': 'Certidão CPF Regular',
+    'Certidão Criminal Federal': 'Certidão Criminal Federal'
   }[tipoCertidao] || tipoCertidao;
 
   return `✅ *Pagamento Confirmado!*
@@ -82,8 +121,8 @@ Olá ${nomeCompleto.split(' ')[0]}, seu pagamento foi confirmado com sucesso! �
 
 📧 Você receberá sua Solicitação por Email / WhatsApp assim que estiver Pronta
 
-Portal Certidão
-www.portalcertidao.org`;
+${domainInfo.name}
+${domainInfo.website}`;
 }
 
 /**
@@ -116,7 +155,8 @@ async function sendWhatsAppMessage(ticketData) {
   try {
     const apiKey = process.env.ZAP_API_KEY;
     const apiUrl = ZAP_API_URL;
-    const instanceId = process.env.ZAP_INSTANCE_ID || process.env.ZAP_INSTANCE; // Para Evolution API
+    // Z-API requer instanceId - tentar obter de variável de ambiente ou extrair da API Key
+    const instanceId = process.env.ZAP_INSTANCE_ID || process.env.ZAP_INSTANCE || null;
     const clientToken = process.env.ZAP_CLIENT_TOKEN; // Client-Token de segurança da conta
 
     if (!apiKey) {
@@ -156,7 +196,7 @@ async function sendWhatsAppMessage(ticketData) {
       try {
         // Z-API usa formato: instance:token
         // Se a API Key contém ':', usar como instance:token
-        // Caso contrário, tentar usar instanceId ou 'default'
+        // Caso contrário, tentar usar instanceId ou tentar obter via API
         const parts = apiKey.split(':');
         let instance, token;
         
@@ -164,26 +204,77 @@ async function sendWhatsAppMessage(ticketData) {
           // Formato instance:token
           instance = parts[0];
           token = parts[1];
+          console.log(`📱 [Zap API] Extraído instance e token da API Key (formato instance:token)`);
         } else {
-          // Tentar usar instanceId ou valores das outras chaves fornecidas
-          // Baseado nas credenciais fornecidas: 3EAB7866FE55B1BEB70D52B01C4B842D:01A24B106EE5EB2500D9EA86:F8337947b89a14ae78d92f6365523269bS
-          // Parece ser: instance:token:clientToken
-          const allParts = apiKey.split(':');
-          if (allParts.length >= 2) {
-            instance = allParts[0];
-            token = allParts[1];
-            // Se tiver terceiro valor, pode ser o Client-Token
-            if (allParts.length >= 3 && !clientToken) {
-              console.log(`📱 [Zap API] Detectado Client-Token na API Key (terceiro valor)`);
-              // Não usar aqui, mas logar para referência
+          // Se não tem instanceId configurado e API Key não tem ':', tentar obter instanceId via API
+          if (!instanceId) {
+            console.log(`⚠️ [Zap API] ZAP_INSTANCE_ID não configurado. Tentando obter instanceId via API...`);
+            
+            // Tentar obter lista de instâncias usando o token como autenticação
+            // Z-API pode ter endpoint para listar instâncias
+            try {
+              const baseUrl = apiUrl.replace('/v1', '').replace(/\/$/, '');
+              const instancesEndpoint = `${baseUrl}/instances`;
+              
+              const instancesHeaders = {
+                'Content-Type': 'application/json'
+              };
+              
+              if (clientToken) {
+                instancesHeaders['Client-Token'] = clientToken;
+              }
+              
+              // Tentar GET /instances com token no header ou query
+              const instancesResponse = await axios.get(instancesEndpoint, {
+                headers: instancesHeaders,
+                params: { token: apiKey },
+                timeout: 10000
+              }).catch(() => null);
+              
+              if (instancesResponse?.data) {
+                // Se retornou lista de instâncias, usar a primeira
+                const instances = Array.isArray(instancesResponse.data) ? instancesResponse.data : 
+                                 (instancesResponse.data.instances || []);
+                if (instances.length > 0) {
+                  instance = instances[0].instance || instances[0].id || instances[0].name;
+                  token = apiKey;
+                  console.log(`✅ [Zap API] InstanceId obtido via API: ${instance}`);
+                }
+              }
+            } catch (apiError) {
+              console.log(`⚠️ [Zap API] Não foi possível obter instanceId via API: ${apiError.message}`);
             }
-          } else {
-            instance = instanceId || 'default';
-            token = apiKey;
+          }
+          
+          // Se ainda não tem instance, usar instanceId configurado ou tentar alternativas
+          if (!instance) {
+            if (instanceId) {
+              instance = instanceId;
+              token = apiKey;
+              console.log(`📱 [Zap API] Usando ZAP_INSTANCE_ID configurado: ${instance}`);
+            } else {
+              // IMPORTANTE: Z-API requer instanceId válido
+              // Se não configurado, tentar usar Client-Token como instanceId
+              // OU configurar manualmente ZAP_INSTANCE_ID no .env
+              if (clientToken) {
+                // Tentar usar Client-Token como instanceId (algumas configurações Z-API usam isso)
+                instance = clientToken;
+                token = apiKey;
+                console.log(`📱 [Zap API] Tentando usar Client-Token como instanceId: ${instance.substring(0, 10)}...`);
+                console.log(`⚠️ [Zap API] Se falhar, configure ZAP_INSTANCE_ID no .env com o instanceId correto da sua conta Z-API`);
+              } else {
+                // Último recurso: usar 'default' (provavelmente não funcionará)
+                instance = 'default';
+                token = apiKey;
+                console.log(`❌ [Zap API] ERRO: ZAP_INSTANCE_ID não configurado e Client-Token não disponível.`);
+                console.log(`❌ [Zap API] Configure ZAP_INSTANCE_ID no .env com o instanceId correto da sua conta Z-API`);
+                console.log(`❌ [Zap API] Tentando usar instance='default' como último recurso (provavelmente falhará)`);
+              }
+            }
           }
         }
         
-        console.log(`📱 [Zap API] Tentando Z-API: instance=${instance}, token=${token.substring(0, 10)}...`);
+        console.log(`📱 [Zap API] Tentando Z-API: instance=${instance}, token=${token ? token.substring(0, 10) + '...' : 'N/A'}`);
         
         // Z-API endpoint correto: https://api.z-api.io/instances/{instance}/token/{token}/send-text
         // OU: https://api.z-api.io/instances/{instance}/token/{token}/send-text (sem /v1)
@@ -221,6 +312,8 @@ async function sendWhatsAppMessage(ticketData) {
               timeout: 15000
             }
           );
+          successFormat = 'Z-API';
+          console.log(`✅ [Zap API] Mensagem enviada com sucesso usando formato 1`);
         } catch (firstError) {
           // Se falhar, tentar formato alternativo: /v1/instances/{instance}/token/{token}/send-text
           if (firstError.response?.status === 404 || firstError.response?.data?.message?.includes('Unable to find')) {
@@ -228,25 +321,33 @@ async function sendWhatsAppMessage(ticketData) {
             endpoint = `${apiUrl}/instances/${instance}/token/${token}/send-text`;
             console.log(`📱 [Zap API] Tentando endpoint Z-API formato 2: ${endpoint}`);
             
-            response = await axios.post(
-              endpoint,
-              {
-                phone: phoneNumber,
-                message: message
-              },
-              {
-                headers: headers,
-                timeout: 15000
-              }
-            );
+            try {
+              response = await axios.post(
+                endpoint,
+                {
+                  phone: phoneNumber,
+                  message: message
+                },
+                {
+                  headers: headers,
+                  timeout: 15000
+                }
+              );
+              successFormat = 'Z-API';
+              console.log(`✅ [Zap API] Mensagem enviada com sucesso usando formato 2`);
+            } catch (secondError) {
+              // Se ambos falharem, lançar erro
+              console.error(`❌ [Zap API] Ambos os formatos falharam. Erro formato 2:`, secondError.response?.data || secondError.message);
+              throw secondError;
+            }
           } else {
             throw firstError;
           }
         }
-        successFormat = 'Z-API';
       } catch (error) {
         lastError = error;
         console.log(`⚠️ [Zap API] Z-API falhou: ${error.response?.status} - ${error.response?.data?.message || error.message}`);
+        console.log(`⚠️ [Zap API] Detalhes do erro:`, JSON.stringify(error.response?.data || {}, null, 2));
       }
     }
     
@@ -455,24 +556,22 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
       let instance, token;
       
       if (parts.length > 1) {
+        // Formato: instance:token
         instance = parts[0];
         token = parts[1];
+      } else if (instanceId) {
+        // Se temos instanceId separado, usar ele
+        instance = instanceId;
+        token = apiKey;
       } else {
-        const allParts = apiKey.split(':');
-        if (allParts.length >= 2) {
-          instance = allParts[0];
-          token = allParts[1];
-        } else {
-          instance = instanceId || 'default';
-          token = apiKey;
-        }
+        // Fallback: tentar usar 'default' ou apiKey como instance
+        instance = 'default';
+        token = apiKey;
       }
       
-      // Z-API base URL deve ser sem /v1 para endpoints de instância
+      // Z-API formato correto: https://api.z-api.io/instances/{instance}/token/{token}/send-text
       const baseUrl = apiUrl.replace('/v1', '').replace(/\/$/, '');
-      // Se não tem instância na URL, usar formato correto
-      const instanceBaseUrl = baseUrl.includes('/instances/') ? baseUrl : `${baseUrl}/instances/${instance}/token/${token}`;
-      let textEndpoint = `${instanceBaseUrl}/send-text`;
+      let textEndpoint = `${baseUrl}/instances/${instance}/token/${token}/send-text`;
       
       const headers = {
         'Content-Type': 'application/json'
@@ -483,6 +582,10 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
       }
       
       // Tentar enviar mensagem de texto primeiro
+      console.log(`📱 [Zap API] Tentando enviar mensagem de texto primeiro...`);
+      console.log(`📱 [Zap API] Endpoint: ${textEndpoint}`);
+      console.log(`📱 [Zap API] Telefone: ${phoneNumber}`);
+      console.log(`📱 [Zap API] Mensagem (primeiros 100 chars): ${message.substring(0, 100)}...`);
       try {
         response = await axios.post(
           textEndpoint,
@@ -495,27 +598,12 @@ async function sendCompletionWhatsApp(ticketData, mensagemInteracao, anexo) {
             timeout: 15000
           }
         );
+        console.log(`✅ [Zap API] Mensagem de texto enviada com sucesso:`, response.data);
       } catch (firstError) {
-        // Se falhar, tentar formato alternativo com /v1
-        if (firstError.response?.status === 404 || firstError.response?.data?.message?.includes('Unable to find')) {
-          console.log(`⚠️ [Zap API] Formato 1 falhou, tentando formato alternativo com /v1...`);
-          textEndpoint = `${apiUrl}/instances/${instance}/token/${token}/send-text`;
-          console.log(`📱 [Zap API] Tentando endpoint Z-API formato 2: ${textEndpoint}`);
-          
-          response = await axios.post(
-            textEndpoint,
-            {
-              phone: phoneNumber,
-              message: message
-            },
-            {
-              headers: headers,
-              timeout: 15000
-            }
-          );
-        } else {
-          throw firstError;
-        }
+        console.error(`❌ [Zap API] Erro ao enviar mensagem de texto:`, firstError.response?.data || firstError.message);
+        console.error(`❌ [Zap API] Endpoint usado: ${textEndpoint}`);
+        console.error(`❌ [Zap API] Instance: ${instance}, Token: ${token ? token.substring(0, 10) + '...' : 'N/A'}`);
+        throw firstError;
       }
       
       successFormat = 'Z-API';

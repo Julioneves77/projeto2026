@@ -57,9 +57,41 @@ function initializeSendPulse() {
 }
 
 /**
+ * Obtém remetente (email e nome) baseado no domínio de origem do ticket
+ */
+function getSenderByDomain(dominio) {
+  // Normalizar domínio (remover www. se presente e converter para lowercase)
+  const normalizedDomain = dominio?.replace(/^www\./, '').toLowerCase();
+  
+  const domainMap = {
+    'verificacaoassistida.online': {
+      // IMPORTANTE: Usar email verificado do SendPulse (fallback seguro)
+      // Se VERIFICACAO_SENDER_EMAIL não estiver configurado ou não verificado, usar SENDPULSE_SENDER_EMAIL
+      email: process.env.VERIFICACAO_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
+      name: process.env.VERIFICACAO_SENDER_NAME || 'Verificação Assistida',
+      website: 'www.verificacaoassistida.online',
+      websiteUrl: 'https://www.verificacaoassistida.online'
+    },
+    'portalcertidao.org': {
+      email: process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
+      name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
+      website: 'www.portalcertidao.org',
+      websiteUrl: 'https://www.portalcertidao.org'
+    }
+  };
+  
+  return domainMap[normalizedDomain] || {
+    email: process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
+    name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
+    website: 'www.portalcertidao.org',
+    websiteUrl: 'https://www.portalcertidao.org'
+  };
+}
+
+/**
  * Cria template HTML para email de confirmação de pagamento
  */
-function createEmailTemplate(ticketData) {
+function createEmailTemplate(ticketData, domainInfo) {
   const { nomeCompleto, codigo, tipoCertidao, email, telefone, prioridade } = ticketData;
   
   // Prazo de entrega fixo conforme solicitado
@@ -103,13 +135,13 @@ function createEmailTemplate(ticketData) {
     
     <p>Você vai receber sua Solicitação por Email/WhatsApp assim que estiver Pronta.</p>
     
-    <p>Dúvidas acesse: <a href="https://www.portalcertidao.org" style="color: #28a745; text-decoration: none;">www.portalcertidao.org</a></p>
+    <p>Dúvidas acesse: <a href="${domainInfo.websiteUrl}" style="color: #28a745; text-decoration: none;">${domainInfo.website}</a></p>
     
     <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
     
     <p style="font-size: 12px; color: #666;">
       Este é um email automático, por favor não responda.<br>
-      Portal Certidão - Todos os direitos reservados.
+      ${domainInfo.name} - Todos os direitos reservados.
     </p>
   </div>
 </body>
@@ -132,12 +164,16 @@ async function sendConfirmationEmail(ticketData) {
       throw new Error('Email do cliente não fornecido');
     }
 
-    // Email remetente configurável via variável de ambiente
-    const senderEmail = process.env.SENDPULSE_SENDER_EMAIL || 'noreply@portalcertidao.com.br';
-    const senderName = process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
+    // Obter domínio de origem do ticket
+    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+    const domainInfo = getSenderByDomain(dominio);
+    
+    // Usar remetente dinâmico baseado no domínio
+    const senderEmail = domainInfo.email;
+    const senderName = domainInfo.name;
 
-    // Criar template HTML
-    const htmlContent = createEmailTemplate(ticketData);
+    // Criar template HTML com informações do domínio
+    const htmlContent = createEmailTemplate(ticketData, domainInfo);
     const textContent = `
 Pagamento Confirmado!
 
@@ -151,54 +187,75 @@ Status: Em Processamento
 
 Você vai receber sua Solicitação por Email/WhatsApp assim que estiver Pronta.
 
-Dúvidas acesse: www.portalcertidao.org
+Dúvidas acesse: ${domainInfo.website}
 
-Portal Certidão
+${domainInfo.name}
     `.trim();
 
     console.log(`📧 [SendPulse] Enviando email para ${email} (Ticket: ${codigo})`);
     console.log(`📧 [SendPulse] Remetente: ${senderEmail} (${senderName})`);
 
     // Estrutura do email conforme documentação oficial do SendPulse
-    // Baseado no exemplo da biblioteca oficial
+    // SendPulse requer: subject, html, text, from {name, email}, to [{email}]
     const emailData = {
-      html: htmlContent,
-      text: textContent,
       subject: `Confirmação de Pagamento - Ticket ${codigo}`,
+      html: htmlContent,
+      text: textContent, // OBRIGATÓRIO - SendPulse requer texto plano
       from: {
         name: senderName,
-        email: senderEmail
+        email: senderEmail // DEVE estar verificado no SendPulse
       },
       to: [
         {
-          name: nomeCompleto,
-          email: email
+          email: email // Simplificado - apenas email, sem name
         }
       ]
     };
 
+    // Log detalhado do payload antes de enviar
+    console.log(`📧 [SendPulse] Payload do email:`, JSON.stringify({
+      subject: emailData.subject,
+      from: emailData.from,
+      to: emailData.to,
+      htmlLength: emailData.html?.length || 0,
+      textLength: emailData.text?.length || 0
+    }, null, 2));
+
     // Enviar usando a biblioteca oficial
     return new Promise((resolve, reject) => {
       sendpulse.smtpSendMail((response) => {
-        // Verificar se há erro (biblioteca retorna is_error ou error_code)
-        const hasError = response?.is_error || response?.error_code || 
-                        (response?.message && response.message.includes('not valid')) ||
-                        (response?.message && response.message.includes('error'));
+        // Log completo da resposta para debug
+        console.log(`📧 [SendPulse] Resposta completa:`, JSON.stringify(response, null, 2));
         
-        if (hasError || (response?.error_code && response.error_code !== 200)) {
+        // Verificar diferentes formatos de erro do SendPulse
+        const hasError = response?.is_error || 
+                        response?.error_code || 
+                        (response?.error_code && response.error_code !== 200 && response.error_code !== 0) ||
+                        (response?.message && (
+                          response.message.toLowerCase().includes('not valid') ||
+                          response.message.toLowerCase().includes('error') ||
+                          response.message.toLowerCase().includes('invalid') ||
+                          response.message.toLowerCase().includes('unauthorized') ||
+                          response.message.toLowerCase().includes('forbidden') ||
+                          response.message.toLowerCase().includes('sender')
+                        ));
+        
+        if (hasError) {
           const errorMessage = response.message || response.error || 'Erro desconhecido ao enviar email';
-          const errorCode = response.error_code || response.code;
+          const errorCode = response.error_code || response.code || 'N/A';
           
-          console.error('❌ [SendPulse] Erro ao enviar email:');
+          console.error('❌ [SendPulse] Erro ao enviar email de confirmação:');
           console.error('   Código:', errorCode);
-          console.error('   Detalhes:', JSON.stringify(response, null, 2));
+          console.error('   Mensagem:', errorMessage);
+          console.error('   Resposta completa:', JSON.stringify(response, null, 2));
           
           let userFriendlyError = errorMessage;
-          if (errorMessage.includes('Sender is not valid') || 
-              errorMessage.includes('sender') || 
-              errorMessage.includes('not valid')) {
-            userFriendlyError = 'Email remetente não está verificado no SendPulse. Configure SENDPULSE_SENDER_EMAIL no .env com um email verificado na sua conta SendPulse.';
-          } else if (errorMessage.includes('Argument email missing')) {
+          if (errorMessage.toLowerCase().includes('sender') || 
+              errorMessage.toLowerCase().includes('not valid') ||
+              errorMessage.toLowerCase().includes('unauthorized')) {
+            userFriendlyError = `Email remetente "${senderEmail}" não está verificado no SendPulse. Verifique se o email está verificado na sua conta SendPulse.`;
+          } else if (errorMessage.toLowerCase().includes('argument email missing') ||
+                     errorMessage.toLowerCase().includes('invalid')) {
             userFriendlyError = 'Estrutura do email inválida. Verifique a configuração.';
           }
           
@@ -210,8 +267,8 @@ Portal Certidão
             details: response
           });
         } else {
-          console.log(`✅ [SendPulse] Email enviado com sucesso para ${email}`);
-          console.log('✅ [SendPulse] Resposta:', JSON.stringify(response, null, 2));
+          console.log(`✅ [SendPulse] Email de confirmação enviado com sucesso para ${email}`);
+          console.log(`✅ [SendPulse] Message ID: ${response?.id || response?.result?.id || response?.data?.id || 'N/A'}`);
           resolve({
             success: true,
             messageId: response?.id || response?.result?.id || response?.data?.id || 'N/A',
@@ -235,7 +292,7 @@ Portal Certidão
 /**
  * Cria template HTML para email de conclusão de ticket
  */
-function createCompletionEmailTemplate(ticketData, mensagemInteracao) {
+function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo) {
   const { nomeCompleto, codigo, tipoCertidao } = ticketData;
   
   const tipoCertidaoNome = {
@@ -281,13 +338,13 @@ function createCompletionEmailTemplate(ticketData, mensagemInteracao) {
     
     <p>Seu arquivo está disponível em anexo neste email.</p>
     
-    <p>Dúvidas acesse: <a href="https://www.portalcertidao.org" style="color: #007bff; text-decoration: none;">www.portalcertidao.org</a></p>
+    <p>Dúvidas acesse: <a href="${domainInfo.websiteUrl}" style="color: #007bff; text-decoration: none;">${domainInfo.website}</a></p>
     
     <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
     
     <p style="font-size: 12px; color: #666;">
       Este é um email automático, por favor não responda.<br>
-      Portal Certidão - Todos os direitos reservados.
+      ${domainInfo.name} - Todos os direitos reservados.
     </p>
   </div>
 </body>
@@ -308,10 +365,15 @@ async function sendCompletionEmail(ticketData, mensagemInteracao, anexo) {
       throw new Error('Email do cliente não fornecido');
     }
 
-    const senderEmail = process.env.SENDPULSE_SENDER_EMAIL || 'noreply@portalcertidao.com.br';
-    const senderName = process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
+    // Obter domínio de origem do ticket
+    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+    const domainInfo = getSenderByDomain(dominio);
+    
+    // Usar remetente dinâmico baseado no domínio
+    const senderEmail = domainInfo.email;
+    const senderName = domainInfo.name;
 
-    const htmlContent = createCompletionEmailTemplate(ticketData, mensagemInteracao);
+    const htmlContent = createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo);
     const textContent = `
 Certidão Pronta!
 
@@ -325,9 +387,9 @@ Status: Concluída
 ${mensagemInteracao ? `Informações Adicionais:\n${mensagemInteracao}\n\n` : ''}
 Seu arquivo está disponível em anexo neste email.
 
-Dúvidas acesse: www.portalcertidao.org
+Dúvidas acesse: ${domainInfo.website}
 
-Portal Certidão
+${domainInfo.name}
     `.trim();
 
     console.log(`📧 [SendPulse] Enviando email de conclusão para ${email} (Ticket: ${codigo})`);
@@ -336,18 +398,19 @@ Portal Certidão
       console.log(`📎 [SendPulse] Tamanho base64: ${anexo.base64 ? anexo.base64.length : 0} caracteres`);
     }
 
+    // Estrutura do email conforme documentação oficial do SendPulse
+    // SendPulse requer: subject, html, text, from {name, email}, to [{email}]
     const emailData = {
-      html: htmlContent,
-      text: textContent,
       subject: `Certidão Pronta - Ticket ${codigo}`,
+      html: htmlContent,
+      text: textContent, // OBRIGATÓRIO - SendPulse requer texto plano
       from: {
         name: senderName,
-        email: senderEmail
+        email: senderEmail // DEVE estar verificado no SendPulse
       },
       to: [
         {
-          name: nomeCompleto,
-          email: email
+          email: email // Simplificado - apenas email, sem name
         }
       ]
     };
@@ -415,15 +478,20 @@ Portal Certidão
       }
     }
 
-    // Log do payload antes de enviar (sem o conteúdo base64 completo para não poluir logs)
+    // Log detalhado do payload antes de enviar (sem o conteúdo base64 completo para não poluir logs)
+    console.log(`📧 [SendPulse] Remetente: ${senderEmail} (${senderName})`);
     const logData = {
-      ...emailData,
+      subject: emailData.subject,
+      from: emailData.from,
+      to: emailData.to,
+      htmlLength: emailData.html?.length || 0,
+      textLength: emailData.text?.length || 0,
       attachments_binary: emailData.attachments_binary ? Object.keys(emailData.attachments_binary).map(fileName => ({
         fileName: fileName,
         contentLength: emailData.attachments_binary[fileName] ? emailData.attachments_binary[fileName].length : 0
       })) : undefined
     };
-    console.log(`📧 [SendPulse] Enviando email com payload:`, JSON.stringify(logData, null, 2));
+    console.log(`📧 [SendPulse] Payload do email de conclusão:`, JSON.stringify(logData, null, 2));
 
     return new Promise((resolve, reject) => {
       sendpulse.smtpSendMail((response) => {
@@ -434,34 +502,51 @@ Portal Certidão
                         response?.error_code || 
                         (response?.error_code && response.error_code !== 200 && response.error_code !== 0) ||
                         (response?.message && (
-                          response.message.includes('not valid') ||
-                          response.message.includes('error') ||
-                          response.message.includes('Error') ||
-                          response.message.includes('Interval server error') ||
-                          response.message.includes('Internal server error')
+                          response.message.toLowerCase().includes('not valid') ||
+                          response.message.toLowerCase().includes('error') ||
+                          response.message.toLowerCase().includes('invalid') ||
+                          response.message.toLowerCase().includes('unauthorized') ||
+                          response.message.toLowerCase().includes('forbidden') ||
+                          response.message.toLowerCase().includes('sender') ||
+                          response.message.toLowerCase().includes('internal server error')
                         ));
         
         if (hasError) {
           const errorMessage = response.message || response.error || 'Erro desconhecido ao enviar email';
           const errorCode = response.error_code || 'N/A';
-          console.error(`❌ [SendPulse] Erro ao enviar email de conclusão:`, {
-            message: errorMessage,
-            error_code: errorCode,
-            fullResponse: response
-          });
+          
+          console.error(`❌ [SendPulse] Erro ao enviar email de conclusão:`);
+          console.error(`   Código: ${errorCode}`);
+          console.error(`   Mensagem: ${errorMessage}`);
+          console.error(`   Resposta completa:`, JSON.stringify(response, null, 2));
+          
+          let userFriendlyError = errorMessage;
+          if (errorMessage.toLowerCase().includes('sender') || 
+              errorMessage.toLowerCase().includes('not valid') ||
+              errorMessage.toLowerCase().includes('unauthorized')) {
+            userFriendlyError = `Email remetente "${senderEmail}" não está verificado no SendPulse. Verifique se o email está verificado na sua conta SendPulse.`;
+          } else if (errorMessage.toLowerCase().includes('argument email missing') ||
+                     errorMessage.toLowerCase().includes('invalid')) {
+            userFriendlyError = 'Estrutura do email inválida. Verifique a configuração.';
+          }
           
           // Se o erro for relacionado a anexo muito grande, tentar enviar sem anexo
-          if (errorMessage.includes('server error') && emailData.attachments_binary && Object.keys(emailData.attachments_binary).length > 0) {
+          if (errorMessage.toLowerCase().includes('server error') && emailData.attachments_binary && Object.keys(emailData.attachments_binary).length > 0) {
             console.log(`⚠️ [SendPulse] Tentando reenviar sem anexo devido a erro do servidor...`);
             const emailDataWithoutAttachment = { ...emailData };
             delete emailDataWithoutAttachment.attachments_binary;
             
             sendpulse.smtpSendMail((retryResponse) => {
-              if (retryResponse?.is_error || retryResponse?.error_code) {
+              console.log(`📧 [SendPulse] Resposta do retry (sem anexo):`, JSON.stringify(retryResponse, null, 2));
+              
+              const retryHasError = retryResponse?.is_error || retryResponse?.error_code;
+              if (retryHasError) {
                 resolve({
                   success: false,
                   error: `Erro original: ${errorMessage}. Tentativa sem anexo também falhou: ${retryResponse.message || retryResponse.error}`,
-                  email: email
+                  email: email,
+                  errorCode: retryResponse.error_code || 'N/A',
+                  details: retryResponse
                 });
               } else {
                 console.log(`✅ [SendPulse] Email enviado com sucesso sem anexo`);
@@ -478,16 +563,19 @@ Portal Certidão
           
           resolve({
             success: false,
-            error: errorMessage,
+            error: userFriendlyError,
             errorCode: errorCode,
-            email: email
+            email: email,
+            details: response
           });
         } else {
           console.log(`✅ [SendPulse] Email de conclusão enviado com sucesso para ${email}`);
+          console.log(`✅ [SendPulse] Message ID: ${response?.id || response?.result?.id || response?.data?.id || 'N/A'}`);
           resolve({
             success: true,
-            messageId: response?.id || 'N/A',
-            email: email
+            messageId: response?.id || response?.result?.id || response?.data?.id || 'N/A',
+            email: email,
+            response: response
           });
         }
       }, emailData);
@@ -522,9 +610,9 @@ async function sendEmail({ to, subject, html, from, cc, bcc }) {
   const ccArray = cc ? (Array.isArray(cc) ? cc : [cc]) : [];
   const bccArray = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
   
-  // Remetente padrão
-  const fromEmail = from?.email || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
-  const fromName = from?.name || 'Portal Certidão';
+  // Remetente padrão - usar SENDPULSE_SENDER_EMAIL que é o email verificado no SendPulse
+  const fromEmail = from?.email || process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
+  const fromName = from?.name || process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
   
   const emailData = {
     subject: subject,
@@ -543,32 +631,64 @@ async function sendEmail({ to, subject, html, from, cc, bcc }) {
   };
   
   console.log(`📧 [SendPulse] Enviando email genérico para: ${toArray.join(', ')}`);
+  console.log(`📧 [SendPulse] Remetente: ${fromEmail} (${fromName})`);
+  console.log(`📧 [SendPulse] Assunto: ${subject}`);
   
   return new Promise((resolve, reject) => {
     sendpulse.smtpSendMail((response) => {
+      // Log completo da resposta para debug
+      console.log(`📧 [SendPulse] Resposta completa:`, JSON.stringify(response, null, 2));
+      
       const hasError = response?.is_error || 
                       response?.error_code || 
                       (response?.error_code && response.error_code !== 200 && response.error_code !== 0) ||
                       (response?.message && (
-                        response.message.includes('not valid') ||
-                        response.message.includes('error') ||
-                        response.message.includes('Error')
+                        response.message.toLowerCase().includes('not valid') ||
+                        response.message.toLowerCase().includes('error') ||
+                        response.message.toLowerCase().includes('invalid') ||
+                        response.message.toLowerCase().includes('unauthorized') ||
+                        response.message.toLowerCase().includes('forbidden')
                       ));
       
       if (hasError) {
         const errorMessage = response.message || response.error || 'Erro desconhecido ao enviar email';
         console.error(`❌ [SendPulse] Erro ao enviar email:`, errorMessage);
+        console.error(`❌ [SendPulse] Código de erro:`, response.error_code);
+        console.error(`❌ [SendPulse] Resposta completa:`, JSON.stringify(response, null, 2));
         resolve({
           success: false,
           error: errorMessage,
-          errorCode: response.error_code
+          errorCode: response.error_code,
+          fullResponse: response
         });
       } else {
-        console.log(`✅ [SendPulse] Email enviado com sucesso`);
-        resolve({
-          success: true,
-          messageId: response?.id || 'N/A'
-        });
+        // Verificar se a resposta indica sucesso (aceito pelo SendPulse)
+        // O SendPulse pode retornar sucesso mesmo que a entrega final ainda não tenha ocorrido
+        const messageId = response?.id || response?.result?.id || response?.data?.id || null;
+        const isAccepted = messageId !== null || 
+                          response?.result === true || 
+                          (response?.error_code === undefined && !response?.is_error);
+        
+        if (isAccepted) {
+          console.log(`✅ [SendPulse] Email aceito pelo SendPulse`);
+          console.log(`✅ [SendPulse] Message ID: ${messageId || 'N/A'}`);
+          console.log(`✅ [SendPulse] Nota: A entrega final pode levar alguns minutos e será atualizada no painel do SendPulse`);
+          resolve({
+            success: true,
+            messageId: messageId || 'N/A',
+            fullResponse: response,
+            status: 'accepted' // Aceito pelo SendPulse, aguardando entrega
+          });
+        } else {
+          // Resposta ambígua - logar para investigação
+          console.warn(`⚠️ [SendPulse] Resposta ambígua do SendPulse:`, JSON.stringify(response, null, 2));
+          resolve({
+            success: false,
+            error: 'Resposta ambígua do SendPulse',
+            errorCode: response?.error_code,
+            fullResponse: response
+          });
+        }
       }
     }, emailData);
   });

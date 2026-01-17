@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { pushDL } from '@/lib/dataLayer';
+import { getUtmCampaign } from '@/lib/funnelTracker';
 import SEOHead from '@/components/SEOHead';
 
 // Whitelist de eventos permitidos
@@ -57,6 +58,9 @@ const EventProxy = () => {
     // Marcar como enviado
     sessionStorage.setItem(storageKey, 'true');
     
+    // Recuperar utm_campaign do localStorage ou URL
+    const utmCampaign = getUtmCampaign();
+    
     // Disparar evento com dados extras
     pushDL(eventType, {
       funnel_step: EVENT_TO_STEP[eventType] || eventType,
@@ -67,7 +71,9 @@ const EventProxy = () => {
       // Dados do ticket para payment_completed
       ticketCodigo: codigo || undefined,
       plano: planoId || undefined,
-      tipoCertidao: tipo || undefined
+      tipoCertidao: tipo || undefined,
+      // Incluir utm_campaign se disponível
+      ...(utmCampaign && { utm_campaign: utmCampaign })
     });
     
     // Redirecionar após disparar evento

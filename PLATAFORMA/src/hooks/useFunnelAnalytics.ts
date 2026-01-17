@@ -296,6 +296,41 @@ export function useFunnelAnalytics() {
     }
   }, [currentUser, fetchAnalytics, fetchCampaigns]);
 
+  const fetchValidation = useCallback(async (params: {
+    date_from?: string;
+    date_to?: string;
+  } = {}) => {
+    if (!currentUser) return null;
+
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.date_from) queryParams.set('date_from', params.date_from);
+      if (params.date_to) queryParams.set('date_to', params.date_to);
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (SYNC_SERVER_API_KEY) {
+        headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      }
+
+      const response = await fetch(
+        `${SYNC_SERVER_URL}/funnel-validation?${queryParams.toString()}`,
+        { headers }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar validação: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (err: any) {
+      console.error('Erro ao buscar validação:', err);
+      throw err;
+    }
+  }, [currentUser]);
+
   return {
     analytics,
     campaigns,
@@ -303,7 +338,8 @@ export function useFunnelAnalytics() {
     error,
     fetchAnalytics,
     fetchCampaigns,
-    syncGoogleAds
+    syncGoogleAds,
+    fetchValidation
   };
 }
 

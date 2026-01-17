@@ -140,6 +140,26 @@ server {
 }
 EOF
 
+# Configuração PORTAL_ACESSO
+sudo tee /etc/nginx/sites-available/portalcacesso.online > /dev/null << 'EOF'
+server {
+    listen 80;
+    server_name www.portalcacesso.online portalcacesso.online portalacesso.online;
+    
+    root /var/www/portal-acesso/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
+}
+EOF
+
 # Configuração API
 sudo tee /etc/nginx/sites-available/api.portalcertidao.org > /dev/null << 'EOF'
 server {
@@ -166,6 +186,7 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/plataforma.portalcertidao.org /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/solicite.link /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/portalcacesso.online /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/api.portalcertidao.org /etc/nginx/sites-enabled/
 
 # Remover site padrão
@@ -188,6 +209,7 @@ sudo apt-get install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d www.portalcertidao.org -d portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org
 sudo certbot --nginx -d plataforma.portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org
 sudo certbot --nginx -d www.solicite.link -d solicite.link --non-interactive --agree-tos --email contato@portalcertidao.org
+sudo certbot --nginx -d www.portalcacesso.online -d portalcacesso.online -d portalacesso.online --non-interactive --agree-tos --email contato@portalcertidao.org
 sudo certbot --nginx -d api.portalcertidao.org --non-interactive --agree-tos --email contato@portalcertidao.org
 ```
 
@@ -308,6 +330,7 @@ pm2 logs sync-server
 ## 🎯 Pronto!
 
 Após executar todos os passos, seu sistema estará em produção! 🚀
+
 
 
 

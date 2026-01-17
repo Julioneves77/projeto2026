@@ -1,0 +1,30 @@
+2026-01-15T12:22:35: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-15T12:22:35: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-15T12:22:35:   status: 403,
+2026-01-15T12:22:35:   statusText: 'Forbidden',
+2026-01-15T12:22:35:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-15T12:22:35: }
+2026-01-15T12:23:35: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-15T12:23:35: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-15T12:23:35:   status: 403,
+2026-01-15T12:23:35:   statusText: 'Forbidden',
+2026-01-15T12:23:35:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-15T12:23:35: }
+2026-01-15T12:24:37: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-15T12:24:37: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-15T12:24:37:   status: 403,
+2026-01-15T12:24:37:   statusText: 'Forbidden',
+2026-01-15T12:24:37:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-15T12:24:37: }
+2026-01-15T12:24:45: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-15T12:24:45: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-15T12:24:45:   status: 403,
+2026-01-15T12:24:45:   statusText: 'Forbidden',
+2026-01-15T12:24:45:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-15T12:24:45: }
+2026-01-15T12:25:25: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-15T12:25:25: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-15T12:25:25:   status: 403,
+2026-01-15T12:25:25:   statusText: 'Forbidden',
+2026-01-15T12:25:25:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-15T12:25:25: }

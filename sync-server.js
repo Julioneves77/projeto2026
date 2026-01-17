@@ -18,12 +18,26 @@ const logger = require('./utils/logger');
 const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
 const os = require('os');
 
+// Inicializar banco de dados do funil (se feature flag estiver habilitada)
+let funnelDatabase = null;
+if (process.env.COLLECTOR_ENABLED !== 'false') {
+  try {
+    const funnelDb = require('./services/funnelDatabase');
+    funnelDatabase = funnelDb;
+    funnelDb.initDatabase();
+    console.log('✅ [SYNC] Banco de dados do funil inicializado');
+  } catch (error) {
+    console.error('⚠️ [SYNC] Erro ao inicializar banco de dados do funil:', error.message);
+  }
+}
+
 const app = express();
 
 // Armazenar conexões SSE ativas para métricas do sistema
 const sseClients = new Set();
 const PORT = process.env.PORT || 3001;
 const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
+const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
 const COPIES_FILE = path.join(__dirname, 'copies-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
@@ -301,6 +315,56 @@ app.get('/system/capacity', authenticateRequest, (req, res) => {
   }
 });
 
+// GET /system/email/health - Health check do serviço de email (SendPulse)
+app.get('/system/email/health', authenticateRequest, (req, res) => {
+  try {
+    const SENDPULSE_CLIENT_ID = process.env.SENDPULSE_CLIENT_ID;
+    const SENDPULSE_CLIENT_SECRET = process.env.SENDPULSE_CLIENT_SECRET;
+    const SENDPULSE_SENDER_EMAIL = process.env.SENDPULSE_SENDER_EMAIL;
+    
+    const isConfigured = !!(SENDPULSE_CLIENT_ID && SENDPULSE_CLIENT_SECRET && SENDPULSE_SENDER_EMAIL);
+    
+    res.json({
+      status: isConfigured ? 'ok' : 'not_configured',
+      service: 'SendPulse',
+      configured: isConfigured,
+      timestamp: new Date().toISOString(),
+      ...(isConfigured ? {} : { message: 'Serviço de email não configurado' })
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /system/email/health' });
+    res.status(500).json({ 
+      status: 'error',
+      error: 'Erro ao verificar status do serviço de email' 
+    });
+  }
+});
+
+// GET /system/whatsapp/health - Health check do serviço de WhatsApp (Zap API)
+app.get('/system/whatsapp/health', authenticateRequest, (req, res) => {
+  try {
+    const ZAP_API_URL = process.env.ZAP_API_URL;
+    const ZAP_API_KEY = process.env.ZAP_API_KEY;
+    const ZAP_CLIENT_TOKEN = process.env.ZAP_CLIENT_TOKEN;
+    
+    const isConfigured = !!(ZAP_API_URL && ZAP_API_KEY && ZAP_CLIENT_TOKEN);
+    
+    res.json({
+      status: isConfigured ? 'ok' : 'not_configured',
+      service: 'Zap API',
+      configured: isConfigured,
+      timestamp: new Date().toISOString(),
+      ...(isConfigured ? {} : { message: 'Serviço de WhatsApp não configurado' })
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /system/whatsapp/health' });
+    res.status(500).json({ 
+      status: 'error',
+      error: 'Erro ao verificar status do serviço de WhatsApp' 
+    });
+  }
+});
+
 // GET /system/capacity/stream - SSE para métricas em tempo real
 app.get('/system/capacity/stream', authenticateRequest, (req, res) => {
   logger.info('SSE /system/capacity/stream - Cliente conectado', { ip: req.ip });
@@ -462,7 +526,22 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     }
     
     if (!customer || !customer.name || !customer.email || !customer.document_number) {
-      return res.status(400).json({ error: 'Dados do cliente incompletos' });
+      logger.warn('Dados do cliente incompletos', { 
+        hasCustomer: !!customer,
+        hasName: !!customer?.name,
+        hasEmail: !!customer?.email,
+        hasDocument: !!customer?.document_number,
+        customer: customer
+      });
+      return res.status(400).json({ 
+        error: 'Dados do cliente incompletos',
+        details: 'Nome, email e documento são obrigatórios',
+        received: {
+          hasName: !!customer?.name,
+          hasEmail: !!customer?.email,
+          hasDocument: !!customer?.document_number
+        }
+      });
     }
     
     // Verificar se Pagar.me está configurado
@@ -476,6 +555,22 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     const docNumber = (customer.document_number ?? '').toString().replace(/\D/g, '');
     const phoneDDD = customer.phone?.ddd ? customer.phone.ddd.toString() : '11';
     const phoneNumber = customer.phone?.number ? customer.phone.number.toString() : '999999999';
+
+    // Validar email (bloquear caracteres especiais inválidos)
+    const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}$/;
+    const email = (customer.email || '').trim();
+    const emailHasConsecutiveDots = email.includes('..');
+    const [emailLocal] = email.split('@');
+    const emailLocalInvalid = emailLocal ? (emailLocal.startsWith('.') || emailLocal.endsWith('.')) : true;
+    if (!email || !emailRegex.test(email) || emailHasConsecutiveDots || emailLocalInvalid) {
+      logger.warn('Email inválido no pedido PIX', { 
+        email,
+        reason: 'invalid_format_or_special_chars'
+      });
+      return res.status(400).json({ 
+        error: 'Email inválido. Remova caracteres especiais e verifique o formato.'
+      });
+    }
 
     // Gerar code único para o pedido
     const orderCode = metadata?.ticket_id || metadata?.ticket_code || `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -493,7 +588,7 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       }],
       customer: {
         name: customer.name,
-        email: customer.email,
+        email: email, // Email validado
         type: customerType,
         document: docNumber,
         phones: {
@@ -540,23 +635,49 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
     
     const order = pagarmeResponse.data;
     
+    // Log completo da resposta para debug
+    console.log('📦 [Pagar.me API v5] Resposta completa da API:', JSON.stringify(order, null, 2).substring(0, 2000));
+    
     // Extrair dados do charge/transaction
     const charge = order.charges?.[0];
     const lastTransaction = charge?.last_transaction;
     
+    // Log detalhado da resposta completa
     console.log('✅ [Pagar.me API v5] Pedido criado:', {
       order_id: order.id,
       code: order.code,
       status: order.status,
       charge_id: charge?.id,
       charge_status: charge?.status,
-      qr_code_url: lastTransaction?.qr_code_url ? 'Gerado' : 'Não gerado'
+      hasLastTransaction: !!lastTransaction,
+      lastTransactionKeys: lastTransaction ? Object.keys(lastTransaction) : [],
+      qr_code: lastTransaction?.qr_code ? (lastTransaction.qr_code.substring(0, 50) + '...') : 'Não gerado',
+      qr_code_url: lastTransaction?.qr_code_url || 'Não gerado',
+      qr_code_length: lastTransaction?.qr_code?.length || 0,
+      expires_at: lastTransaction?.expires_at || 'Não definido'
     });
+    
+    // Verificar se temos QR Code
+    if (!lastTransaction?.qr_code && !lastTransaction?.qr_code_url) {
+      console.error('❌ [Pagar.me API v5] QR Code não encontrado na resposta!', {
+        order: order.id,
+        charge: charge?.id,
+        lastTransaction: lastTransaction ? Object.keys(lastTransaction) : 'null',
+        fullCharge: charge ? JSON.stringify(charge, null, 2).substring(0, 1000) : 'null',
+        fullResponse: JSON.stringify(order, null, 2).substring(0, 2000)
+      });
+      
+      // Tentar buscar em outras estruturas possíveis
+      if (charge) {
+        console.log('🔍 [Pagar.me API v5] Tentando encontrar QR Code em outras estruturas...');
+        console.log('🔍 Charge completo:', JSON.stringify(charge, null, 2).substring(0, 1000));
+      }
+    }
     
     // ============================================
     // RESPOSTA - Mapeada para formato do frontend
     // ============================================
-    res.json({
+    const responseData = {
       id: order.id,
       external_id: order.code,
       order_id: order.id,
@@ -564,14 +685,26 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       status: order.status,
       amount: order.amount,
       payment_method: 'pix',
-      // PIX data da API v5
+      // PIX data da API v5 - IMPORTANTE: usar qr_code (string completa) e qr_code_url (URL da imagem)
       pix_qr_code: lastTransaction?.qr_code || null,
       pix_qr_code_url: lastTransaction?.qr_code_url || null,
       pix_expiration_date: lastTransaction?.expires_at || null,
       // Campos legados para compatibilidade
       transaction_id: lastTransaction?.id,
       metadata: order.metadata || metadataValue
+    };
+    
+    // Log da resposta que será enviada
+    console.log('📤 [Pagar.me API v5] Resposta enviada ao frontend:', {
+      id: responseData.id,
+      status: responseData.status,
+      has_pix_qr_code: !!responseData.pix_qr_code,
+      pix_qr_code_length: responseData.pix_qr_code?.length || 0,
+      has_pix_qr_code_url: !!responseData.pix_qr_code_url,
+      pix_qr_code_url: responseData.pix_qr_code_url || 'Não disponível'
     });
+    
+    res.json(responseData);
     
   } catch (error) {
     logger.logError(error, {
@@ -653,15 +786,19 @@ app.get('/transactions/:id', authenticateRequest, async (req, res) => {
     
     // Mapear resposta para formato compatível
     if (isOrder || data.charges) {
-      // É um Order
+      // É um Order - IMPORTANTE: verificar status do Charge, não do Order
       const charge = data.charges?.[0];
       const lastTransaction = charge?.last_transaction;
+      
+      // Status do Charge é o que importa para pagamento PIX
+      // Order pode estar "paid" mas Charge ainda "pending_payment"
+      const chargeStatus = charge?.status || data.status;
       
       res.json({
         id: data.id,
         order_id: data.id,
         charge_id: charge?.id,
-        status: data.status,
+        status: chargeStatus, // Usar status do Charge, não do Order
         amount: data.amount,
         payment_method: charge?.payment_method || 'pix',
         pix_qr_code: lastTransaction?.qr_code || null,
@@ -670,14 +807,14 @@ app.get('/transactions/:id', authenticateRequest, async (req, res) => {
         metadata: data.metadata || {}
       });
     } else {
-      // É um Charge
+      // É um Charge - usar status direto do Charge
       const lastTransaction = data.last_transaction;
       
       res.json({
         id: data.id,
         charge_id: data.id,
         order_id: data.order?.id,
-        status: data.status,
+        status: data.status, // Status do Charge já está correto
         amount: data.amount,
         payment_method: data.payment_method || 'pix',
         pix_qr_code: lastTransaction?.qr_code || null,
@@ -761,8 +898,76 @@ app.post('/upload', uploadLimiter, async (req, res) => {
 
 // Inicializar arquivo de tickets se não existir
 if (!fs.existsSync(TICKETS_FILE)) {
-  fs.writeFileSync(TICKETS_FILE, JSON.stringify([]));
-  console.log('📁 Arquivo de tickets criado:', TICKETS_FILE);
+  // Tentar restaurar do backup mais recente antes de criar novo arquivo
+  try {
+    const backupDir = path.join(__dirname, 'backups');
+    if (fs.existsSync(backupDir)) {
+      const backups = fs.readdirSync(backupDir)
+        .filter(f => f.startsWith('tickets-data-') && f.endsWith('.json'))
+        .map(f => ({
+          name: f,
+          path: path.join(backupDir, f),
+          time: fs.statSync(path.join(backupDir, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time);
+      
+      if (backups.length > 0) {
+        const latestBackup = backups[0];
+        console.log(`🔄 [RESTORE] Tentando restaurar de backup: ${latestBackup.name}`);
+        fs.copyFileSync(latestBackup.path, TICKETS_FILE);
+        const restoredTickets = readTickets();
+        console.log(`✅ [RESTORE] Restaurados ${restoredTickets.length} tickets do backup`);
+        logger.info(`Restaurados ${restoredTickets.length} tickets do backup ${latestBackup.name}`);
+      } else {
+        fs.writeFileSync(TICKETS_FILE, JSON.stringify([]));
+        console.log('📁 Arquivo de tickets criado (sem backup disponível):', TICKETS_FILE);
+      }
+    } else {
+      fs.writeFileSync(TICKETS_FILE, JSON.stringify([]));
+      console.log('📁 Arquivo de tickets criado:', TICKETS_FILE);
+    }
+  } catch (error) {
+    console.error('❌ [RESTORE] Erro ao restaurar backup:', error);
+    fs.writeFileSync(TICKETS_FILE, JSON.stringify([]));
+    console.log('📁 Arquivo de tickets criado (após erro na restauração):', TICKETS_FILE);
+  }
+}
+
+// Inicializar arquivo de contact-messages se não existir
+if (!fs.existsSync(CONTACT_MESSAGES_FILE)) {
+  // Tentar restaurar do backup mais recente antes de criar novo arquivo
+  try {
+    const backupDir = path.join(__dirname, 'backups');
+    if (fs.existsSync(backupDir)) {
+      const backups = fs.readdirSync(backupDir)
+        .filter(f => f.startsWith('contact-messages-') && f.endsWith('.json'))
+        .map(f => ({
+          name: f,
+          path: path.join(backupDir, f),
+          time: fs.statSync(path.join(backupDir, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time);
+      
+      if (backups.length > 0) {
+        const latestBackup = backups[0];
+        console.log(`🔄 [RESTORE CONTACT] Tentando restaurar de backup: ${latestBackup.name}`);
+        fs.copyFileSync(latestBackup.path, CONTACT_MESSAGES_FILE);
+        const restoredMessages = readContactMessages();
+        console.log(`✅ [RESTORE CONTACT] Restauradas ${restoredMessages.length} mensagens do backup`);
+        logger.info(`Restauradas ${restoredMessages.length} mensagens do backup ${latestBackup.name}`);
+      } else {
+        fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify([]));
+        console.log('📁 Arquivo de contact-messages criado (sem backup disponível):', CONTACT_MESSAGES_FILE);
+      }
+    } else {
+      fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify([]));
+      console.log('📁 Arquivo de contact-messages criado:', CONTACT_MESSAGES_FILE);
+    }
+  } catch (error) {
+    console.error('❌ [RESTORE CONTACT] Erro ao restaurar backup:', error);
+    fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify([]));
+    console.log('📁 Arquivo de contact-messages criado (após erro na restauração):', CONTACT_MESSAGES_FILE);
+  }
 }
 
 // Função auxiliar para ler tickets
@@ -776,12 +981,147 @@ function readTickets() {
   }
 }
 
+// Função genérica para limpar backups por limite de espaço
+// Remove backups mais antigos quando o total ultrapassar maxSizeBytes
+function cleanupBackupsBySize(backupDir, prefix, maxSizeBytes) {
+  try {
+    if (!fs.existsSync(backupDir)) {
+      return;
+    }
+
+    // Listar todos os backups com o prefixo especificado
+    const backups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith(prefix) && f.endsWith('.json'))
+      .map(f => {
+        const filePath = path.join(backupDir, f);
+        const stats = fs.statSync(filePath);
+        return {
+          name: f,
+          path: filePath,
+          size: stats.size,
+          time: stats.mtime.getTime()
+        };
+      })
+      .sort((a, b) => a.time - b.time); // Ordenar do mais antigo para o mais recente
+
+    // Calcular tamanho total
+    let totalSize = backups.reduce((sum, backup) => sum + backup.size, 0);
+
+    // Se ultrapassar o limite, remover backups mais antigos até ficar abaixo
+    if (totalSize > maxSizeBytes) {
+      console.log(`📊 [BACKUP] Tamanho total de backups ${prefix}: ${(totalSize / 1024 / 1024).toFixed(2)}MB (limite: ${(maxSizeBytes / 1024 / 1024).toFixed(2)}MB)`);
+      
+      let removedCount = 0;
+      let removedSize = 0;
+      
+      for (const backup of backups) {
+        if (totalSize <= maxSizeBytes) {
+          break; // Já está abaixo do limite
+        }
+        
+        fs.unlinkSync(backup.path);
+        totalSize -= backup.size;
+        removedSize += backup.size;
+        removedCount++;
+        console.log(`🗑️ [BACKUP] Removendo backup antigo para liberar espaço: ${backup.name} (${(backup.size / 1024 / 1024).toFixed(2)}MB)`);
+      }
+      
+      if (removedCount > 0) {
+        console.log(`✅ [BACKUP] Removidos ${removedCount} backups antigos. Espaço liberado: ${(removedSize / 1024 / 1024).toFixed(2)}MB. Tamanho atual: ${(totalSize / 1024 / 1024).toFixed(2)}MB`);
+      }
+    }
+  } catch (error) {
+    console.error(`⚠️ [BACKUP] Erro ao limpar backups por tamanho (${prefix}):`, error);
+    logger.logError(error, { function: 'cleanupBackupsBySize', prefix });
+  }
+}
+
+// Função auxiliar para fazer backup antes de salvar
+function backupTicketsFile() {
+  try {
+    if (fs.existsSync(TICKETS_FILE)) {
+      const backupDir = path.join(__dirname, 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      
+      // Ler e validar arquivo antes de fazer backup
+      const fileData = fs.readFileSync(TICKETS_FILE, 'utf8');
+      let tickets;
+      try {
+        tickets = JSON.parse(fileData);
+        if (!Array.isArray(tickets)) {
+          console.error('⚠️ [BACKUP] Arquivo de tickets não é um array válido, pulando backup');
+          return false;
+        }
+      } catch (parseError) {
+        console.error('⚠️ [BACKUP] Erro ao parsear arquivo de tickets para backup:', parseError);
+        return false;
+      }
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupFile = path.join(backupDir, `tickets-data-${timestamp}.json`);
+      
+      // Criar backup com verificação
+      fs.writeFileSync(backupFile, fileData, 'utf8');
+      
+      // Verificar se backup foi criado corretamente
+      if (!fs.existsSync(backupFile)) {
+        console.error('❌ [BACKUP] ERRO: Backup não foi criado!');
+        return false;
+      }
+      
+      const backupData = fs.readFileSync(backupFile, 'utf8');
+      const backupTickets = JSON.parse(backupData);
+      
+      if (backupTickets.length !== tickets.length) {
+        console.error(`❌ [BACKUP] ERRO: Backup não corresponde ao arquivo original! Original: ${tickets.length}, Backup: ${backupTickets.length}`);
+        fs.unlinkSync(backupFile); // Remover backup inválido
+        return false;
+      }
+      
+      console.log(`✅ [BACKUP] Backup criado com sucesso: ${backupFile.split('/').pop()} (${tickets.length} tickets)`);
+      
+      // Limpar backups antigos se ultrapassar 1GB (1073741824 bytes)
+      const MAX_BACKUP_SIZE = 1073741824; // 1GB
+      cleanupBackupsBySize(backupDir, 'tickets-data-', MAX_BACKUP_SIZE);
+      
+      return true;
+    }
+  } catch (error) {
+    console.error('⚠️ [BACKUP] Erro ao criar backup:', error);
+    logger.logError(error, { function: 'backupTicketsFile' });
+  }
+  return false;
+}
+
 // Função auxiliar para salvar tickets
 function saveTickets(tickets) {
   try {
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2));
+    // Fazer backup antes de salvar
+    backupTicketsFile();
+    
+    const jsonData = JSON.stringify(tickets, null, 2);
+    fs.writeFileSync(TICKETS_FILE, jsonData, 'utf8');
+    
+    // Verificar se o arquivo foi realmente escrito
+    const verifyData = fs.readFileSync(TICKETS_FILE, 'utf8');
+    const verifyTickets = JSON.parse(verifyData);
+    
+    if (verifyTickets.length !== tickets.length) {
+      console.error(`❌ [SYNC] ERRO CRÍTICO: Arquivo não foi salvo corretamente! Esperado: ${tickets.length}, Salvo: ${verifyTickets.length}`);
+      logger.logError(new Error(`Arquivo não foi salvo corretamente. Esperado: ${tickets.length}, Salvo: ${verifyTickets.length}`), { 
+        function: 'saveTickets', 
+        expectedCount: tickets.length,
+        savedCount: verifyTickets.length
+      });
+      return false;
+    }
+    
+    console.log(`✅ [SYNC] Arquivo verificado: ${verifyTickets.length} tickets salvos corretamente`);
     return true;
   } catch (error) {
+    console.error(`❌ [SYNC] Erro ao salvar tickets:`, error);
     logger.logError(error, { function: 'saveTickets', ticketsCount: tickets.length });
     return false;
   }
@@ -796,9 +1136,9 @@ function saveTickets(tickets) {
 // - CONCLUIDO: apaga após 10 dias
 
 const TICKET_CLEANUP_RULES = {
-  'GERAL': 5,           // 5 dias
-  'EM_OPERACAO': 7,     // 7 dias
-  'CONCLUIDO': 10       // 10 dias
+  'GERAL': 30,          // 30 dias (aumentado de 5)
+  'EM_OPERACAO': 60,    // 60 dias (aumentado de 7)
+  'CONCLUIDO': 90       // 90 dias (aumentado de 10)
 };
 
 function cleanupOldTickets() {
@@ -853,13 +1193,62 @@ setInterval(() => {
   cleanupOldTickets();
 }, CLEANUP_INTERVAL);
 
+// Backup periódico mesmo sem mudanças (a cada 6 horas)
+// Garante que sempre temos um backup recente mesmo se não houver alterações
+const PERIODIC_BACKUP_INTERVAL = 6 * 60 * 60 * 1000; // 6 horas
+
+setInterval(() => {
+  console.log('💾 [BACKUP] Executando backup periódico...');
+  
+  // Backup de tickets
+  const backupResult = backupTicketsFile();
+  if (backupResult) {
+    const tickets = readTickets();
+    console.log(`✅ [BACKUP] Backup periódico de tickets concluído: ${tickets.length} tickets`);
+    logger.info(`Backup periódico de tickets concluído: ${tickets.length} tickets`);
+  } else {
+    console.error('❌ [BACKUP] Falha no backup periódico de tickets!');
+    logger.error('Falha no backup periódico de tickets');
+  }
+  
+  // Backup de contact-messages
+  const contactBackupResult = backupContactMessagesFile();
+  if (contactBackupResult) {
+    const messages = readContactMessages();
+    console.log(`✅ [BACKUP CONTACT] Backup periódico de mensagens concluído: ${messages.length} mensagens`);
+    logger.info(`Backup periódico de mensagens concluído: ${messages.length} mensagens`);
+  } else {
+    console.error('❌ [BACKUP CONTACT] Falha no backup periódico de mensagens!');
+    logger.error('Falha no backup periódico de mensagens');
+  }
+}, PERIODIC_BACKUP_INTERVAL);
+
+// Executar backup inicial após 1 minuto da inicialização
+setTimeout(() => {
+  console.log('💾 [BACKUP] Executando backup inicial...');
+  
+  // Backup inicial de tickets
+  const backupResult = backupTicketsFile();
+  if (backupResult) {
+    const tickets = readTickets();
+    console.log(`✅ [BACKUP] Backup inicial de tickets concluído: ${tickets.length} tickets`);
+  }
+  
+  // Backup inicial de contact-messages
+  const contactBackupResult = backupContactMessagesFile();
+  if (contactBackupResult) {
+    const messages = readContactMessages();
+    console.log(`✅ [BACKUP CONTACT] Backup inicial de mensagens concluído: ${messages.length} mensagens`);
+  }
+}, 60000); // 1 minuto
+
 // Executar limpeza inicial após 1 minuto do start
 setTimeout(() => {
   console.log('🧹 [CLEANUP] Executando limpeza inicial...');
   cleanupOldTickets();
 }, 60000);
 
-console.log('🧹 [CLEANUP] Limpeza automática configurada: GERAL=5d, EM_OPERACAO=7d, CONCLUIDO=10d');
+console.log('🧹 [CLEANUP] Limpeza automática configurada: GERAL=30d, EM_OPERACAO=60d, CONCLUIDO=90d');
 
 // GET /tickets - Listar todos os tickets
 app.get('/tickets', (req, res) => {
@@ -1384,9 +1773,6 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       });
     }
     
-    // Verificar tipo de serviço para decidir se envia WhatsApp
-    const shouldSendWhatsApp = ticket.prioridade === 'prioridade' || ticket.prioridade === 'premium';
-    
     // Verificar se já foi enviado anteriormente (prevenir duplicatas)
     // IMPORTANTE: Verificar apenas histórico de CONCLUSÃO recente (últimas 24 horas)
     // Permitir reenvio se passou muito tempo ou se houve erro
@@ -1435,7 +1821,7 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
     if (!FORCE_RESEND) {
       // Se ambos já foram enviados COM SUCESSO nas últimas 24h, retornar early
       // Mas permitir reenvio se passou mais de 24h ou se houve erro
-      if (shouldSendWhatsApp && jaEnviouEmailCompleto && jaEnviouWhatsAppCompleto) {
+      if (jaEnviouEmailCompleto && jaEnviouWhatsAppCompleto) {
         console.log(`⚠️ [SYNC] Notificações já foram enviadas com sucesso nas últimas 24h para ticket ${ticket.codigo}`);
         console.log(`⚠️ [SYNC] Para forçar reenvio, aguarde 24h ou limpe o histórico do ticket`);
         return res.json({
@@ -1447,18 +1833,8 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
         });
       }
       
-      // Se só email já foi enviado COM SUCESSO nas últimas 24h (tipo padrão), também retornar early
-      if (!shouldSendWhatsApp && jaEnviouEmailCompleto) {
-        console.log(`⚠️ [SYNC] Email já foi enviado com sucesso nas últimas 24h para ticket ${ticket.codigo}`);
-        console.log(`⚠️ [SYNC] Para forçar reenvio, aguarde 24h ou limpe o histórico do ticket`);
-        return res.json({
-          success: true,
-          message: 'Email já foi enviado nas últimas 24 horas',
-          email: { success: true, alreadySent: true },
-          whatsapp: { success: true, skipped: true, reason: 'Tipo de serviço padrão - apenas email enviado' },
-          ticketCodigo: ticket.codigo
-        });
-      }
+      // Se email já foi enviado mas WhatsApp não foi (ou vice-versa), continuar para enviar o que falta
+      // Não retornar early aqui para permitir envio do que ainda falta
     } else {
       console.log(`🔄 [SYNC] FORCE_RESEND ativado - ignorando verificação de duplicatas para permitir testes`);
     }
@@ -1523,33 +1899,28 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
         results.email = { success: false, error: 'Email não disponível' };
       }
       
-      // Enviar WhatsApp apenas se for prioridade ou premium (FORCE_RESEND ignora verificação)
-      if (shouldSendWhatsApp) {
-        if ((FORCE_RESEND || !jaEnviouWhatsAppCompleto) && ticket.telefone && ticket.telefone.trim()) {
-          // Validar formato de telefone antes de enviar
-          if (!validatePhone(ticket.telefone)) {
-            console.error(`❌ [SYNC] Telefone inválido para ticket ${ticket.codigo}: ${ticket.telefone}`);
-            results.whatsapp = { success: false, error: `Formato de telefone inválido: ${ticket.telefone}` };
-          } else {
-            console.log(`📱 [SYNC] Enviando WhatsApp de conclusão para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
-            try {
-              results.whatsapp = await zapApiService.sendCompletionWhatsApp(ticket, mensagemInteracao || '', anexoPreparado);
-              console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
-            } catch (error) {
-              logger.logError(error, { service: 'zapApiService', ticketCodigo: ticket.codigo });
-              results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
-            }
-          }
-        } else if (jaEnviouWhatsAppCompleto) {
-          console.log(`ℹ️ [SYNC] WhatsApp já foi enviado anteriormente para ticket ${ticket.codigo}`);
-          results.whatsapp = { success: true, alreadySent: true };
+      // Sempre enviar WhatsApp se houver telefone válido (FORCE_RESEND ignora verificação de duplicatas)
+      if ((FORCE_RESEND || !jaEnviouWhatsAppCompleto) && ticket.telefone && ticket.telefone.trim()) {
+        // Validar formato de telefone antes de enviar
+        if (!validatePhone(ticket.telefone)) {
+          console.error(`❌ [SYNC] Telefone inválido para ticket ${ticket.codigo}: ${ticket.telefone}`);
+          results.whatsapp = { success: false, error: `Formato de telefone inválido: ${ticket.telefone}` };
         } else {
-          console.log(`⚠️ [SYNC] Telefone não disponível para ticket ${ticket.codigo}`);
-          results.whatsapp = { success: false, error: 'Telefone não disponível' };
+          console.log(`📱 [SYNC] Enviando WhatsApp de conclusão para ${ticket.telefone} (Ticket: ${ticket.codigo})`);
+          try {
+            results.whatsapp = await zapApiService.sendCompletionWhatsApp(ticket, mensagemInteracao || '', anexoPreparado);
+            console.log(`📱 [SYNC] Resultado do WhatsApp:`, results.whatsapp);
+          } catch (error) {
+            logger.logError(error, { service: 'zapApiService', ticketCodigo: ticket.codigo });
+            results.whatsapp = { success: false, error: error.message || 'Erro ao enviar WhatsApp' };
+          }
         }
+      } else if (jaEnviouWhatsAppCompleto) {
+        console.log(`ℹ️ [SYNC] WhatsApp já foi enviado anteriormente para ticket ${ticket.codigo}`);
+        results.whatsapp = { success: true, alreadySent: true };
       } else {
-        console.log(`ℹ️ [SYNC] Tipo de serviço é 'padrao', WhatsApp não será enviado (Ticket: ${ticket.codigo})`);
-        results.whatsapp = { success: true, skipped: true, reason: 'Tipo de serviço padrão - apenas email enviado' };
+        console.log(`⚠️ [SYNC] Telefone não disponível para ticket ${ticket.codigo}`);
+        results.whatsapp = { success: false, error: 'Telefone não disponível' };
       }
       
       // Atualizar histórico do ticket com resultado dos envios (apenas se realmente enviou agora)
@@ -1784,6 +2155,37 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       return res.status(200).json({ received: true, processed: false, reason: 'Ticket já processado' });
     }
     
+    // Buscar funnel_id do ticket
+    let funnelId = null;
+    if (ticket.dadosFormulario && ticket.dadosFormulario.funnel_id) {
+      funnelId = ticket.dadosFormulario.funnel_id;
+    } else if (ticket.metadata && ticket.metadata.funnel_id) {
+      funnelId = ticket.metadata.funnel_id;
+    }
+
+    // Criar evento payment_confirmed se funnel_id disponível
+    if (funnelId && funnelDatabase) {
+      try {
+        funnelDatabase.insertEvent({
+          funnel_id: funnelId,
+          event_type: 'payment_confirmed',
+          ticket_id: ticketId,
+          timestamp: Date.now(),
+          metadata: {
+            ticket_codigo: ticket.codigo,
+            order_id: orderId,
+            order_code: orderCode
+          }
+        });
+        console.log('✅ [Pagar.me Webhook] Evento payment_confirmed criado para funnel_id:', funnelId);
+      } catch (error) {
+        console.error('⚠️ [Pagar.me Webhook] Erro ao criar evento payment_confirmed:', error);
+        // Não bloquear processamento do webhook se evento falhar
+      }
+    } else if (!funnelId) {
+      console.warn('⚠️ [Pagar.me Webhook] funnel_id não encontrado no ticket, evento payment_confirmed não criado');
+    }
+
     // Atualizar ticket para EM_OPERACAO
     const historico = ticket.historico || [];
     const now = new Date().toISOString();
@@ -1906,7 +2308,6 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
 // Endpoints de Mensagens de Contato (Suporte Email)
 // ============================================
 
-const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
 const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6LemYqorAAAAACIgB-Wv3TCak7n3N7JVFogR66BW';
 
 // Funções auxiliares para mensagens de contato
@@ -1921,11 +2322,92 @@ function readContactMessages() {
   return [];
 }
 
+// Função auxiliar para fazer backup de contact-messages antes de salvar
+function backupContactMessagesFile() {
+  try {
+    if (fs.existsSync(CONTACT_MESSAGES_FILE)) {
+      const backupDir = path.join(__dirname, 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      
+      // Ler e validar arquivo antes de fazer backup
+      const fileData = fs.readFileSync(CONTACT_MESSAGES_FILE, 'utf8');
+      let messages;
+      try {
+        messages = JSON.parse(fileData);
+        if (!Array.isArray(messages)) {
+          console.error('⚠️ [BACKUP CONTACT] Arquivo de mensagens não é um array válido, pulando backup');
+          return false;
+        }
+      } catch (parseError) {
+        console.error('⚠️ [BACKUP CONTACT] Erro ao parsear arquivo de mensagens para backup:', parseError);
+        return false;
+      }
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupFile = path.join(backupDir, `contact-messages-${timestamp}.json`);
+      
+      // Criar backup com verificação
+      fs.writeFileSync(backupFile, fileData, 'utf8');
+      
+      // Verificar se backup foi criado corretamente
+      if (!fs.existsSync(backupFile)) {
+        console.error('❌ [BACKUP CONTACT] ERRO: Backup não foi criado!');
+        return false;
+      }
+      
+      const backupData = fs.readFileSync(backupFile, 'utf8');
+      const backupMessages = JSON.parse(backupData);
+      
+      if (backupMessages.length !== messages.length) {
+        console.error(`❌ [BACKUP CONTACT] ERRO: Backup não corresponde ao arquivo original! Original: ${messages.length}, Backup: ${backupMessages.length}`);
+        fs.unlinkSync(backupFile); // Remover backup inválido
+        return false;
+      }
+      
+      console.log(`✅ [BACKUP CONTACT] Backup criado com sucesso: ${backupFile.split('/').pop()} (${messages.length} mensagens)`);
+      
+      // Limpar backups antigos se ultrapassar 1GB (1073741824 bytes)
+      const MAX_BACKUP_SIZE = 1073741824; // 1GB
+      cleanupBackupsBySize(backupDir, 'contact-messages-', MAX_BACKUP_SIZE);
+      
+      return true;
+    }
+  } catch (error) {
+    console.error('⚠️ [BACKUP CONTACT] Erro ao criar backup:', error);
+    logger.logError(error, { function: 'backupContactMessagesFile' });
+  }
+  return false;
+}
+
 function saveContactMessages(messages) {
   try {
+    // Fazer backup antes de salvar
+    backupContactMessagesFile();
+    
+    // Salvar arquivo
     fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify(messages, null, 2));
+    
+    // Verificar se arquivo foi escrito corretamente
+    if (fs.existsSync(CONTACT_MESSAGES_FILE)) {
+      const savedData = fs.readFileSync(CONTACT_MESSAGES_FILE, 'utf8');
+      const savedMessages = JSON.parse(savedData);
+      
+      if (savedMessages.length !== messages.length) {
+        console.error(`❌ [SAVE CONTACT] ERRO CRÍTICO: Arquivo não foi salvo corretamente! Esperado: ${messages.length}, Salvo: ${savedMessages.length}`);
+        logger.logError(new Error('Arquivo contact-messages.json não foi salvo corretamente'), {
+          function: 'saveContactMessages',
+          expected: messages.length,
+          saved: savedMessages.length
+        });
+      } else {
+        console.log(`✅ [SAVE CONTACT] Arquivo salvo com sucesso: ${messages.length} mensagens`);
+      }
+    }
   } catch (error) {
-    console.error('Erro ao salvar mensagens de contato:', error);
+    console.error('❌ [SAVE CONTACT] Erro ao salvar mensagens de contato:', error);
+    logger.logError(error, { function: 'saveContactMessages' });
   }
 }
 
@@ -1944,6 +2426,663 @@ async function validateRecaptcha(token) {
     return false;
   }
 }
+
+// ============================================
+// ENDPOINTS DO FUNIL (FUNNEL EVENTS)
+// ============================================
+
+// POST /funnel-events - Registrar evento do funil
+app.post('/funnel-events', express.json(), async (req, res) => {
+  // Verificar feature flag
+  if (process.env.COLLECTOR_ENABLED === 'false' || !funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Serviço desabilitado',
+      message: 'Coletor de eventos do funil está desabilitado'
+    });
+  }
+
+  try {
+    const {
+      funnel_id,
+      event_type,
+      utm_campaign,
+      utm_term,
+      domain,
+      path,
+      ticket_id,
+      metadata,
+      timestamp
+    } = req.body;
+
+    // Validações obrigatórias
+    if (!funnel_id) {
+      return res.status(400).json({ 
+        error: 'funnel_id é obrigatório' 
+      });
+    }
+
+    if (!event_type) {
+      return res.status(400).json({ 
+        error: 'event_type é obrigatório' 
+      });
+    }
+
+    // Lista de eventos permitidos
+    const allowedEvents = [
+      'links_view',
+      'links_cta_click',
+      'portal_view',
+      'form_start',
+      'form_submit_success',
+      'form_submit_error',
+      'pix_view',
+      'pix_initiated',
+      'payment_confirmed'
+    ];
+
+    if (!allowedEvents.includes(event_type)) {
+      return res.status(400).json({ 
+        error: 'event_type inválido',
+        message: `Evento deve ser um dos: ${allowedEvents.join(', ')}`
+      });
+    }
+
+    // Extrair domain e path da URL se não fornecidos
+    let finalDomain = domain;
+    let finalPath = path;
+    if (!finalDomain && req.headers.referer) {
+      try {
+        const url = new URL(req.headers.referer);
+        finalDomain = url.hostname;
+        finalPath = url.pathname;
+      } catch (e) {
+        // Ignorar erro de parsing
+      }
+    }
+
+    // Inserir evento
+    const eventId = funnelDatabase.insertEvent({
+      funnel_id,
+      event_type,
+      utm_campaign: utm_campaign || null,
+      utm_term: utm_term || null,
+      domain: finalDomain || null,
+      path: finalPath || null,
+      ticket_id: ticket_id || null,
+      metadata: metadata || null,
+      timestamp: timestamp || Date.now()
+    });
+
+    logger.info('Evento do funil registrado', {
+      event_id: eventId,
+      funnel_id,
+      event_type,
+      utm_campaign
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      event_id: eventId 
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /funnel-events' });
+    res.status(500).json({ 
+      error: 'Erro ao registrar evento',
+      message: error.message 
+    });
+  }
+});
+
+// GET /funnel-events - Buscar eventos do funil
+app.get('/funnel-events', authenticateRequest, (req, res) => {
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Serviço desabilitado',
+      message: 'Coletor de eventos do funil está desabilitado'
+    });
+  }
+
+  try {
+    const filters = {
+      funnel_id: req.query.funnel_id,
+      event_type: req.query.event_type,
+      utm_campaign: req.query.utm_campaign,
+      ticket_id: req.query.ticket_id,
+      date_from: req.query.date_from,
+      date_to: req.query.date_to
+    };
+
+    const events = funnelDatabase.getEvents(filters);
+    res.json(events);
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /funnel-events' });
+    res.status(500).json({ 
+      error: 'Erro ao buscar eventos',
+      message: error.message 
+    });
+  }
+});
+
+// GET /funnel-analytics - Calcular métricas agregadas do funil
+app.get('/funnel-analytics', authenticateRequest, (req, res) => {
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Serviço desabilitado',
+      message: 'Coletor de eventos do funil está desabilitado'
+    });
+  }
+
+  try {
+    const {
+      utm_campaign,
+      domain,
+      date_from,
+      date_to
+    } = req.query;
+
+    // Buscar eventos filtrados
+    const events = funnelDatabase.getEvents({
+      utm_campaign,
+      domain,
+      date_from,
+      date_to
+    });
+
+    // Determinar domain para buscar custos
+    // Se domain fornecido, usar ele. Caso contrário, tentar inferir dos eventos
+    let targetDomain = domain;
+    if (!targetDomain && events.length > 0) {
+      // Pegar domain mais comum dos eventos
+      const domainCounts = {};
+      events.forEach(e => {
+        if (e.domain) {
+          domainCounts[e.domain] = (domainCounts[e.domain] || 0) + 1;
+        }
+      });
+      const domains = Object.keys(domainCounts).sort((a, b) => domainCounts[b] - domainCounts[a]);
+      targetDomain = domains[0] || null;
+    }
+
+    // Buscar custos do Google Ads
+    // Se domain fornecido, buscar apenas campanhas desse domain
+    // Se utm_campaign fornecido, filtrar por ele também
+    let campaigns = [];
+    if (utm_campaign || targetDomain) {
+      const campaignFilters = {
+        date_from,
+        date_to
+      };
+      
+      if (targetDomain) {
+        // Buscar customer_id do domain
+        const customerId = funnelDatabase.getCustomerIdByDomain(targetDomain);
+        if (customerId) {
+          campaignFilters.customer_id = customerId;
+        } else {
+          // Se não há mapeamento, usar domain diretamente
+          campaignFilters.domain = targetDomain;
+        }
+      }
+      
+      campaigns = funnelDatabase.getCampaigns(campaignFilters);
+      
+      // Filtrar por utm_campaign se fornecido (comparar campaign_name com utm_campaign)
+      if (utm_campaign && campaigns.length > 0) {
+        campaigns = campaigns.filter(c => 
+          c.campaign_name === utm_campaign || 
+          c.campaign_id === utm_campaign
+        );
+      }
+    }
+
+    // Calcular métricas por evento
+    const eventCounts = {};
+    events.forEach(event => {
+      eventCounts[event.event_type] = (eventCounts[event.event_type] || 0) + 1;
+    });
+
+    // Calcular taxas de conversão
+    const linksView = eventCounts.links_view || 0;
+    const linksCtaClick = eventCounts.links_cta_click || 0;
+    const portalView = eventCounts.portal_view || 0;
+    const formStart = eventCounts.form_start || 0;
+    const formSubmitSuccess = eventCounts.form_submit_success || 0;
+    const pixView = eventCounts.pix_view || 0;
+    const pixInitiated = eventCounts.pix_initiated || 0;
+    const paymentConfirmed = eventCounts.payment_confirmed || 0;
+
+    // Calcular custos
+    let totalCost = 0;
+    if (campaigns.length > 0) {
+      totalCost = campaigns.reduce((sum, c) => sum + (c.cost_micros / 1000000), 0);
+    }
+
+    // Calcular métricas econômicas
+    const ticketPrice = 39.90;
+    const cpa = paymentConfirmed > 0 ? totalCost / paymentConfirmed : null;
+    const roi = paymentConfirmed > 0 && totalCost > 0 
+      ? (paymentConfirmed * ticketPrice) / totalCost 
+      : null;
+
+    // Calcular gasto sem conversão
+    const spentWithoutConversion = paymentConfirmed === 0 ? totalCost : 0;
+    const ticketsBurned = totalCost > 0 ? totalCost / ticketPrice : 0;
+
+    // Identificar gargalo (lógica simplificada - será melhorada no frontend)
+    let bottleneck = null;
+    if (totalCost > 0 && linksView === 0) {
+      bottleneck = 'TRÁFEGO';
+    } else if (linksView > 0 && linksCtaClick / linksView < 0.1) {
+      bottleneck = 'LINKS';
+    } else if (portalView > 0 && formStart / portalView < 0.3) {
+      bottleneck = 'PORTAL';
+    } else if (formStart > 0 && formSubmitSuccess / formStart < 0.5) {
+      bottleneck = 'FORMULÁRIO';
+    } else if (pixView > 0 && paymentConfirmed / pixView < 0.3) {
+      bottleneck = 'PIX';
+    }
+
+    // Calcular confiabilidade
+    const funnelsWithId = new Set(events.filter(e => e.funnel_id).map(e => e.funnel_id));
+    const funnelsWithCampaign = new Set(events.filter(e => e.utm_campaign).map(e => e.funnel_id));
+    const completeFunnels = Array.from(funnelsWithId).filter(id => funnelsWithCampaign.has(id));
+    
+    let reliability = 'BAIXA';
+    if (completeFunnels.length / Math.max(funnelsWithId.size, 1) > 0.8) {
+      reliability = 'ALTA';
+    } else if (funnelsWithId.size > 0 || funnelsWithCampaign.size > 0) {
+      reliability = 'MÉDIA';
+    }
+
+    res.json({
+      events: eventCounts,
+      conversion_rates: {
+        links_to_cta: linksView > 0 ? linksCtaClick / linksView : 0,
+        portal_to_form: portalView > 0 ? formStart / portalView : 0,
+        form_to_submit: formStart > 0 ? formSubmitSuccess / formStart : 0,
+        pix_to_payment: pixView > 0 ? paymentConfirmed / pixView : 0
+      },
+      costs: {
+        total: totalCost,
+        spent_without_conversion: spentWithoutConversion,
+        tickets_burned: ticketsBurned
+      },
+      metrics: {
+        cpa,
+        roi,
+        payments: paymentConfirmed,
+        ticket_price: ticketPrice
+      },
+      bottleneck,
+      reliability,
+      total_events: events.length,
+      domain: targetDomain || null,
+      campaigns_count: campaigns.length
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /funnel-analytics' });
+    res.status(500).json({ 
+      error: 'Erro ao calcular métricas',
+      message: error.message 
+    });
+  }
+});
+
+// GET /google-ads/validate - Validar configuração do Google Ads API
+app.get('/google-ads/validate', async (req, res) => {
+  try {
+    const validationScript = require('./scripts/validate-google-ads');
+    // Chamar main com exitOnComplete=false para não fazer exit e retornar apenas o relatório
+    const report = await validationScript.main(false);
+    
+    // Determinar status HTTP baseado no resultado
+    const statusCode = report.status === 'error' ? 500 : report.status === 'warning' ? 200 : 200;
+    
+    res.status(statusCode).json(report);
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /google-ads/validate' });
+    res.status(500).json({
+      status: 'error',
+      error: 'Erro ao executar validação',
+      message: error.message,
+      checks: {},
+      recommendations: ['Verifique os logs do servidor para mais detalhes'],
+      next_steps: []
+    });
+  }
+});
+
+// POST /google-ads/sync - Sincronizar campanhas do Google Ads
+app.post('/google-ads/sync', authenticateRequest, express.json(), async (req, res) => {
+  // Verificar feature flag
+  if (process.env.ADS_SYNC_ENABLED === 'false') {
+    return res.status(503).json({ 
+      error: 'Serviço desabilitado',
+      message: 'Sincronização de Google Ads está desabilitada'
+    });
+  }
+
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Banco de dados não disponível',
+      message: 'Banco de dados do funil não está inicializado'
+    });
+  }
+
+  try {
+    let {
+      customer_id,
+      mcc_id,
+      domain,
+      date_from,
+      date_to
+    } = req.body;
+
+    // Validações
+    if (!date_from || !date_to) {
+      return res.status(400).json({ 
+        error: 'date_from e date_to são obrigatórios',
+        message: 'Formato: YYYY-MM-DD'
+      });
+    }
+
+    // Validar formato de data
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date_from) || !dateRegex.test(date_to)) {
+      return res.status(400).json({ 
+        error: 'Formato de data inválido',
+        message: 'Use formato YYYY-MM-DD'
+      });
+    }
+
+    const googleAdsService = require('./services/googleAdsService');
+    let campaigns = [];
+    const domainMappings = {};
+
+    // Se domain fornecido, buscar customer_id do mapeamento
+    if (domain) {
+      const mappedCustomerId = funnelDatabase.getCustomerIdByDomain(domain);
+      if (mappedCustomerId) {
+        console.log(`🔗 [GoogleAds] Domain ${domain} mapeado para customer_id ${mappedCustomerId}`);
+        customer_id = mappedCustomerId;
+      } else {
+        return res.status(400).json({ 
+          error: 'Domain não mapeado',
+          message: `Domain ${domain} não está mapeado para nenhum customer_id. Use POST /google-ads/map-domain para configurar.`
+        });
+      }
+    }
+
+    // Se mcc_id fornecido, buscar todos os clientes e sincronizar cada um
+    if (mcc_id) {
+      const customers = await googleAdsService.listCustomers(mcc_id);
+      console.log(`📊 [GoogleAds] Encontrados ${customers.length} clientes no MCC ${mcc_id}`);
+
+      for (const customer of customers) {
+        try {
+          const customerCampaigns = await googleAdsService.syncCampaigns(
+            customer.id,
+            date_from,
+            date_to
+          );
+          
+          // Tentar identificar domain pelo customer_id (se houver mapeamento)
+          const mapping = funnelDatabase.getAllDomainMappings().find(m => m.customer_id === customer.id);
+          const campaignDomain = mapping ? mapping.domain : null;
+          
+          // Adicionar domain às campanhas
+          customerCampaigns.forEach(c => {
+            c.domain = campaignDomain;
+            if (campaignDomain) {
+              domainMappings[campaignDomain] = customer.id;
+            }
+          });
+          
+          campaigns.push(...customerCampaigns);
+        } catch (error) {
+          console.error(`⚠️ [GoogleAds] Erro ao sincronizar cliente ${customer.id}:`, error.message);
+          // Continuar com outros clientes
+        }
+      }
+    } else if (customer_id) {
+      // Sincronizar apenas um cliente específico
+      campaigns = await googleAdsService.syncCampaigns(customer_id, date_from, date_to);
+      
+      // Tentar identificar domain pelo customer_id
+      const mapping = funnelDatabase.getAllDomainMappings().find(m => m.customer_id === customer_id);
+      const campaignDomain = mapping ? mapping.domain : domain || null;
+      
+      // Adicionar domain às campanhas
+      campaigns.forEach(c => {
+        c.domain = campaignDomain;
+      });
+    } else {
+      return res.status(400).json({ 
+        error: 'customer_id, mcc_id ou domain é obrigatório'
+      });
+    }
+
+    // Salvar campanhas no banco de dados
+    let saved = 0;
+    for (const campaign of campaigns) {
+      try {
+        funnelDatabase.upsertCampaign(campaign);
+        saved++;
+      } catch (error) {
+        console.error(`⚠️ [GoogleAds] Erro ao salvar campanha ${campaign.campaign_id}:`, error.message);
+      }
+    }
+
+    logger.info('Campanhas Google Ads sincronizadas', {
+      total: campaigns.length,
+      saved,
+      date_from,
+      date_to,
+      domain: domain || 'todos'
+    });
+
+    res.json({
+      success: true,
+      campaigns_synced: campaigns.length,
+      campaigns_saved: saved,
+      date_from,
+      date_to,
+      domain: domain || null,
+      domain_mappings: Object.keys(domainMappings).length > 0 ? domainMappings : undefined
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /google-ads/sync' });
+    res.status(500).json({ 
+      error: 'Erro ao sincronizar campanhas',
+      message: error.message 
+    });
+  }
+});
+
+// POST /google-ads/map-domain - Mapear domain para customer_id
+app.post('/google-ads/map-domain', authenticateRequest, express.json(), async (req, res) => {
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Banco de dados não disponível',
+      message: 'Banco de dados do funil não está inicializado'
+    });
+  }
+
+  try {
+    const { domain, customer_id, account_name } = req.body;
+
+    if (!domain || !customer_id) {
+      return res.status(400).json({ 
+        error: 'domain e customer_id são obrigatórios'
+      });
+    }
+
+    funnelDatabase.upsertDomainMapping(domain, customer_id, account_name || null);
+
+    logger.info('Mapeamento domain → customer_id criado', {
+      domain,
+      customer_id,
+      account_name
+    });
+
+    res.json({
+      success: true,
+      domain,
+      customer_id,
+      account_name: account_name || null,
+      message: `Domain ${domain} mapeado para customer_id ${customer_id}`
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'POST /google-ads/map-domain' });
+    res.status(500).json({ 
+      error: 'Erro ao criar mapeamento',
+      message: error.message 
+    });
+  }
+});
+
+// GET /google-ads/domain-mappings - Listar todos os mapeamentos domain → customer_id
+app.get('/google-ads/domain-mappings', authenticateRequest, (req, res) => {
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Banco de dados não disponível',
+      message: 'Banco de dados do funil não está inicializado'
+    });
+  }
+
+  try {
+    const mappings = funnelDatabase.getAllDomainMappings();
+    res.json({
+      success: true,
+      mappings,
+      count: mappings.length
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /google-ads/domain-mappings' });
+    res.status(500).json({ 
+      error: 'Erro ao buscar mapeamentos',
+      message: error.message 
+    });
+  }
+});
+
+// GET /funnel-validation - Validar configuração do funil por domínio
+app.get('/funnel-validation', authenticateRequest, (req, res) => {
+  if (!funnelDatabase) {
+    return res.status(503).json({ 
+      error: 'Banco de dados não disponível',
+      message: 'Banco de dados do funil não está inicializado'
+    });
+  }
+
+  try {
+    const { date_from, date_to } = req.query;
+    
+    // Buscar todos os domínios que têm eventos
+    const allEvents = funnelDatabase.getEvents({
+      date_from,
+      date_to
+    });
+    
+    // Buscar todos os domínios mapeados (mesmo sem eventos)
+    const allMappings = funnelDatabase.getAllDomainMappings();
+    const mappedDomains = allMappings.map(m => m.domain);
+    
+    // Combinar domínios com eventos e domínios mapeados
+    const eventDomains = [...new Set(allEvents.map(e => e.domain).filter(Boolean))];
+    const domains = [...new Set([...eventDomains, ...mappedDomains])];
+    
+    const validation = domains.map(domain => {
+      const domainEvents = allEvents.filter(e => e.domain === domain);
+      const domainCampaigns = funnelDatabase.getCampaigns({ domain, date_from, date_to });
+      const mapping = funnelDatabase.getAllDomainMappings().find(m => m.domain === domain);
+      
+      // Contar eventos por tipo
+      const eventCounts = {};
+      domainEvents.forEach(e => {
+        eventCounts[e.event_type] = (eventCounts[e.event_type] || 0) + 1;
+      });
+      
+      // Verificar se há utm_campaigns
+      const utmCampaigns = [...new Set(domainEvents.map(e => e.utm_campaign).filter(Boolean))];
+      
+      // Verificar se há custos vinculados
+      const totalCost = domainCampaigns.reduce((sum, c) => sum + (c.cost_micros / 1000000), 0);
+      
+      // Status de validação
+      const hasEvents = domainEvents.length > 0;
+      const hasMapping = !!mapping;
+      const hasCampaigns = domainCampaigns.length > 0;
+      const hasUtmCampaigns = utmCampaigns.length > 0;
+      const hasCosts = totalCost > 0;
+      
+      let status = 'OK';
+      const warnings = [];
+      
+      // ERROR só se não há mapeamento E não há eventos (problema real de configuração)
+      if (!hasMapping && !hasEvents) {
+        status = 'ERROR';
+        warnings.push('Domain não está mapeado e nenhum evento coletado. Configure o mapeamento se este domínio usa Google Ads.');
+      } 
+      // WARNING se não há mapeamento mas há eventos (domínio sem Google Ads é válido)
+      else if (!hasMapping && hasEvents) {
+        status = 'WARNING';
+        warnings.push('Domain não está mapeado para Customer ID. Se este domínio não usa Google Ads, isso é normal.');
+      }
+      // WARNING se há mapeamento mas não há eventos (pode ser normal se não há campanhas ativas)
+      else if (hasMapping && !hasEvents) {
+        status = 'WARNING';
+        warnings.push('Nenhum evento coletado para este domínio. Isso é normal se não houver campanhas ativas no período.');
+      } 
+      // WARNING se há eventos mas não há campanhas sincronizadas
+      else if (!hasCampaigns && hasUtmCampaigns) {
+        status = 'WARNING';
+        warnings.push('Há eventos com utm_campaign mas nenhuma campanha sincronizada. Sincronize as campanhas do Google Ads.');
+      } 
+      // WARNING se há campanhas mas não há custos
+      else if (hasUtmCampaigns && !hasCosts) {
+        status = 'WARNING';
+        warnings.push('Há campanhas mas nenhum custo vinculado. Verifique se as campanhas têm gastos no período.');
+      }
+      
+      return {
+        domain,
+        status,
+        events: {
+          total: domainEvents.length,
+          by_type: eventCounts,
+          utm_campaigns: utmCampaigns
+        },
+        campaigns: {
+          total: domainCampaigns.length,
+          total_cost: totalCost
+        },
+        mapping: mapping ? {
+          customer_id: mapping.customer_id,
+          account_name: mapping.account_name
+        } : null,
+        warnings
+      };
+    });
+    
+    res.json({
+      success: true,
+      validation,
+      summary: {
+        total_domains: domains.length,
+        domains_with_events: validation.filter(v => v.events.total > 0).length,
+        domains_with_mapping: validation.filter(v => v.mapping).length,
+        domains_with_campaigns: validation.filter(v => v.campaigns.total > 0).length
+      }
+    });
+  } catch (error) {
+    logger.logError(error, { endpoint: 'GET /funnel-validation' });
+    res.status(500).json({ 
+      error: 'Erro ao validar configuração',
+      message: error.message 
+    });
+  }
+});
 
 // GET /contact-messages - Listar todas as mensagens de contato
 app.get('/contact-messages', authenticateRequest, (req, res) => {
@@ -2153,26 +3292,66 @@ app.post('/contact-messages', createTicketLimiter, async (req, res) => {
     logger.info('Nova mensagem de contato recebida', { id, from: nome, email });
     
     // Enviar notificação por email para o suporte (opcional)
-    try {
-      await sendPulseService.sendEmail({
-        to: process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org',
-        subject: `[Portal Certidão] Nova mensagem de contato - ${nome}`,
-        html: `
-          <h2>Nova mensagem de contato</h2>
-          <p><strong>Nome:</strong> ${nome}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Telefone:</strong> ${telefone || 'Não informado'}</p>
-          <hr>
-          <p><strong>Mensagem:</strong></p>
-          <p>${mensagem.replace(/\n/g, '<br>')}</p>
-          <hr>
-          <p><small>Acesse a plataforma para responder.</small></p>
-        `
-      });
-      logger.info('Email de notificação enviado para suporte', { id });
-    } catch (emailError) {
-      console.error('Erro ao enviar email de notificação:', emailError);
-      // Não bloquear se o email falhar
+    // Evitar auto-envio (mesmo remetente e destinatário) que pode ser marcado como spam
+    const supportEmail = process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
+    const shouldSendNotification = email.toLowerCase() !== supportEmail.toLowerCase();
+    
+    if (shouldSendNotification) {
+      try {
+        // Sanitizar mensagem para evitar palavras que disparam filtros de spam
+        const sanitizedMessage = mensagem
+          .replace(/[<>]/g, '') // Remover caracteres potencialmente problemáticos
+          .replace(/\n/g, '<br>');
+        
+        await sendPulseService.sendEmail({
+          to: supportEmail,
+          subject: `Nova mensagem de contato - ${nome}`,
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h2 style="color: #1a365d; margin-top: 0;">Nova mensagem de contato recebida</h2>
+              </div>
+              
+              <div style="background: #ffffff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <p><strong>Nome:</strong> ${nome}</p>
+                <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                <p><strong>Telefone:</strong> ${telefone || 'Não informado'}</p>
+              </div>
+              
+              <div style="background: #ffffff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 20px;">
+                <p><strong>Mensagem:</strong></p>
+                <div style="background: #f7fafc; padding: 15px; border-radius: 4px; margin-top: 10px;">
+                  ${sanitizedMessage}
+                </div>
+              </div>
+              
+              <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center;">
+                <p style="color: #718096; font-size: 12px; margin: 0;">
+                  Acesse a plataforma de suporte para responder esta mensagem.
+                </p>
+              </div>
+            </body>
+            </html>
+          `,
+          from: {
+            name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
+            email: process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org'
+          }
+        });
+        logger.info('Email de notificação enviado para suporte', { id, to: supportEmail });
+      } catch (emailError) {
+        console.error('Erro ao enviar email de notificação:', emailError);
+        logger.error('Erro ao enviar email de notificação', { id, error: emailError.message });
+        // Não bloquear se o email falhar
+      }
+    } else {
+      logger.info('Email de notificação não enviado (auto-envio detectado)', { id, email });
     }
     
     res.status(201).json({
@@ -2249,6 +3428,13 @@ app.post('/contact-messages/:id/reply', authenticateRequest, async (req, res) =>
     }
     
     // Enviar email real via SendPulse
+    // Usar SENDPULSE_SENDER_EMAIL que é o email verificado no SendPulse
+    const senderEmail = process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
+    const senderName = process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
+    
+    console.log(`📧 [Reply Email] Enviando resposta para: ${message.fromEmail}`);
+    console.log(`📧 [Reply Email] Remetente: ${senderEmail} (${senderName})`);
+    
     const emailResult = await sendPulseService.sendEmail({
       to: message.fromEmail,
       subject: subject || `Re: ${message.subject}`,
@@ -2268,11 +3454,28 @@ app.post('/contact-messages/:id/reply', authenticateRequest, async (req, res) =>
             Equipe Portal Certidão
           </p>
         </div>
-      `
+      `,
+      from: {
+        name: senderName,
+        email: senderEmail
+      }
     });
     
-    if (!emailResult.success) {
-      return res.status(500).json({ error: 'Erro ao enviar email', details: emailResult.error });
+    console.log(`📧 [Reply Email] Resultado:`, JSON.stringify(emailResult, null, 2));
+    
+    // Verificar se o email foi aceito pelo SendPulse (mesmo que ainda não tenha sido entregue)
+    // O SendPulse aceita o email primeiro e depois tenta entregar
+    const emailAccepted = emailResult.success || 
+                          (emailResult.fullResponse && !emailResult.fullResponse.is_error && 
+                           emailResult.fullResponse.id); // Se tem ID, foi aceito
+    
+    if (!emailAccepted) {
+      console.error(`❌ [Reply Email] Email não foi aceito pelo SendPulse:`, emailResult);
+      return res.status(500).json({ 
+        error: 'Erro ao enviar email', 
+        details: emailResult.error || 'Email não foi aceito pelo servidor de email',
+        fullResponse: emailResult.fullResponse
+      });
     }
     
     // Salvar resposta no histórico da mensagem
@@ -2282,7 +3485,9 @@ app.post('/contact-messages/:id/reply', authenticateRequest, async (req, res) =>
       subject: subject || `Re: ${message.subject}`,
       operador: operador || 'Sistema',
       sentAt: new Date().toISOString(),
-      emailSent: true
+      emailSent: true,
+      emailMessageId: emailResult.messageId || emailResult.fullResponse?.id || null,
+      emailStatus: 'accepted' // Aceito pelo SendPulse (entrega pode levar alguns minutos)
     };
     
     const index = messages.findIndex(m => m.id === req.params.id);
@@ -2414,8 +3619,8 @@ app.post('/contact-messages/compose', authenticateRequest, async (req, res) => {
           subject,
           html: content,
           from: {
-            name: 'Portal Certidão',
-            email: process.env.SUPPORT_EMAIL || 'suporte@portalcertidao.org'
+            name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
+            email: process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org'
           }
         });
         

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Duas Contas Google Ads</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Teste: Duas Contas Google Ads</h1>
+    
+    <div class="test-section">
+        <h2>1. Verificar dataLayer</h2>
+        <button onclick="testDataLayer()">Testar dataLayer</button>
+        <div id="dataLayer-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Testar Preservação de utm_campaign</h2>
+        <button onclick="testUtmCampaign()">Testar utm_campaign</button>
+        <div id="utm-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Simular Evento payment_completed - Conta 1</h2>
+        <button onclick="testPaymentCompleted('teste_conta_1', '591-659-0517')">Testar Conta 1</button>
+        <div id="payment1-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Simular Evento payment_completed - Conta 2</h2>
+        <button onclick="testPaymentCompleted('teste_conta_2', '471-059-5347')">Testar Conta 2</button>
+        <div id="payment2-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Verificar localStorage</h2>
+        <button onclick="checkLocalStorage()">Verificar localStorage</button>
+        <div id="storage-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Teste Completo</h2>
+        <button onclick="runFullTest()">Executar Todos os Testes</button>
+        <div id="full-result"></div>
+    </div>
+
+    <script>
+        // Garantir que dataLayer existe
+        window.dataLayer = window.dataLayer || [];
+
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="test-result ${type}">${message}</div>`;
+        }
+
+        function testDataLayer() {
+            if (typeof window.dataLayer !== 'undefined' && Array.isArray(window.dataLayer)) {
+                showResult('dataLayer-result', 
+                    `✅ dataLayer existe e está funcionando<br>
+                    <pre>${JSON.stringify(window.dataLayer, null, 2)}</pre>`, 
+                    'success');
+            } else {
+                showResult('dataLayer-result', '❌ dataLayer não encontrado', 'error');
+            }
+        }
+
+        function testUtmCampaign() {
+            // Simular utm_campaign na URL
+            const urlParams = new URLSearchParams(window.location.search);
+            let utmCampaign = urlParams.get('utm_campaign');
+            
+            if (!utmCampaign) {
+                // Tentar do localStorage
+                utmCampaign = localStorage.getItem('utm_campaign');
+            }
+
+            if (utmCampaign) {
+                // Salvar no localStorage
+                localStorage.setItem('utm_campaign', utmCampaign);
+                
+                showResult('utm-result', 
+                    `✅ utm_campaign encontrado: "${utmCampaign}"<br>
+                    ✅ Salvo no localStorage`, 
+                    'success');
+            } else {
+                showResult('utm-result', 
+                    `⚠️ utm_campaign não encontrado na URL<br>
+                    💡 Adicione ?utm_campaign=teste_conta_1 na URL`, 
+                    'info');
+            }
+        }
+
+        function testPaymentCompleted(campaign, expectedAccount) {
+            // Simular evento payment_completed
+            const utmCampaign = campaign;
+            
+            // Salvar no localStorage
+            localStorage.setItem('utm_campaign', utmCampaign);
+            
+            // Disparar evento no dataLayer
+            const eventData = {
+                event: 'payment_completed',
+                funnel_step: 'payment_success',
+                source: 'links',
+                utm_campaign: utmCampaign,
+                value: 'padrao',
+                timestamp: Date.now()
+            };
+            
+            window.dataLayer.push(eventData);
+            
+            // Verificar qual conta deveria receber
+            let accountId = '';
+            if (utmCampaign.includes('conta_1')) {
+                accountId = '591-659-0517';
+            } else if (utmCampaign.includes('conta_2')) {
+                accountId = '471-059-5347';
+            }
+            
+            const resultId = campaign.includes('conta_1') ? 'payment1-result' : 'payment2-result';
+            
+            if (accountId === expectedAccount) {
+                showResult(resultId, 
+                    `✅ Evento disparado corretamente<br>
+                    ✅ utm_campaign: "${utmCampaign}"<br>
+                    ✅ Conta esperada: ${expectedAccount}<br>
+                    ✅ Conta identificada: ${accountId}<br>
+                    <pre>${JSON.stringify(eventData, null, 2)}</pre>`, 
+                    'success');
+            } else {
+                showResult(resultId, 
+                    `❌ Erro na identificação da conta<br>
+                    utm_campaign: "${utmCampaign}"<br>
+                    Conta esperada: ${expectedAccount}<br>
+                    Conta identificada: ${accountId}`, 
+                    'error');
+            }
+        }
+
+        function checkLocalStorage() {
+            const utmCampaign = localStorage.getItem('utm_campaign');
+            const funnelId = localStorage.getItem('funnel_id');
+            
+            let html = '<h3>Itens no localStorage:</h3><ul>';
+            
+            if (utmCampaign) {
+                html += `<li>✅ utm_campaign: "${utmCampaign}"</li>`;
+            } else {
+                html += `<li>⚠️ utm_campaign: não encontrado</li>`;
+            }
+            
+            if (funnelId) {
+                html += `<li>✅ funnel_id: "${funnelId}"</li>`;
+            } else {
+                html += `<li>⚠️ funnel_id: não encontrado</li>`;
+            }
+            
+            html += '</ul>';
+            
+            showResult('storage-result', html, 'info');
+        }
+
+        function runFullTest() {
+            let results = [];
+            
+            // Teste 1: dataLayer
+            if (typeof window.dataLayer !== 'undefined') {
+                results.push('✅ dataLayer existe');
+            } else {
+                results.push('❌ dataLayer não existe');
+            }
+            
+            // Teste 2: utm_campaign
+            const urlParams = new URLSearchParams(window.location.search);
+            const utmCampaign = urlParams.get('utm_campaign') || localStorage.getItem('utm_campaign');
+            if (utmCampaign) {
+                results.push(`✅ utm_campaign encontrado: "${utmCampaign}"`);
+            } else {
+                results.push('⚠️ utm_campaign não encontrado');
+            }
+            
+            // Teste 3: Mapeamento de contas
+            if (utmCampaign) {
+                if (utmCampaign.includes('conta_1')) {
+                    results.push('✅ Conta identificada: 591-659-0517');
+                } else if (utmCampaign.includes('conta_2')) {
+                    results.push('✅ Conta identificada: 471-059-5347');
+                } else {
+                    results.push('⚠️ Conta não identificada (campanha não contém conta_1 ou conta_2)');
+                }
+            }
+            
+            // Teste 4: localStorage
+            const storedUtm = localStorage.getItem('utm_campaign');
+            if (storedUtm) {
+                results.push(`✅ utm_campaign salvo no localStorage: "${storedUtm}"`);
+            } else {
+                results.push('⚠️ utm_campaign não está no localStorage');
+            }
+            
+            showResult('full-result', 
+                `<h3>Resultados dos Testes:</h3><ul>${results.map(r => `<li>${r}</li>`).join('')}</ul>`, 
+                results.every(r => r.includes('✅')) ? 'success' : 'info');
+        }
+
+        // Executar teste automático ao carregar
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const utmCampaign = urlParams.get('utm_campaign');
+            if (utmCampaign) {
+                localStorage.setItem('utm_campaign', utmCampaign);
+                console.log('✅ utm_campaign detectado e salvo:', utmCampaign);
+            }
+        });
+    </script>
+</body>
+</html>
+

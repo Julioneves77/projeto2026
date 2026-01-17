@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from "react";
-import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useParams, useSearchParams, Link, useNavigate, useLocation } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import FormField from "@/components/forms/FormField";
 import SEOHead from "@/components/SEOHead";
@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
+import { trackEvent, getFunnelId } from "@/lib/funnelTracker";
 import {
   Select,
   SelectContent,
@@ -49,13 +51,26 @@ const CertificateForm = () => {
   const { category } = useParams<{ category: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state || {};
   const type = searchParams.get("type") || "";
+  const source = searchParams.get("source") || ""; // Capturar origem da URL
   const formRef = useRef<HTMLDivElement>(null);
   
-  const [selectedState, setSelectedState] = useState<string>("");
+  // Inicializar selectedState com valor do location.state se disponível
+  const [selectedState, setSelectedState] = useState<string>(
+    (locationState.state && category === "estaduais") ? locationState.state : ""
+  );
   
   // Pre-fill tipoCertidao based on URL type parameter for federais and estaduais
+  // Prioridade: dados vindos do location.state (volta do pagamento)
   const getInitialFormData = (): Record<string, string | boolean> => {
+    // Prioridade: dados vindos do location.state (volta do pagamento)
+    if (locationState.formData) {
+      return locationState.formData;
+    }
+    
+    // Fallback: preencher baseado no type da URL
     if (type) {
       const typeMapping: Record<string, string> = {
         "criminal": "Criminal",
@@ -74,8 +89,9 @@ const CertificateForm = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPrioridade, setIsPrioridade] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  const [formProgressTracked, setFormProgressTracked] = useState<Set<number>>(new Set());
 
-  // Get available states for estaduais category
+  // Get available states for estaduais category - DEVE VIR ANTES dos useEffect
   const availableStates = useMemo(() => {
     if (category === "estaduais") {
       return getAvailableStates();
@@ -83,7 +99,7 @@ const CertificateForm = () => {
     return [];
   }, [category]);
 
-  // Get form config based on category and selected state
+  // Get form config based on category and selected state - DEVE VIR ANTES dos useEffect
   const formConfig = useMemo(() => {
     if (category === "estaduais") {
       if (!selectedState) return null;
@@ -131,6 +147,143 @@ const CertificateForm = () => {
         return "Solicitar Certidão";
     }
   };
+
+  // Garantir que a página sempre comece no topo ao carregar
+  useEffect(() => {
+    // Evento: portal_view - ao carregar página inicial
+    trackEvent('portal_view', {
+      category: category || '',
+      type: type || ''
+    });
+
+    // Função para forçar scroll ao topo
+    const scrollToTop = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      // Também tentar scroll no document.documentElement para compatibilidade
+      if (document.documentElement) {
+        document.documentElement.scrollTop = 0;
+      }
+      if (document.body) {
+        document.body.scrollTop = 0;
+      }
+    };
+    
+    // Scroll imediatamente ao montar
+    scrollToTop();
+    
+    // Remover qualquer hash da URL que possa causar scroll automático
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      scrollToTop();
+    }
+    
+    // Garantir scroll no topo após delays progressivos (caso algum elemento cause scroll)
+    const timeouts = [
+      setTimeout(scrollToTop, 50),
+      setTimeout(scrollToTop, 100),
+      setTimeout(scrollToTop, 300),
+      setTimeout(scrollToTop, 500),
+    ];
+    
+    return () => {
+      timeouts.forEach(timeout => clearTimeout(timeout));
+    };
+  }, []); // Executar apenas uma vez ao montar
+
+  // Evento: form_start - quando usuário começa a preencher formulário
+  useEffect(() => {
+    if (formConfig && Object.keys(formData).length > 0) {
+      // Verificar se é a primeira interação com o formulário
+      const hasStarted = Object.values(formData).some(value => 
+        value !== '' && value !== false && value !== null && value !== undefined
+      );
+      
+      if (hasStarted) {
+        trackEvent('form_start', {
+          category: category || '',
+          type: type || ''
+        });
+      }
+    }
+  }, [formData, formConfig, category, type]);
+
+  // Restaurar selectedState se houver dados vindos do location.state
+  useEffect(() => {
+    if (locationState.state && category === "estaduais") {
+      setSelectedState(locationState.state);
+    }
+  }, [locationState.state, category]);
+
+  // Disparar evento quando formulário carrega (se origem = portalcacesso)
+  useEffect(() => {
+    if (formConfig) {
+      pushDLPortalcacesso('portalcacesso_form_started', {
+        funnel_step: 'form_start',
+        certificateType: getCertificateTitle(),
+        state: selectedState || undefined,
+        category: category || undefined,
+        type: type || undefined,
+      });
+    }
+  }, [formConfig, category, type, selectedState]);
+
+  // Calcular progresso do formulário e disparar eventos
+  useEffect(() => {
+    if (!formConfig) return;
+
+    // Contar campos obrigatórios e preenchidos
+    let totalRequired = 0;
+    let filledRequired = 0;
+
+    for (const step of formConfig.steps) {
+      for (const field of step.fields) {
+        if (field.showWhen) {
+          const conditionValue = formData[field.showWhen.field];
+          if (conditionValue !== field.showWhen.value) {
+            continue;
+          }
+        }
+
+        if (field.required) {
+          totalRequired++;
+          const value = formData[field.name];
+          if (value && (typeof value !== 'string' || value.trim() !== '')) {
+            filledRequired++;
+          }
+        }
+      }
+    }
+
+    // Calcular percentual de progresso
+    const progress = totalRequired > 0 ? Math.round((filledRequired / totalRequired) * 100) : 0;
+    const certificateTitle = getCertificateTitle();
+
+    // Disparar eventos de progresso (25%, 50%, 75%)
+    if (progress >= 25 && !formProgressTracked.has(25)) {
+      pushDLPortalcacesso('portalcacesso_form_progress_25', {
+        funnel_step: 'form_progress_25',
+        progress: 25,
+        certificateType: certificateTitle,
+      });
+      setFormProgressTracked((prev) => new Set([...prev, 25]));
+    }
+    if (progress >= 50 && !formProgressTracked.has(50)) {
+      pushDLPortalcacesso('portalcacesso_form_progress_50', {
+        funnel_step: 'form_progress_50',
+        progress: 50,
+        certificateType: certificateTitle,
+      });
+      setFormProgressTracked((prev) => new Set([...prev, 50]));
+    }
+    if (progress >= 75 && !formProgressTracked.has(75)) {
+      pushDLPortalcacesso('portalcacesso_form_progress_75', {
+        funnel_step: 'form_progress_75',
+        progress: 75,
+        certificateType: certificateTitle,
+      });
+      setFormProgressTracked((prev) => new Set([...prev, 75]));
+    }
+  }, [formData, formConfig, formProgressTracked, category, type, selectedState]);
 
   // Show state selector for estaduais
   if (category === "estaduais" && !selectedState) {
@@ -196,7 +349,29 @@ const CertificateForm = () => {
   }
 
   const updateField = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const newData = { ...prev, [field]: value };
+      
+      // Se a nacionalidade mudar, limpar campos condicionais relacionados
+      if (field === "nacionalidade") {
+        // Limpar campos de nascimento quando nacionalidade mudar
+        delete newData.paisNascimento;
+        delete newData.ufNascimento;
+        delete newData.municipioNascimento;
+        delete newData.cidadeNascimento;
+        // Limpar erros relacionados
+        setErrors((err) => {
+          const newErrors = { ...err };
+          delete newErrors.paisNascimento;
+          delete newErrors.ufNascimento;
+          delete newErrors.municipioNascimento;
+          delete newErrors.cidadeNascimento;
+          return newErrors;
+        });
+      }
+      
+      return newData;
+    });
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
@@ -314,6 +489,13 @@ const CertificateForm = () => {
     const validation = validateAllSteps();
     
     if (!validation.isValid) {
+      // Evento: form_submit_error
+      trackEvent('form_submit_error', {
+        category: category || '',
+        type: type || '',
+        missing_fields: validation.missingFields
+      });
+
       const missingFieldsText = validation.missingFields.length > 0
         ? validation.missingFields.join(", ")
         : "alguns campos obrigatórios";
@@ -380,13 +562,35 @@ const CertificateForm = () => {
       features,
     };
 
-    // Navigate direto para pagamento
-    navigate("/pagamento", {
+    // Evento: form_submit_success
+    trackEvent('form_submit_success', {
+      category: category || '',
+      type: type || '',
+      plan_id: planId,
+      plan_name: planName,
+      price: finalPrice
+    });
+
+    // Disparar evento quando formulário é submetido (se origem = portalcacesso)
+    pushDLPortalcacesso('portalcacesso_form_submitted', {
+      funnel_step: 'form_submit',
+      certificateType: getCertificateTitle(),
+      planId: planId,
+      planName: planName,
+      price: finalPrice,
+      state: selectedState || undefined,
+    });
+
+    // Navigate direto para pagamento, preservando parâmetro source se existir
+    const pagamentoUrl = source ? `/pagamento?source=${source}` : "/pagamento";
+    navigate(pagamentoUrl, {
       state: {
         formData: finalFormData,
         certificateType: getCertificateTitle(),
+        category: category || "", // Passar categoria original para facilitar navegação de volta
         state: selectedState,
         selectedPlan,
+        funnel_id: getFunnelId(), // Passar funnel_id para o Payment
       },
     });
   };
@@ -435,7 +639,7 @@ const CertificateForm = () => {
     }
   };
 
-  const renderField = (field: FormConfig["steps"][0]["fields"][0], stepIndex: number) => {
+  const renderField = (field: FormConfig["steps"][0]["fields"][0], stepIndex: number, fieldIndex: number) => {
     const value = formData[field.name] || "";
     const hasError = !!errors[field.name];
 
@@ -447,12 +651,15 @@ const CertificateForm = () => {
       }
     }
 
+    // Criar chave única considerando o tipo e condição para evitar conflitos
+    const uniqueKey = `${stepIndex}-${fieldIndex}-${field.name}-${field.type}-${field.showWhen?.value || 'default'}`;
+
     switch (field.type) {
       case "select":
         const options = getSelectOptions(field.options);
         return (
           <FormField
-            key={`${stepIndex}-${field.name}`}
+            key={uniqueKey}
             label={field.label}
             required={field.required}
             error={errors[field.name]}
@@ -477,15 +684,15 @@ const CertificateForm = () => {
 
       case "checkbox":
         return (
-          <div key={`${stepIndex}-${field.name}`} className="flex items-start gap-3" data-error={hasError ? "true" : undefined}>
+          <div key={uniqueKey} className="flex items-start gap-3" data-error={hasError ? "true" : undefined}>
             <Checkbox
-              id={field.name}
+              id={`${field.name}-${uniqueKey}`}
               checked={value as boolean}
               onCheckedChange={(checked) => updateField(field.name, checked as boolean)}
             />
             <div className="flex-1">
               <label
-                htmlFor={field.name}
+                htmlFor={`${field.name}-${uniqueKey}`}
                 className="text-sm text-muted-foreground cursor-pointer leading-relaxed"
               >
                 {field.label}
@@ -501,7 +708,7 @@ const CertificateForm = () => {
       default:
         return (
           <FormField
-            key={`${stepIndex}-${field.name}`}
+            key={uniqueKey}
             label={field.label}
             required={field.required}
             error={errors[field.name]}
@@ -602,7 +809,7 @@ const CertificateForm = () => {
 
                 {/* Campos do step */}
                 <div className="space-y-5">
-                  {fields.map((field) => renderField(field, stepIndex))}
+                  {fields.map((field, fieldIndex) => renderField(field, stepIndex, fieldIndex))}
                 </div>
               </div>
             ))}

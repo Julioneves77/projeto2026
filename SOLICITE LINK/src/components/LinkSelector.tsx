@@ -1,4 +1,4 @@
-import React, { useState, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useImperativeHandle, forwardRef, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { ChevronRight } from "lucide-react";
 import { pushDL } from "@/lib/dataLayer";
+import { trackEvent, getFunnelId, addFunnelIdToUrl } from "@/lib/funnelTracker";
 
 export interface LinkSelectorRef {
   openSelect: () => void;
@@ -66,6 +67,11 @@ const LinkSelector = forwardRef<LinkSelectorRef>((props, ref) => {
 
   const selectedOption = linkOptions.find((opt) => opt.id === selectedLink);
 
+  // Evento: links_view - ao carregar componente
+  useEffect(() => {
+    trackEvent('links_view');
+  }, []);
+
   // Expõe método para abrir o dropdown programaticamente
   useImperativeHandle(ref, () => ({
     openSelect: () => {
@@ -98,16 +104,30 @@ const LinkSelector = forwardRef<LinkSelectorRef>((props, ref) => {
 
   const handleAccessClick = () => {
     if (selectedOption) {
+      // Evento: links_cta_click
+      trackEvent('links_cta_click', {
+        option_id: selectedOption.id,
+        option_label: selectedOption.label
+      });
+
       pushDL('links_access_clicked', {
         option_id: selectedOption.id,
         option_label: selectedOption.label,
-        destination_hint: selectedOption.portalPath,
+        destination_hint: '/',
         funnel_step: 'access_clicked'
       });
       
-      // Redirecionar para o formulário específico da certidão no Portal
-      const portalUrl = `${PORTAL_BASE}${selectedOption.portalPath}`;
+      // Redirecionar para a home do Portal (com cards e preços)
+      // Adicionar parâmetro source=solicite e funnel_id para rastreamento
+      let portalUrl = `${PORTAL_BASE}/?source=solicite`;
+      portalUrl = addFunnelIdToUrl(portalUrl);
+      
+      // Log para debug
+      console.log('🔵 [Solicite Link] Redirecionando para:', portalUrl);
+      
       window.location.href = portalUrl;
+    } else {
+      console.error('❌ [Solicite Link] selectedOption não encontrado');
     }
   };
 
@@ -144,10 +164,13 @@ const LinkSelector = forwardRef<LinkSelectorRef>((props, ref) => {
       {selectedLink && (
         <button
           onClick={handleAccessClick}
-          className="btn-action btn-blink mt-6 animate-scale-in flex items-center justify-center gap-2"
+          className="btn-action btn-blink mt-6 animate-scale-in flex flex-col items-center justify-center gap-1"
         >
-          Clique Aqui para Solicitar {selectedOption?.label}
-          <ChevronRight className="w-5 h-5" />
+          <span className="font-semibold">{selectedOption?.label}</span>
+          <span className="flex items-center gap-1 text-sm">
+            Continuar com suporte e entrega digital
+            <ChevronRight className="w-4 h-4" />
+          </span>
         </button>
       )}
     </div>

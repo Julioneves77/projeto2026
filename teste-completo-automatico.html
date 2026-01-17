@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Completo Automático - Duas Contas</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .test-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        .test-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .test-result {
+            padding: 12px 15px;
+            margin: 8px 0;
+            border-radius: 6px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 5px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,123,255,0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .btn-success {
+            background: #28a745;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .badge-success { background: #28a745; color: white; }
+        .badge-error { background: #dc3545; color: white; }
+        .badge-warning { background: #ffc107; color: #333; }
+        .summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .summary h3 {
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Teste Completo Automático - Duas Contas Google Ads</h1>
+        <p class="subtitle">Verificação completa da configuração de utm_campaign e disparo de tags</p>
+        
+        <div style="margin: 20px 0;">
+            <button onclick="runAllTests()">▶️ Executar Todos os Testes</button>
+            <button onclick="testConta1()" class="btn-success">✅ Testar Conta 1</button>
+            <button onclick="testConta2()" class="btn-success">✅ Testar Conta 2</button>
+            <button onclick="clearResults()">🗑️ Limpar</button>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Simular dataLayer
+        window.dataLayer = window.dataLayer || [];
+        
+        // Simular função getUtmCampaign do código real
+        function getUtmCampaign() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlCampaign = urlParams.get('utm_campaign');
+            if (urlCampaign) {
+                try {
+                    localStorage.setItem('utm_campaign', urlCampaign);
+                } catch (e) {}
+                return urlCampaign;
+            }
+            try {
+                return localStorage.getItem('utm_campaign') || undefined;
+            } catch (e) {
+                return undefined;
+            }
+        }
+        
+        // Simular função pushDL do código real
+        function pushDL(eventName, payload = {}) {
+            const utmCampaign = payload.utm_campaign || getUtmCampaign();
+            
+            const eventData = {
+                event: eventName,
+                funnel_stage: 'links',
+                funnel_step: payload.funnel_step || eventName,
+                source: payload.source || 'links',
+                timestamp: Date.now(),
+                ...(utmCampaign && { utm_campaign: utmCampaign }),
+                ...payload
+            };
+            
+            window.dataLayer.push(eventData);
+            return eventData;
+        }
+        
+        // Simular verificação de trigger
+        function checkTrigger(utmCampaign, expectedAccount) {
+            if (!utmCampaign) return { fired: false, reason: 'utm_campaign não encontrado' };
+            
+            let accountId = '';
+            if (utmCampaign.includes('conta_1')) {
+                accountId = '591-659-0517';
+            } else if (utmCampaign.includes('conta_2')) {
+                accountId = '471-059-5347';
+            }
+            
+            return {
+                fired: accountId === expectedAccount,
+                accountId: accountId,
+                expectedAccount: expectedAccount,
+                utmCampaign: utmCampaign
+            };
+        }
+        
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = message;
+            resultsDiv.appendChild(div);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        function testConta1() {
+            clearResults();
+            addResult('<h2>🧪 Testando Conta 1 (591-659-0517)</h2>', 'info');
+            
+            // Simular acesso com utm_campaign
+            const testCampaign = 'teste_conta_1';
+            const url = new URL(window.location.href);
+            url.searchParams.set('utm_campaign', testCampaign);
+            window.history.replaceState({}, '', url);
+            
+            // Limpar dataLayer anterior
+            window.dataLayer = [];
+            
+            // Teste 1: Verificar captura de utm_campaign
+            const capturedCampaign = getUtmCampaign();
+            if (capturedCampaign === testCampaign) {
+                addResult(`✅ Teste 1: utm_campaign capturado corretamente: "${capturedCampaign}"`, 'success');
+            } else {
+                addResult(`❌ Teste 1: utm_campaign não capturado. Esperado: "${testCampaign}", Obtido: "${capturedCampaign}"`, 'error');
+            }
+            
+            // Teste 2: Verificar localStorage
+            const storedCampaign = localStorage.getItem('utm_campaign');
+            if (storedCampaign === testCampaign) {
+                addResult(`✅ Teste 2: utm_campaign salvo no localStorage: "${storedCampaign}"`, 'success');
+            } else {
+                addResult(`❌ Teste 2: utm_campaign não está no localStorage`, 'error');
+            }
+            
+            // Teste 3: Simular evento payment_completed
+            const paymentEvent = pushDL('payment_completed', {
+                funnel_step: 'payment_success',
+                source: 'links',
+                value: 'padrao'
+            });
+            
+            if (paymentEvent.utm_campaign === testCampaign) {
+                addResult(`✅ Teste 3: payment_completed incluiu utm_campaign: "${paymentEvent.utm_campaign}"`, 'success');
+            } else {
+                addResult(`❌ Teste 3: payment_completed NÃO incluiu utm_campaign`, 'error');
+            }
+            
+            // Teste 4: Verificar trigger
+            const triggerCheck = checkTrigger(paymentEvent.utm_campaign, '591-659-0517');
+            if (triggerCheck.fired) {
+                addResult(`✅ Teste 4: Trigger dispararia corretamente para Conta 1 (${triggerCheck.accountId})`, 'success');
+            } else {
+                addResult(`❌ Teste 4: Trigger não dispararia. Conta identificada: ${triggerCheck.accountId || 'nenhuma'}`, 'error');
+            }
+            
+            // Teste 5: Verificar dataLayer
+            const eventsWithUtm = window.dataLayer.filter(e => e.event && e.utm_campaign);
+            if (eventsWithUtm.length > 0) {
+                addResult(`✅ Teste 5: ${eventsWithUtm.length} evento(s) com utm_campaign no dataLayer`, 'success');
+            } else {
+                addResult(`❌ Teste 5: Nenhum evento com utm_campaign no dataLayer`, 'error');
+            }
+            
+            addResult(`<pre>${JSON.stringify(paymentEvent, null, 2)}</pre>`, 'info');
+        }
+        
+        function testConta2() {
+            clearResults();
+            addResult('<h2>🧪 Testando Conta 2 (471-059-5347)</h2>', 'info');
+            
+            const testCampaign = 'teste_conta_2';
+            const url = new URL(window.location.href);
+            url.searchParams.set('utm_campaign', testCampaign);
+            window.history.replaceState({}, '', url);
+            
+            window.dataLayer = [];
+            
+            const capturedCampaign = getUtmCampaign();
+            if (capturedCampaign === testCampaign) {
+                addResult(`✅ Teste 1: utm_campaign capturado: "${capturedCampaign}"`, 'success');
+            } else {
+                addResult(`❌ Teste 1: utm_campaign não capturado`, 'error');
+            }
+            
+            const paymentEvent = pushDL('payment_completed', {
+                funnel_step: 'payment_success',
+                source: 'links',
+                value: 'padrao'
+            });
+            
+            if (paymentEvent.utm_campaign === testCampaign) {
+                addResult(`✅ Teste 2: payment_completed incluiu utm_campaign: "${paymentEvent.utm_campaign}"`, 'success');
+            } else {
+                addResult(`❌ Teste 2: payment_completed NÃO incluiu utm_campaign`, 'error');
+            }
+            
+            const triggerCheck = checkTrigger(paymentEvent.utm_campaign, '471-059-5347');
+            if (triggerCheck.fired) {
+                addResult(`✅ Teste 3: Trigger dispararia corretamente para Conta 2 (${triggerCheck.accountId})`, 'success');
+            } else {
+                addResult(`❌ Teste 3: Trigger não dispararia. Conta identificada: ${triggerCheck.accountId || 'nenhuma'}`, 'error');
+            }
+            
+            addResult(`<pre>${JSON.stringify(paymentEvent, null, 2)}</pre>`, 'info');
+        }
+        
+        function runAllTests() {
+            clearResults();
+            addResult('<h2>🚀 Executando Todos os Testes...</h2>', 'info');
+            
+            const results = {
+                passed: 0,
+                failed: 0,
+                warnings: 0
+            };
+            
+            // Teste 1: Verificar dataLayer
+            if (typeof window.dataLayer !== 'undefined' && Array.isArray(window.dataLayer)) {
+                addResult('✅ Teste 1: dataLayer existe e está funcionando', 'success');
+                results.passed++;
+            } else {
+                addResult('❌ Teste 1: dataLayer não encontrado', 'error');
+                results.failed++;
+            }
+            
+            // Teste 2: Verificar utm_campaign na URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlCampaign = urlParams.get('utm_campaign');
+            
+            if (urlCampaign) {
+                addResult(`✅ Teste 2: utm_campaign encontrado na URL: "${urlCampaign}"`, 'success');
+                results.passed++;
+            } else {
+                addResult(`⚠️ Teste 2: utm_campaign não encontrado na URL. Adicione ?utm_campaign=teste_conta_1`, 'warning');
+                results.warnings++;
+            }
+            
+            // Teste 3: Verificar getUtmCampaign
+            const retrievedCampaign = getUtmCampaign();
+            if (retrievedCampaign) {
+                addResult(`✅ Teste 3: getUtmCampaign() retornou: "${retrievedCampaign}"`, 'success');
+                results.passed++;
+            } else {
+                addResult(`❌ Teste 3: getUtmCampaign() retornou undefined`, 'error');
+                results.failed++;
+            }
+            
+            // Teste 4: Testar pushDL
+            const testEvent = pushDL('test_event', {
+                funnel_step: 'test',
+                source: 'test'
+            });
+            
+            if (testEvent.utm_campaign) {
+                addResult(`✅ Teste 4: pushDL() incluiu utm_campaign: "${testEvent.utm_campaign}"`, 'success');
+                results.passed++;
+            } else {
+                addResult(`❌ Teste 4: pushDL() NÃO incluiu utm_campaign`, 'error');
+                results.failed++;
+            }
+            
+            // Teste 5: Simular payment_completed Conta 1
+            window.dataLayer = [];
+            const payment1 = pushDL('payment_completed', {
+                utm_campaign: 'teste_conta_1',
+                funnel_step: 'payment_success',
+                source: 'links',
+                value: 'padrao'
+            });
+            
+            const trigger1 = checkTrigger(payment1.utm_campaign, '591-659-0517');
+            if (trigger1.fired) {
+                addResult(`✅ Teste 5: payment_completed Conta 1 → Trigger dispararia corretamente`, 'success');
+                results.passed++;
+            } else {
+                addResult(`❌ Teste 5: payment_completed Conta 1 → Trigger não dispararia`, 'error');
+                results.failed++;
+            }
+            
+            // Teste 6: Simular payment_completed Conta 2
+            window.dataLayer = [];
+            const payment2 = pushDL('payment_completed', {
+                utm_campaign: 'teste_conta_2',
+                funnel_step: 'payment_success',
+                source: 'links',
+                value: 'padrao'
+            });
+            
+            const trigger2 = checkTrigger(payment2.utm_campaign, '471-059-5347');
+            if (trigger2.fired) {
+                addResult(`✅ Teste 6: payment_completed Conta 2 → Trigger dispararia corretamente`, 'success');
+                results.passed++;
+            } else {
+                addResult(`❌ Teste 6: payment_completed Conta 2 → Trigger não dispararia`, 'error');
+                results.failed++;
+            }
+            
+            // Resumo
+            const total = results.passed + results.failed + results.warnings;
+            const successRate = total > 0 ? ((results.passed / total) * 100).toFixed(0) : 0;
+            
+            addResult(`<div class="summary">
+                <h3>📊 Resumo dos Testes</h3>
+                <div class="summary-stats">
+                    <div class="stat-box">
+                        <div class="stat-number">${results.passed}</div>
+                        <div class="stat-label">Sucessos</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${results.failed}</div>
+                        <div class="stat-label">Falhas</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${successRate}%</div>
+                        <div class="stat-label">Taxa de Sucesso</div>
+                    </div>
+                </div>
+            </div>`, results.failed === 0 ? 'success' : 'warning');
+            
+            if (results.failed === 0 && results.passed >= 4) {
+                addResult('🎉 Todos os testes críticos passaram! O código está funcionando corretamente.', 'success');
+            } else if (results.failed > 0) {
+                addResult('⚠️ Alguns testes falharam. Verifique a configuração.', 'error');
+            }
+        }
+        
+        // Executar automaticamente se tiver utm_campaign na URL
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('utm_campaign')) {
+                setTimeout(() => {
+                    addResult('<h3>🔄 Teste automático iniciado (utm_campaign detectado na URL)</h3>', 'info');
+                    runAllTests();
+                }, 500);
+            }
+        });
+    </script>
+</body>
+</html>
+

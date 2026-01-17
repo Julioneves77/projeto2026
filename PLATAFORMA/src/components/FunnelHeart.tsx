@@ -22,7 +22,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export function FunnelHeart() {
-  const { analytics, campaigns, loading, error, fetchAnalytics, fetchCampaigns } = useFunnelAnalytics();
+  const { analytics, campaigns, loading, error, fetchAnalytics, fetchCampaigns, fetchValidation } = useFunnelAnalytics();
   const [dateFrom, setDateFrom] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30); // Últimos 30 dias
@@ -31,13 +31,45 @@ export function FunnelHeart() {
   const [dateTo, setDateTo] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+  const [validation, setValidation] = useState<any>(null);
+  const [loadingValidation, setLoadingValidation] = useState(false);
 
   const loadData = useCallback(async () => {
     await Promise.all([
       fetchAnalytics({ date_from: dateFrom, date_to: dateTo }),
       fetchCampaigns({ date_from: dateFrom, date_to: dateTo })
     ]);
-  }, [dateFrom, dateTo, fetchAnalytics, fetchCampaigns]);
+    
+    // Carregar validação também
+    setLoadingValidation(true);
+    try {
+      const validationData = await fetchValidation({ date_from: dateFrom, date_to: dateTo });
+      // O endpoint retorna { success: true, validation: [...], summary: {...} }
+      // Ajustar para o formato esperado pelo componente
+      if (validationData && validationData.success) {
+        setValidation({
+          validation: validationData.validation || [],
+          summary: validationData.summary || null
+        });
+      } else {
+        // Mesmo sem sucesso, definir estrutura vazia para mostrar a seção
+        setValidation({
+          validation: [],
+          summary: null
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao carregar validação:', err);
+      // Em caso de erro, ainda mostrar a seção com estrutura vazia
+      setValidation({
+        validation: [],
+        summary: null,
+        error: err instanceof Error ? err.message : 'Erro desconhecido'
+      });
+    } finally {
+      setLoadingValidation(false);
+    }
+  }, [dateFrom, dateTo, fetchAnalytics, fetchCampaigns, fetchValidation]);
 
   useEffect(() => {
     loadData();
@@ -72,7 +104,7 @@ export function FunnelHeart() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -81,7 +113,7 @@ export function FunnelHeart() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
               />
             </div>
             <Button onClick={loadData} disabled={loading}>
@@ -122,7 +154,7 @@ export function FunnelHeart() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -131,7 +163,7 @@ export function FunnelHeart() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
               />
             </div>
             <Button onClick={loadData} disabled={loading}>
@@ -197,7 +229,7 @@ export function FunnelHeart() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -206,7 +238,7 @@ export function FunnelHeart() {
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="px-3 py-1 border rounded-md text-sm"
+                className="px-3 py-1 border rounded-md text-sm bg-background text-foreground dark:text-black dark:bg-white"
             />
           </div>
           <Button onClick={loadData} disabled={loading}>
@@ -380,6 +412,112 @@ export function FunnelHeart() {
           )}
         </CardContent>
       </Card>
+
+      {/* Validação por Domínio */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" />
+            Validação por Domínio
+          </CardTitle>
+          <CardDescription>
+            Status da configuração e coleta de eventos por domínio
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingValidation ? (
+            <div className="flex items-center justify-center h-24">
+              <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+              <p className="ml-2 text-sm text-muted-foreground">Carregando validação...</p>
+            </div>
+          ) : validation && validation.validation && validation.validation.length > 0 ? (
+              <div className="space-y-4">
+                {validation.validation.map((val: any) => {
+                  const statusColors = {
+                    OK: 'bg-green-100 border-green-300 text-green-800 dark:bg-green-900 dark:border-green-700 dark:text-green-200',
+                    WARNING: 'bg-yellow-100 border-yellow-300 text-yellow-800 dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-200',
+                    ERROR: 'bg-red-100 border-red-300 text-red-800 dark:bg-red-900 dark:border-red-700 dark:text-red-200'
+                  };
+                  
+                  const statusIcons = {
+                    OK: <CheckCircle2 className="w-5 h-5" />,
+                    WARNING: <AlertCircle className="w-5 h-5" />,
+                    ERROR: <AlertCircle className="w-5 h-5" />
+                  };
+                  
+                  return (
+                    <div
+                      key={val.domain}
+                      className={`p-4 rounded-lg border ${statusColors[val.status as keyof typeof statusColors] || statusColors.WARNING}`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {statusIcons[val.status as keyof typeof statusIcons]}
+                          <h3 className="font-semibold">{val.domain}</h3>
+                          <span className="text-xs px-2 py-1 rounded bg-white/50 dark:bg-black/20">
+                            {val.status}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
+                        <div>
+                          <div className="font-medium">Eventos</div>
+                          <div className="text-lg">{val.events?.total || 0}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium">Campanhas</div>
+                          <div className="text-lg">{val.campaigns?.total || 0}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium">Custos</div>
+                          <div className="text-lg">R$ {(val.campaigns?.total_cost || 0).toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium">Customer ID</div>
+                          <div className="text-lg">{val.mapping?.customer_id || '-'}</div>
+                        </div>
+                      </div>
+                      
+                      {val.warnings && val.warnings.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-current/20">
+                          <div className="text-sm font-medium mb-1">Avisos:</div>
+                          <ul className="list-disc list-inside text-sm space-y-1">
+                            {val.warnings.map((warning: string, idx: number) => (
+                              <li key={idx}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground mb-2">
+                  {validation === null ? 'Carregando validação...' : 'Nenhum domínio configurado ainda'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {validation === null 
+                    ? 'Aguarde enquanto verificamos os domínios mapeados...'
+                    : 'Configure os mapeamentos de domínio → Customer ID para ver a validação.'}
+                </p>
+              </div>
+            )}
+            
+            {validation && validation.summary && (
+              <div className="mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  <strong>Resumo:</strong> {validation.summary.total_domains} domínios encontrados,{' '}
+                  {validation.summary.domains_with_events} com eventos,{' '}
+                  {validation.summary.domains_with_mapping} mapeados,{' '}
+                  {validation.summary.domains_with_campaigns} com campanhas sincronizadas
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
       {/* Tabela por Campanha */}
       <Card>

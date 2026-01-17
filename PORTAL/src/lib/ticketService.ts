@@ -155,7 +155,8 @@ async function mapFormDataToTicket(
   certificateType: string,
   state: string | undefined,
   selectedPlan: SelectedPlan,
-  origem?: 'portalcacesso' | 'solicite'
+  origem?: 'portalcacesso' | 'solicite',
+  funnelId?: string
 ): Promise<TicketData> {
   // Determinar tipo de pessoa (CPF ou CNPJ)
   const cpfOuCnpj = formData.cpf || formData.cnpj || formData.cpfOuCnpj || formData.documento || '';
@@ -288,6 +289,10 @@ async function mapFormDataToTicket(
   if (origem) {
     dadosFormulario['origem'] = origem;
   }
+  // Adicionar funnel_id se disponível
+  if (funnelId) {
+    dadosFormulario['funnel_id'] = funnelId;
+  }
   
   console.log('🔵 [PORTAL] Dados do formulário preservados:', Object.keys(dadosFormulario));
   
@@ -339,7 +344,8 @@ export async function createTicket(
   certificateType: string,
   state: string | undefined,
   selectedPlan: SelectedPlan,
-  origem?: 'portalcacesso' | 'solicite'
+  origem?: 'portalcacesso' | 'solicite',
+  funnelId?: string
 ): Promise<TicketData | null> {
   try {
     const TICKETS_KEY = 'av_tickets';
@@ -348,11 +354,12 @@ export async function createTicket(
       formData,
       certificateType,
       state,
-      selectedPlan
+      selectedPlan,
+      funnelId
     });
     
     // Criar ticket (aguardar geração de código)
-    const newTicket = await mapFormDataToTicket(formData, certificateType, state, selectedPlan, origem);
+    const newTicket = await mapFormDataToTicket(formData, certificateType, state, selectedPlan, origem, funnelId);
     
     console.log('🔵 [PORTAL] Ticket criado:', newTicket);
 

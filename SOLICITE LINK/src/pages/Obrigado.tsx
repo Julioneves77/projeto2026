@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import SEOHead from "@/components/SEOHead";
 import { ArrowLeft, CheckCircle, Mail, MessageCircle, Clock, Home } from "lucide-react";
 import { pushDL } from "@/lib/dataLayer";
+import { getUtmCampaign } from "@/lib/funnelTracker";
 
 const Obrigado = () => {
   const [searchParams] = useSearchParams();
@@ -27,6 +28,9 @@ const Obrigado = () => {
   // Disparar evento GTM de conversão
   useEffect(() => {
     if (ticketCodigo || planoId || tipoCertidao) {
+      // Recuperar utm_campaign do localStorage
+      const utmCampaign = getUtmCampaign();
+      
       pushDL('payment_completed', {
         funnel_step: 'payment_success',
         source: 'links',
@@ -38,6 +42,8 @@ const Obrigado = () => {
         eventAction: "Confirmado",
         eventLabel: tipoCertidao || "Solicitação",
         value: planoId === "premium" ? "premium" : planoId === "prioridade" ? "prioridade" : "padrao",
+        // Incluir utm_campaign se disponível
+        ...(utmCampaign && { utm_campaign: utmCampaign })
       });
     }
   }, [ticketCodigo, planoId, tipoCertidao]);

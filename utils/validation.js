@@ -30,9 +30,9 @@ function validateTicket(ticket) {
     errors.push('codigo é obrigatório e deve ser string');
   }
   
-  // Validar formato do código (TK-XXX)
+  // Validar formato do código (TK-XXX ou TK-XXXX, etc - aceita qualquer quantidade de dígitos)
   if (ticket.codigo && !/^TK-\d{3,}$/.test(ticket.codigo)) {
-    errors.push('codigo deve estar no formato TK-XXX');
+    errors.push('codigo deve estar no formato TK-XXX (mínimo 3 dígitos)');
   }
   
   // Validar e sanitizar strings

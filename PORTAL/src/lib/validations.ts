@@ -50,8 +50,17 @@ export const validateCNPJ = (cnpj: string): boolean => {
 };
 
 export const validateEmail = (email: string): boolean => {
-  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return regex.test(email);
+  if (!email) return false;
+  const trimmed = email.trim();
+  // Apenas letras, números, ponto, underline e hífen na parte local
+  const regex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}$/;
+  if (!regex.test(trimmed)) return false;
+  // Bloquear pontos consecutivos
+  if (trimmed.includes('..')) return false;
+  // Bloquear ponto no início ou fim da parte local
+  const [local] = trimmed.split('@');
+  if (local.startsWith('.') || local.endsWith('.')) return false;
+  return true;
 };
 
 export const validatePhone = (phone: string): boolean => {

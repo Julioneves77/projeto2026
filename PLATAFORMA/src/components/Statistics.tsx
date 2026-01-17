@@ -51,11 +51,37 @@ export function Statistics() {
       porTipoCertidao[tipo] = (porTipoCertidao[tipo] || 0) + 1;
     });
 
-    // Agrupar por domínio
+    // Agrupar por domínio inicial (origem)
     const porDominio: Record<string, number> = {};
     ticketsFiltrados.forEach(t => {
-      const dominio = t.dominio || 'Não especificado';
-      porDominio[dominio] = (porDominio[dominio] || 0) + 1;
+      // Priorizar campo dominio (campo principal do ticket)
+      const dominio = t.dominio;
+      // Fallback para dadosFormulario.origem (compatibilidade com tickets antigos)
+      const origem = t.dadosFormulario?.origem;
+      
+      let dominioFormatado = 'Não especificado';
+      
+      if (dominio) {
+        // Formatações específicas para domínios conhecidos
+        if (dominio === 'www.verificacaoassistida.online' || dominio === 'verificacaoassistida.online') {
+          dominioFormatado = 'Verificação Assistida';
+        } else if (dominio === 'portalcertidao.com.br' || dominio === 'www.portalcertidao.org') {
+          dominioFormatado = 'Portal Certidão';
+        } else if (dominio.includes('portalcacesso')) {
+          dominioFormatado = 'Portal Acesso';
+        } else if (dominio.includes('solicite')) {
+          dominioFormatado = 'Solicite Link';
+        } else {
+          dominioFormatado = dominio;
+        }
+      } else if (origem) {
+        // Fallback para origem (tickets antigos)
+        dominioFormatado = origem === 'portalcacesso' ? 'Portal Acesso' 
+                          : origem === 'solicite' ? 'Solicite Link'
+                          : origem;
+      }
+      
+      porDominio[dominioFormatado] = (porDominio[dominioFormatado] || 0) + 1;
     });
 
     // Ordenar por quantidade (maior primeiro)
@@ -301,7 +327,39 @@ export function Statistics() {
                       <tr key={ticket.id} className="hover:bg-[hsl(var(--table-row-hover))]">
                         <td className="px-4 py-3 font-mono text-sm text-foreground">{ticket.codigo}</td>
                         <td className="px-4 py-3 text-sm text-foreground max-w-[200px] truncate">{ticket.tipoCertidao}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{ticket.dominio}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {(() => {
+                            // Priorizar campo dominio (campo principal do ticket)
+                            const dominio = ticket.dominio;
+                            // Fallback para dadosFormulario.origem (compatibilidade com tickets antigos)
+                            const origem = ticket.dadosFormulario?.origem;
+                            
+                            if (dominio) {
+                              if (dominio === 'www.verificacaoassistida.online' || dominio === 'verificacaoassistida.online') {
+                                return 'Verificação Assistida';
+                              }
+                              if (dominio === 'portalcertidao.com.br' || dominio === 'www.portalcertidao.org') {
+                                return 'Portal Certidão';
+                              }
+                              if (dominio.includes('portalcacesso')) {
+                                return 'Portal Acesso';
+                              }
+                              if (dominio.includes('solicite')) {
+                                return 'Solicite Link';
+                              }
+                              return dominio;
+                            }
+                            
+                            // Fallback para origem (tickets antigos)
+                            if (origem === 'portalcacesso') {
+                              return 'Portal Acesso';
+                            }
+                            if (origem === 'solicite') {
+                              return 'Solicite Link';
+                            }
+                            return origem || 'Não especificado';
+                          })()}
+                        </td>
                         <td className="px-4 py-3 text-sm text-foreground">{ticket.operador || '-'}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
                           {ticket.dataConclusao && new Date(ticket.dataConclusao).toLocaleDateString('pt-BR')}

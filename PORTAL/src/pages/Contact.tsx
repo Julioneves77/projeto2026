@@ -137,8 +137,14 @@ const Contact = () => {
                 </div>
                 <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
                   <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><Phone className="h-6 w-6" /></div>
+                    <div><h3 className="font-heading font-semibold text-foreground">Telefone</h3><p className="mt-1 text-sm text-muted-foreground">(11) 994392-5211</p></div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
+                  <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><Clock className="h-6 w-6" /></div>
-                    <div><h3 className="font-heading font-semibold text-foreground">Horário</h3><p className="mt-1 text-sm text-muted-foreground">Segunda a Sexta<br/>09h às 18h</p></div>
+                    <div><h3 className="font-heading font-semibold text-foreground">Horário</h3><p className="mt-1 text-sm text-muted-foreground">Segundas às sexta-feiras<br/>das 08:00h às 17:00h</p></div>
                   </div>
                 </div>
               </div>
