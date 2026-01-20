@@ -28,3 +28,17 @@
 2026-01-15T12:25:25:   statusText: 'Forbidden',
 2026-01-15T12:25:25:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
 2026-01-15T12:25:25: }
+2026-01-17T16:22:52: ❌ [Pagar.me API v5] Erro ao criar pedido: Request failed with status code 403
+2026-01-17T16:22:52: ❌ [Pagar.me API v5] Detalhes do erro: {
+2026-01-17T16:22:52:   status: 403,
+2026-01-17T16:22:52:   statusText: 'Forbidden',
+2026-01-17T16:22:52:   data: '{\n  "message": "Authorization has been denied for this request."\n}'
+2026-01-17T16:22:52: }
+2026-01-18T12:21:20: ❌ [SYNC] Validação do ticket falhou: [
+2026-01-18T12:21:20:   'id é obrigatório e deve ser string',
+2026-01-18T12:21:20:   'codigo é obrigatório e deve ser string'
+2026-01-18T12:21:20: ]
+2026-01-18T12:22:36: ❌ [SYNC] Validação do ticket falhou: [
+2026-01-18T12:22:36:   'id é obrigatório e deve ser string',
+2026-01-18T12:22:36:   'codigo é obrigatório e deve ser string'
+2026-01-18T12:22:36: ]

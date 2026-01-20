@@ -736,6 +736,7 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                             tipoCertidao: 'Tipo de Certidão',
                             estadoEmissao: 'Estado de Emissão',
                             estadoSelecionado: 'Estado Selecionado',
+                            estado: 'Estado da Solicitação',
                             paisNascimento: 'País de Nascimento',
                             ufNascimento: 'UF de Nascimento',
                             municipioNascimento: 'Município de Nascimento',

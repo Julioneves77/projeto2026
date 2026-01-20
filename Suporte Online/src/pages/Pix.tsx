@@ -280,7 +280,7 @@ export default function Pix() {
               Pagamento via PIX
             </h1>
             <p className="text-muted-foreground">
-              Efetue o Pagamento para Continuar
+              Efetue o Pagamento e Receba sua Solicitação por Email
             </p>
           </div>
 

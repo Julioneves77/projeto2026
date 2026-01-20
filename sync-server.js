@@ -42,12 +42,58 @@ const COPIES_FILE = path.join(__dirname, 'copies-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
 // Configuração de CORS
+// IMPORTANTE: Quando credentials: true, não podemos usar '*' como origem
+// Precisamos especificar as origens explicitamente
+const getCorsOrigins = () => {
+  if (process.env.CORS_ORIGINS) {
+    const origins = process.env.CORS_ORIGINS.split(',').map(origin => origin.trim());
+    // Garantir que localhost:8083 está incluído se não estiver na lista (desenvolvimento)
+    if (!origins.includes('http://localhost:8083') && process.env.NODE_ENV !== 'production') {
+      origins.push('http://localhost:8083');
+    }
+    // Garantir que www.suporteonline.digital está incluído se não estiver na lista (produção)
+    const suporteOnlineOrigins = [
+      'https://www.suporteonline.digital',
+      'https://suporteonline.digital',
+      'http://www.suporteonline.digital',
+      'http://suporteonline.digital'
+    ];
+    suporteOnlineOrigins.forEach(origin => {
+      if (!origins.includes(origin)) {
+        origins.push(origin);
+      }
+    });
+    return origins;
+  }
+  // Em desenvolvimento, incluir origens comuns do localhost
+  // Não usar '*' quando credentials: true
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:8080',
+    'http://localhost:8081',
+    'http://localhost:8083',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://127.0.0.1:8080',
+    'http://127.0.0.1:8081',
+    'http://127.0.0.1:8083',
+    // Incluir suporteonline.digital mesmo em desenvolvimento para testes
+    'https://www.suporteonline.digital',
+    'https://suporteonline.digital',
+  ];
+  return defaultOrigins;
+};
+
+// Configuração de CORS - usar lista direta que sempre inclui localhost:8083
+const corsOriginsList = getCorsOrigins();
+
 const corsOptions = {
-  origin: process.env.CORS_ORIGINS 
-    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-    : '*', // Em desenvolvimento permite tudo, em produção deve ser configurado
+  origin: corsOriginsList, // Lista de origens permitidas (sempre inclui localhost:8083)
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
 };
 
 // Configuração de Rate Limiting
@@ -97,6 +143,7 @@ const uploadLimiter = rateLimit({
 });
 
 // Middleware de segurança (Helmet)
+// Configuração ajustada para não bloquear CORS
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -104,7 +151,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "http://localhost:*", "http://127.0.0.1:*"], // Permitir conexões de localhost em desenvolvimento
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -112,6 +159,7 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false, // Permitir uploads de arquivos
+  crossOriginResourcePolicy: false, // Desabilitar completamente para não interferir com CORS
 }));
 
 // Configurar trust proxy para funcionar atrás do Nginx
@@ -120,8 +168,27 @@ app.use(helmet({
 // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR (quando false com X-Forwarded-For presente)
 app.set('trust proxy', 1);
 
-// Middleware
+// Middleware adicional para garantir header Access-Control-Allow-Origin ANTES do CORS
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    // Sempre adicionar o header Access-Control-Allow-Origin
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    // Adicionar headers adicionais para requisições OPTIONS
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-API-Key');
+      res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
+      return res.status(200).end(); // Responder imediatamente para OPTIONS
+    }
+  }
+  next();
+});
+
+// Middleware CORS
 app.use(cors(corsOptions));
+
 
 // Aplicar raw APENAS em /transactions/* antes de qualquer parser
 app.use('/transactions', express.raw({ type: 'application/json', limit: '5mb' }));
@@ -602,7 +669,7 @@ app.post('/transactions/pix', authenticateRequest, async (req, res) => {
       payments: [{
         payment_method: 'pix',
         pix: {
-          expires_in: 1800 // 30 minutos em segundos
+          expires_in: 86400 // 1 dia em segundos (24 horas)
         }
       }],
       // Metadata para rastreamento
@@ -2221,14 +2288,36 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       };
       
       // Enviar email
+      console.log('📧 [Pagar.me Webhook] Verificando envio de email...');
+      console.log('📧 [Pagar.me Webhook] Ticket info:', {
+        codigo: ticket.codigo,
+        email: ticket.email,
+        dominio: ticket.dominio,
+        emailValido: ticket.email && validateEmail(ticket.email)
+      });
+      
       if (ticket.email && validateEmail(ticket.email)) {
         try {
+          console.log('📧 [Pagar.me Webhook] Chamando sendConfirmationEmail...');
           results.email = await sendPulseService.sendConfirmationEmail(ticket);
+          console.log('📧 [Pagar.me Webhook] Resultado do envio:', {
+            success: results.email?.success,
+            messageId: results.email?.messageId,
+            error: results.email?.error,
+            email: results.email?.email
+          });
           console.log('📧 [Pagar.me Webhook] Email enviado:', results.email.success ? '✅' : '❌');
         } catch (error) {
           console.error('❌ [Pagar.me Webhook] Erro ao enviar email:', error);
+          console.error('❌ [Pagar.me Webhook] Stack trace:', error.stack);
           results.email = { success: false, error: error.message };
         }
+      } else {
+        console.warn('⚠️ [Pagar.me Webhook] Email não enviado - email inválido ou não disponível:', {
+          email: ticket.email,
+          emailValido: ticket.email ? validateEmail(ticket.email) : false
+        });
+        results.email = { success: false, error: ticket.email ? 'Email inválido' : 'Email não disponível' };
       }
       
       // Enviar WhatsApp

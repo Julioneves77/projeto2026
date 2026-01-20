@@ -19,11 +19,15 @@ function createCompletionWhatsAppMessage(ticketData, mensagemInteracao) {
   const { nomeCompleto, codigo, tipoCertidao } = ticketData;
   
   // Obter informações do domínio de origem
-  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'suporteonline.digital';
   const normalizedDomain = dominio.replace(/^www\./, '').toLowerCase();
   
   // Mapear domínio para informações da marca
   const domainInfo = {
+    'suporteonline.digital': {
+      name: 'Suporte Online',
+      website: 'www.suporteonline.digital'
+    },
     'verificacaoassistida.online': {
       name: 'Verificação Assistida',
       website: 'www.verificacaoassistida.online'
@@ -34,7 +38,7 @@ function createCompletionWhatsAppMessage(ticketData, mensagemInteracao) {
     }
   };
   
-  const senderInfo = domainInfo[normalizedDomain] || domainInfo['portalcertidao.org'];
+  const senderInfo = domainInfo[normalizedDomain] || domainInfo['suporteonline.digital'];
   
   const tipoCertidaoNome = {
     'criminal-federal': 'Certidão Negativa Criminal Federal',
@@ -75,11 +79,15 @@ function createWhatsAppMessage(ticketData) {
   const { nomeCompleto, codigo, tipoCertidao, prioridade } = ticketData;
   
   // Obter informações do domínio de origem
-  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+  const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'suporteonline.digital';
   const normalizedDomain = dominio.replace(/^www\./, '').toLowerCase();
   
   // Mapear domínio para informações da marca
   const domainInfo = {
+    'suporteonline.digital': {
+      name: 'Suporte Online',
+      website: 'www.suporteonline.digital'
+    },
     'verificacaoassistida.online': {
       name: 'Verificação Assistida',
       website: 'www.verificacaoassistida.online'
@@ -89,8 +97,8 @@ function createWhatsAppMessage(ticketData) {
       website: 'www.portalcertidao.org'
     }
   }[normalizedDomain] || {
-    name: 'Portal Certidão',
-    website: 'www.portalcertidao.org'
+    name: 'Suporte Online',
+    website: 'www.suporteonline.digital'
   };
   
   // Prazo de entrega fixo conforme solicitado

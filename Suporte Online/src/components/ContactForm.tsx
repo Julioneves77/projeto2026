@@ -284,6 +284,10 @@ export function ContactForm() {
                 />
               </div>
 
+              <p className="text-sm text-muted-foreground text-center mb-4">
+                Acompanhamento Privado da Solicitação, com Entrega por E-mail.
+              </p>
+
               <Button 
                 type="submit" 
                 className="w-full h-12 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold text-base"
@@ -295,7 +299,7 @@ export function ContactForm() {
                     Enviando...
                   </>
                 ) : (
-                  "Iniciar atendimento"
+                  "Solicitar Acompanhamento"
                 )}
               </Button>
             </form>

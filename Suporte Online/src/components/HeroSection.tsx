@@ -23,12 +23,12 @@ export function HeroSection() {
 
           {/* Main heading */}
           <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6 text-balance">
-            Gostaria de ter Acesso ao seu Criminal Federal com Suporte?
+            Solicitação Criminal com Acompanhamento Privado
           </h1>
 
           {/* Subtitle */}
           <p className="text-lg md:text-xl text-white/80 mb-10 max-w-2xl mx-auto text-balance">
-            Serviço privado de assistência para organização e verificação de informações, com retorno rápido e atendimento humanizado.
+            Serviço pago de Organização, Conferência e Envio por E-mail.
           </p>
 
           {/* CTA Button */}

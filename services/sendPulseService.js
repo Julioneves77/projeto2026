@@ -64,13 +64,13 @@ function getSenderByDomain(dominio) {
   const normalizedDomain = dominio?.replace(/^www\./, '').toLowerCase();
   
   const domainMap = {
-    'verificacaoassistida.online': {
+    'suporteonline.digital': {
       // IMPORTANTE: Usar email verificado do SendPulse (fallback seguro)
-      // Se VERIFICACAO_SENDER_EMAIL não estiver configurado ou não verificado, usar SENDPULSE_SENDER_EMAIL
-      email: process.env.VERIFICACAO_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
-      name: process.env.VERIFICACAO_SENDER_NAME || 'Verificação Assistida',
-      website: 'www.verificacaoassistida.online',
-      websiteUrl: 'https://www.verificacaoassistida.online'
+      // Se SUPORTE_SENDER_EMAIL não estiver configurado ou não verificado, usar SENDPULSE_SENDER_EMAIL
+      email: process.env.SUPORTE_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@suporteonline.digital',
+      name: process.env.SUPORTE_SENDER_NAME || 'Suporte Online',
+      website: 'www.suporteonline.digital',
+      websiteUrl: 'https://www.suporteonline.digital'
     },
     'portalcertidao.org': {
       email: process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
@@ -81,10 +81,10 @@ function getSenderByDomain(dominio) {
   };
   
   return domainMap[normalizedDomain] || {
-    email: process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
-    name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
-    website: 'www.portalcertidao.org',
-    websiteUrl: 'https://www.portalcertidao.org'
+    email: process.env.SUPORTE_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@suporteonline.digital',
+    name: process.env.SUPORTE_SENDER_NAME || 'Suporte Online',
+    website: 'www.suporteonline.digital',
+    websiteUrl: 'https://www.suporteonline.digital'
   };
 }
 
@@ -155,18 +155,47 @@ function createEmailTemplate(ticketData, domainInfo) {
  */
 async function sendConfirmationEmail(ticketData) {
   try {
+    console.log('📧 [SendPulse] Iniciando envio de email de confirmação...');
+    console.log('📧 [SendPulse] Dados do ticket:', {
+      codigo: ticketData.codigo,
+      email: ticketData.email,
+      dominio: ticketData.dominio,
+      dadosFormulario: ticketData.dadosFormulario
+    });
+
     // Inicializar biblioteca se necessário
     await initializeSendPulse();
 
     const { email, nomeCompleto, codigo } = ticketData;
 
     if (!email) {
+      console.error('❌ [SendPulse] Email do cliente não fornecido');
       throw new Error('Email do cliente não fornecido');
     }
 
     // Obter domínio de origem do ticket
-    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+    // Normalizar domínio: remover www. se presente e garantir formato correto
+    let dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'suporteonline.digital';
+    
+    // Normalizar: remover www. e converter para lowercase
+    dominio = dominio.replace(/^www\./i, '').toLowerCase();
+    
+    // Se não for suporteonline.digital, usar fallback
+    if (dominio !== 'suporteonline.digital' && dominio !== 'portalcertidao.org') {
+      console.warn(`⚠️ [SendPulse] Domínio desconhecido: ${dominio}, usando fallback suporteonline.digital`);
+      dominio = 'suporteonline.digital';
+    }
+    
+    console.log('📧 [SendPulse] Domínio detectado:', dominio);
+    
     const domainInfo = getSenderByDomain(dominio);
+    
+    console.log('📧 [SendPulse] Informações do domínio:', {
+      email: domainInfo.email,
+      name: domainInfo.name,
+      website: domainInfo.website,
+      websiteUrl: domainInfo.websiteUrl
+    });
     
     // Usar remetente dinâmico baseado no domínio
     const senderEmail = domainInfo.email;
@@ -192,8 +221,12 @@ Dúvidas acesse: ${domainInfo.website}
 ${domainInfo.name}
     `.trim();
 
-    console.log(`📧 [SendPulse] Enviando email para ${email} (Ticket: ${codigo})`);
-    console.log(`📧 [SendPulse] Remetente: ${senderEmail} (${senderName})`);
+    console.log(`📧 [SendPulse] Preparando envio de email:`);
+    console.log(`   Destinatário: ${email}`);
+    console.log(`   Ticket: ${codigo}`);
+    console.log(`   Remetente: ${senderEmail} (${senderName})`);
+    console.log(`   Website no email: ${domainInfo.website}`);
+    console.log(`   URL no email: ${domainInfo.websiteUrl}`);
 
     // Estrutura do email conforme documentação oficial do SendPulse
     // SendPulse requer: subject, html, text, from {name, email}, to [{email}]
@@ -366,7 +399,7 @@ async function sendCompletionEmail(ticketData, mensagemInteracao, anexo) {
     }
 
     // Obter domínio de origem do ticket
-    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'portalcertidao.org';
+    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'suporteonline.digital';
     const domainInfo = getSenderByDomain(dominio);
     
     // Usar remetente dinâmico baseado no domínio
@@ -611,8 +644,8 @@ async function sendEmail({ to, subject, html, from, cc, bcc }) {
   const bccArray = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
   
   // Remetente padrão - usar SENDPULSE_SENDER_EMAIL que é o email verificado no SendPulse
-  const fromEmail = from?.email || process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@portalcertidao.org';
-  const fromName = from?.name || process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão';
+  const fromEmail = from?.email || process.env.SUPORTE_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || process.env.SUPPORT_EMAIL || 'contato@suporteonline.digital';
+  const fromName = from?.name || process.env.SUPORTE_SENDER_NAME || process.env.SENDPULSE_SENDER_NAME || 'Suporte Online';
   
   const emailData = {
     subject: subject,

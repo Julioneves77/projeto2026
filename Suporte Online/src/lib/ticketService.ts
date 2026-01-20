@@ -168,7 +168,7 @@ async function mapFormDataToTicket(
     telefone: formData.telefone || '',
     email: formData.email || '',
     tipoCertidao: 'Certidão Criminal Federal',
-    dominio: 'www.verificacaoassistida.online',
+    dominio: 'www.suporteonline.digital',
     dataCadastro: new Date().toISOString(),
     prioridade: 'padrao',
     status: 'GERAL', // IMPORTANTE: Tickets criados sempre começam com status GERAL
