@@ -59,8 +59,8 @@ const SEOHead = ({
       updateMetaTag('description', description);
     }
 
-    // Meta robots: noindex, follow em TODAS as páginas (obrigatório)
-    updateMetaTag('robots', 'noindex, follow');
+    // Meta robots: index, follow para permitir indexação pelo Google
+    updateMetaTag('robots', 'index, follow');
 
     // Atualizar canonical
     const canonicalUrl = canonical || `${BASE_URL}${location.pathname}`;

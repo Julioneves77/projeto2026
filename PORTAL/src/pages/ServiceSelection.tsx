@@ -3,7 +3,7 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Check, Zap, Clock, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Zap, Clock, Star } from "lucide-react";
 
 interface ServicePlan {
   id: string;
@@ -185,7 +185,7 @@ const ServiceSelection = () => {
                   variant={isSelected || plan.recommended ? "default" : "outline"}
                   className="w-full whitespace-normal break-words h-auto min-h-[44px] py-3 px-4 text-center"
                 >
-                  Emitir Certidão
+                  Próximo <ArrowRight className="h-4 w-4" />
                 </Button>
               </Card>
             );

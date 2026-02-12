@@ -1,0 +1,22 @@
+# humanstxt.org/
+# The humans responsible & technology colophon
+
+# TEAM
+
+    Guia das Certidões Brasil -- Plataforma de Automação Documental
+    Site: https://www.centraldascertidoes.com
+    Email: contato@centraldascertidoes.com
+    Localização: Brasil
+
+# THANKS
+
+    Certidigital Brasil Tech LTDA
+    CNPJ: 62.083.937/0001-25
+
+# TECHNOLOGY COLOPHON
+
+    HTML5, CSS3, JavaScript
+    React, TypeScript
+    Vite
+    Tailwind CSS
+    Node.js

@@ -1,5 +1,5 @@
 User-agent: *
-Disallow: /
+Allow: /
 
-# Sitemap (opcional, apenas organizacional)
+# Sitemap
 Sitemap: https://www.portalcertidao.org/sitemap.xml

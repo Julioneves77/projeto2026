@@ -77,6 +77,18 @@ function getSenderByDomain(dominio) {
       name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
       website: 'www.portalcertidao.org',
       websiteUrl: 'https://www.portalcertidao.org'
+    },
+    'centraldascertidoes.com': {
+      email: process.env.GUIA_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@centraldascertidoes.com',
+      name: process.env.GUIA_SENDER_NAME || 'Guia das Certidões',
+      website: 'www.centraldascertidoes.com',
+      websiteUrl: 'https://www.centraldascertidoes.com'
+    },
+    'guia-central.online': {
+      email: process.env.GUIA_CENTRAL_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@guia-central.online',
+      name: process.env.GUIA_CENTRAL_SENDER_NAME || 'Guia Central',
+      website: 'www.guia-central.online',
+      websiteUrl: 'https://www.guia-central.online'
     }
   };
   
@@ -98,15 +110,29 @@ function createEmailTemplate(ticketData, domainInfo) {
   const prazoEntrega = 'Depende da Comarca mas maioria até 2 horas';
 
   // Mapear tipo de certidão para nome amigável
+  // Suporta tanto os nomes do Guia das Certidões quanto os códigos antigos
   const tipoCertidaoNome = {
-    'criminal-federal': 'Certidão Negativa Criminal Federal',
-    'criminal-estadual': 'Certidão Negativa Criminal Estadual',
-    'antecedentes-pf': 'Antecedente Criminal de Polícia Federal',
+    // Códigos antigos (compatibilidade)
+    'criminal-federal': 'Certidão Criminal Federal',
+    'criminal-estadual': 'Certidão Criminal Estadual',
+    'antecedentes-pf': 'Antecedentes Criminais',
     'eleitoral': 'Certidão de Quitação Eleitoral',
-    'civil-federal': 'Certidão Negativa Cível Federal',
-    'civil-estadual': 'Certidão Negativa Cível Estadual',
-    'cnd': 'Certidão Negativa de Débito (CND)',
-    'cpf-regular': 'Certidão CPF Regular'
+    'civil-federal': 'Certidão Cível Federal',
+    'civil-estadual': 'Certidão Cível Estadual',
+    'cnd': 'Certidão Negativa de Débitos (CND)',
+    'cpf-regular': 'Certidão de CPF Regular',
+    // Nomes do Guia das Certidões (exatos)
+    'Certidão de Quitação Eleitoral': 'Certidão de Quitação Eleitoral',
+    'Antecedentes Criminais (Polícia Federal)': 'Antecedentes Criminais',
+    'Antecedentes Criminais': 'Antecedentes Criminais',
+    'Certidão Criminal Federal': 'Certidão Criminal Federal',
+    'Certidão Criminal Estadual': 'Certidão Criminal Estadual',
+    'Certidão Cível Federal': 'Certidão Cível Federal',
+    'Certidão Cível Estadual': 'Certidão Cível Estadual',
+    'Certidão Negativa de Débitos (CND)': 'Certidão Negativa de Débitos (CND)',
+    'Certidão de CPF Regular': 'Certidão de CPF Regular',
+    'Certidão de Débito Trabalhista': 'Certidão de Débito Trabalhista',
+    'CCIR - Cadastro de Imóvel Rural': 'CCIR - Cadastro de Imóvel Rural'
   }[tipoCertidao] || tipoCertidao;
 
   return `
@@ -133,7 +159,7 @@ function createEmailTemplate(ticketData, domainInfo) {
       <p><strong>Status:</strong> Em Processamento</p>
     </div>
     
-    <p>Você vai receber sua Solicitação por Email/WhatsApp assim que estiver Pronta.</p>
+    <p>Você vai receber sua Solicitação por Email assim que estiver Pronta.</p>
     
     <p>Dúvidas acesse: <a href="${domainInfo.websiteUrl}" style="color: #28a745; text-decoration: none;">${domainInfo.website}</a></p>
     
@@ -180,8 +206,8 @@ async function sendConfirmationEmail(ticketData) {
     // Normalizar: remover www. e converter para lowercase
     dominio = dominio.replace(/^www\./i, '').toLowerCase();
     
-    // Se não for suporteonline.digital, usar fallback
-    if (dominio !== 'suporteonline.digital' && dominio !== 'portalcertidao.org') {
+    // Se não for um domínio conhecido, usar fallback
+    if (dominio !== 'suporteonline.digital' && dominio !== 'portalcertidao.org' && dominio !== 'centraldascertidoes.com' && dominio !== 'guia-central.online') {
       console.warn(`⚠️ [SendPulse] Domínio desconhecido: ${dominio}, usando fallback suporteonline.digital`);
       dominio = 'suporteonline.digital';
     }
@@ -214,7 +240,7 @@ Código do Ticket: ${codigo}
 Prazo de Entrega: Depende da Comarca mas maioria até 2 horas
 Status: Em Processamento
 
-Você vai receber sua Solicitação por Email/WhatsApp assim que estiver Pronta.
+Você vai receber sua Solicitação por Email assim que estiver Pronta.
 
 Dúvidas acesse: ${domainInfo.website}
 
@@ -328,15 +354,29 @@ ${domainInfo.name}
 function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo) {
   const { nomeCompleto, codigo, tipoCertidao } = ticketData;
   
+  // Mapear tipo de certidão para nome amigável (email de conclusão)
   const tipoCertidaoNome = {
-    'criminal-federal': 'Certidão Negativa Criminal Federal',
-    'criminal-estadual': 'Certidão Negativa Criminal Estadual',
-    'antecedentes-pf': 'Antecedente Criminal de Polícia Federal',
+    // Códigos antigos (compatibilidade)
+    'criminal-federal': 'Certidão Criminal Federal',
+    'criminal-estadual': 'Certidão Criminal Estadual',
+    'antecedentes-pf': 'Antecedentes Criminais',
     'eleitoral': 'Certidão de Quitação Eleitoral',
-    'civil-federal': 'Certidão Negativa Cível Federal',
-    'civil-estadual': 'Certidão Negativa Cível Estadual',
-    'cnd': 'Certidão Negativa de Débito (CND)',
-    'cpf-regular': 'Certidão CPF Regular'
+    'civil-federal': 'Certidão Cível Federal',
+    'civil-estadual': 'Certidão Cível Estadual',
+    'cnd': 'Certidão Negativa de Débitos (CND)',
+    'cpf-regular': 'Certidão de CPF Regular',
+    // Nomes do Guia das Certidões (exatos)
+    'Certidão de Quitação Eleitoral': 'Certidão de Quitação Eleitoral',
+    'Antecedentes Criminais (Polícia Federal)': 'Antecedentes Criminais',
+    'Antecedentes Criminais': 'Antecedentes Criminais',
+    'Certidão Criminal Federal': 'Certidão Criminal Federal',
+    'Certidão Criminal Estadual': 'Certidão Criminal Estadual',
+    'Certidão Cível Federal': 'Certidão Cível Federal',
+    'Certidão Cível Estadual': 'Certidão Cível Estadual',
+    'Certidão Negativa de Débitos (CND)': 'Certidão Negativa de Débitos (CND)',
+    'Certidão de CPF Regular': 'Certidão de CPF Regular',
+    'Certidão de Débito Trabalhista': 'Certidão de Débito Trabalhista',
+    'CCIR - Cadastro de Imóvel Rural': 'CCIR - Cadastro de Imóvel Rural'
   }[tipoCertidao] || tipoCertidao;
 
   return `

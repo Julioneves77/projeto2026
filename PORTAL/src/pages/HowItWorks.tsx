@@ -1,33 +1,37 @@
 import Layout from "@/components/layout/Layout";
-import { CheckCircle, FileText, CreditCard, Mail, ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { Bot, FileText, CreditCard, Zap, Mail } from "lucide-react";
 import SEOHead from "@/components/SEOHead";
 
 const steps = [
   {
+    number: 0,
+    title: "Assistente de IA",
+    description: "Nosso assistente ajuda você a escolher a certidão correta.",
+    color: "bg-gray-500",
+  },
+  {
     number: 1,
-    icon: FileText,
-    title: "Escolha a Certidão",
-    description: "Selecione o tipo de certidão que você precisa entre as diversas opções disponíveis: estaduais, federais, CND, entre outras.",
+    title: "Escolha o documento",
+    description: "Selecione a certidão que precisa e preencha seus dados.",
+    color: "bg-blue-500",
   },
   {
     number: 2,
-    icon: CheckCircle,
-    title: "Preencha o Formulário",
-    description: "Complete os campos obrigatórios com seus dados pessoais. Todos os formulários são validados em tempo real para garantir a precisão.",
+    title: "Preencha e pague",
+    description: "Complete automaticamente e realize o pagamento via PIX.",
+    color: "bg-blue-500",
   },
   {
     number: 3,
-    icon: CreditCard,
-    title: "Efetue o Pagamento",
-    description: "Realize o pagamento de forma segura através de PIX, cartão de crédito ou boleto bancário.",
+    title: "Processamento digital",
+    description: "Nossa tecnologia processa sua solicitação de forma digital.",
+    color: "bg-green-500",
   },
   {
     number: 4,
-    icon: Mail,
-    title: "Receba sua Certidão",
-    description: "Após a confirmação do pagamento, sua certidão será processada e enviada diretamente para seu e-mail.",
+    title: "Receba no painel e e-mail",
+    description: "Resultado pronto no painel e enviado ao seu e-mail.",
+    color: "bg-green-500",
   },
 ];
 
@@ -36,81 +40,59 @@ const HowItWorks = () => {
     <Layout>
       <SEOHead
         title="Como Funciona - Portal Certidão"
-        description="Entenda como funciona o processo de solicitação de certidões no Portal Certidão. Processo rápido, seguro e 100% online."
+        description="Entenda como funciona o processo de solicitação de certidões no Portal Certidão. Processo automatizado com IA em 5 etapas simples."
       />
       {/* Hero */}
-      <section className="relative overflow-hidden hero-gradient py-16 lg:py-24">
+      <section className="relative overflow-hidden py-16 lg:py-24 bg-background">
         <div className="container relative">
-          <div className="mx-auto max-w-2xl text-center animate-slide-up">
-            <h1 className="font-heading text-4xl font-bold text-primary-foreground sm:text-5xl">
-              Como Funciona
+          <div className="mx-auto max-w-4xl text-center">
+            <h1 className="font-heading text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4">
+              Como Funciona Nosso Sistema
             </h1>
-            <p className="mt-4 text-lg text-primary-foreground/80">
-              Processo simples e transparente para obter suas certidões
+            <p className="text-lg md:text-xl text-muted-foreground">
+              Processo automatizado com IA em 5 etapas simples
             </p>
           </div>
         </div>
       </section>
 
       {/* Steps */}
-      <section className="py-20">
+      <section className="py-12 lg:py-20 bg-background">
         <div className="container">
-          <div className="mx-auto max-w-4xl">
-            <div className="space-y-12">
-              {steps.map((step, index) => (
+          <div className="mx-auto max-w-5xl">
+            {/* Primeira linha: Passos 0, 1, 2, 3 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+              {steps.slice(0, 4).map((step) => (
                 <div 
                   key={step.number}
-                  className="relative flex gap-6 animate-slide-up"
-                  style={{ animationDelay: `${index * 100}ms` }}
+                  className="flex flex-col items-center text-center"
                 >
-                  {/* Timeline */}
-                  <div className="flex flex-col items-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-                      <step.icon className="h-7 w-7" />
-                    </div>
-                    {index < steps.length - 1 && (
-                      <div className="mt-4 h-full w-0.5 bg-border" />
-                    )}
+                  <div className={`w-16 h-16 ${step.color} rounded-full flex items-center justify-center mb-4 shadow-lg`}>
+                    <span className="text-white text-xl font-bold">{step.number}</span>
                   </div>
-
-                  {/* Content */}
-                  <div className="flex-1 pb-12">
-                    <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
-                      <div className="mb-2 text-sm font-medium text-secondary">
-                        Passo {step.number}
-                      </div>
-                      <h3 className="font-heading text-xl font-bold text-foreground">
-                        {step.title}
-                      </h3>
-                      <p className="mt-2 text-muted-foreground leading-relaxed">
-                        {step.description}
-                      </p>
-                    </div>
-                  </div>
+                  <h3 className="font-semibold text-foreground mb-2 text-sm md:text-base">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {step.description}
+                  </p>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* CTA */}
-      <section className="py-16 bg-muted/50">
-        <div className="container">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="font-heading text-3xl font-bold text-foreground">
-              Pronto para Começar?
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              Escolha a certidão que você precisa e inicie sua solicitação agora mesmo.
-            </p>
-            <div className="mt-8">
-              <Button size="xl" asChild>
-                <Link to="/#certidoes">
-                  Ver Certidões Disponíveis
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
-              </Button>
+            {/* Segunda linha: Passo 4 centralizado */}
+            <div className="flex justify-center">
+              <div className="flex flex-col items-center text-center max-w-xs">
+                <div className={`w-16 h-16 ${steps[4].color} rounded-full flex items-center justify-center mb-4 shadow-lg`}>
+                  <span className="text-white text-xl font-bold">{steps[4].number}</span>
+                </div>
+                <h3 className="font-semibold text-foreground mb-2 text-sm md:text-base">
+                  {steps[4].title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {steps[4].description}
+                </p>
+              </div>
             </div>
           </div>
         </div>

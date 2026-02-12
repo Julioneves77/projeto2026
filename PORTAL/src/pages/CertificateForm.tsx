@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Info, AlertCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Info, AlertCircle } from "lucide-react";
 import {
   validateCPF,
   validateCNPJ,
@@ -42,8 +42,6 @@ import { getFormConfig, FormConfig, getAvailableStates } from "@/lib/formConfigs
 
 // Constantes de preço - atualizado em 05/01/2026
 const BASE_PRICE = 39.90;
-const PRIORIDADE_ADDON = 19.90;
-const PREMIUM_ADDON = 29.90;
 // Forçar novo build
 const BUILD_VERSION = "2026.01.05.2123";
 
@@ -87,8 +85,6 @@ const CertificateForm = () => {
   
   const [formData, setFormData] = useState<Record<string, string | boolean>>(getInitialFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isPrioridade, setIsPrioridade] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
   const [formProgressTracked, setFormProgressTracked] = useState<Set<number>>(new Set());
 
   // Get available states for estaduais category - DEVE VIR ANTES dos useEffect
@@ -540,20 +536,6 @@ const CertificateForm = () => {
     let deliveryTime = "até 3 dias úteis";
     let features: string[] = ["Atendimento Fila Normal", "Envio por E-mail em PDF"];
 
-    if (isPremium) {
-      finalPrice = BASE_PRICE + PREMIUM_ADDON; // 69.80
-      planId = "premium";
-      planName = "Certidão Premium WhatsApp";
-      deliveryTime = "até 4 horas";
-      features = ["Atendimento Urgente (à frente de todos)", "Envio por E-mail e WhatsApp"];
-    } else if (isPrioridade) {
-      finalPrice = BASE_PRICE + PRIORIDADE_ADDON; // 59.80
-      planId = "prioridade";
-      planName = "Certidão Atendimento Prioritário";
-      deliveryTime = "até 24 horas";
-      features = ["Atendimento Prioridade (frente da fila Normal)", "Envio por E-mail e WhatsApp"];
-    }
-
     const selectedPlan = {
       id: planId,
       name: planName,
@@ -814,73 +796,6 @@ const CertificateForm = () => {
               </div>
             ))}
 
-            {/* Seção de Prioridade */}
-            <div className="border-t border-border pt-6 mt-6">
-              <h3 className="font-semibold text-foreground text-base mb-4">
-                Opções de Atendimento (Opcional)
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Escolha uma opção adicional para receber sua certidão com mais rapidez:
-              </p>
-              
-              <div className="space-y-3">
-                {/* Checkbox Prioridade */}
-                <div className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
-                  <Checkbox
-                    id="prioridade"
-                    checked={isPrioridade}
-                    onCheckedChange={(checked) => {
-                      setIsPrioridade(checked as boolean);
-                      if (checked) setIsPremium(false); // Desmarcar premium se prioridade for selecionada
-                    }}
-                  />
-                  <div className="flex-1">
-                    <label
-                      htmlFor="prioridade"
-                      className="text-sm font-medium text-foreground cursor-pointer flex items-center gap-2"
-                    >
-                      Atendimento Prioritário
-                      <span className="text-xs font-semibold text-primary">
-                        (+R$ {PRIORIDADE_ADDON.toFixed(2).replace(".", ",")})
-                      </span>
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Atendimento prioritário - Baixe no Email e WhatsApp
-                    </p>
-                  </div>
-                </div>
-
-                {/* Checkbox Premium */}
-                <div className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
-                  <Checkbox
-                    id="premium"
-                    checked={isPremium}
-                    onCheckedChange={(checked) => {
-                      setIsPremium(checked as boolean);
-                      if (checked) setIsPrioridade(false); // Desmarcar prioridade se premium for selecionada
-                    }}
-                  />
-                  <div className="flex-1">
-                    <label
-                      htmlFor="premium"
-                      className="text-sm font-medium text-foreground cursor-pointer flex items-center gap-2"
-                    >
-                      <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded uppercase">
-                        URGENTE
-                      </span>
-                      Atendimento Premium
-                      <span className="text-xs font-semibold text-primary">
-                        (+R$ {PREMIUM_ADDON.toFixed(2).replace(".", ",")})
-                      </span>
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Atendimento urgente - Baixe no Email e WhatsApp
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Botão de Submeter */}
             <div className="pt-6 border-t border-border">
               <Button
@@ -890,7 +805,7 @@ const CertificateForm = () => {
                 onClick={handleSubmit}
                 className="w-full"
               >
-                Emitir Certidão
+                Próximo <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           </div>

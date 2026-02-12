@@ -63,6 +63,30 @@ const getCorsOrigins = () => {
         origins.push(origin);
       }
     });
+    // Garantir que www.centraldascertidoes.com está incluído se não estiver na lista (produção)
+    const guiaCertidoesOrigins = [
+      'https://www.centraldascertidoes.com',
+      'https://centraldascertidoes.com',
+      'http://www.centraldascertidoes.com',
+      'http://centraldascertidoes.com'
+    ];
+    guiaCertidoesOrigins.forEach(origin => {
+      if (!origins.includes(origin)) {
+        origins.push(origin);
+      }
+    });
+    // Garantir que www.guia-central.online está incluído se não estiver na lista (produção)
+    const guiaCentralOrigins = [
+      'https://www.guia-central.online',
+      'https://guia-central.online',
+      'http://www.guia-central.online',
+      'http://guia-central.online'
+    ];
+    guiaCentralOrigins.forEach(origin => {
+      if (!origins.includes(origin)) {
+        origins.push(origin);
+      }
+    });
     return origins;
   }
   // Em desenvolvimento, incluir origens comuns do localhost
@@ -81,6 +105,12 @@ const getCorsOrigins = () => {
     // Incluir suporteonline.digital mesmo em desenvolvimento para testes
     'https://www.suporteonline.digital',
     'https://suporteonline.digital',
+    // Incluir centraldascertidoes.com mesmo em desenvolvimento para testes
+    'https://www.centraldascertidoes.com',
+    'https://centraldascertidoes.com',
+    // Incluir guia-central.online mesmo em desenvolvimento para testes
+    'https://www.guia-central.online',
+    'https://guia-central.online',
   ];
   return defaultOrigins;
 };
@@ -2320,16 +2350,17 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
         results.email = { success: false, error: ticket.email ? 'Email inválido' : 'Email não disponível' };
       }
       
-      // Enviar WhatsApp
-      if (ticket.telefone && validatePhone(ticket.telefone)) {
-        try {
-          results.whatsapp = await zapApiService.sendWhatsAppMessage(ticket);
-          console.log('📱 [Pagar.me Webhook] WhatsApp enviado:', results.whatsapp.success ? '✅' : '❌');
-        } catch (error) {
-          console.error('❌ [Pagar.me Webhook] Erro ao enviar WhatsApp:', error);
-          results.whatsapp = { success: false, error: error.message };
-        }
-      }
+      // WhatsApp desabilitado - não será enviado
+      // if (ticket.telefone && validatePhone(ticket.telefone)) {
+      //   try {
+      //     results.whatsapp = await zapApiService.sendWhatsAppMessage(ticket);
+      //     console.log('📱 [Pagar.me Webhook] WhatsApp enviado:', results.whatsapp.success ? '✅' : '❌');
+      //   } catch (error) {
+      //     console.error('❌ [Pagar.me Webhook] Erro ao enviar WhatsApp:', error);
+      //     results.whatsapp = { success: false, error: error.message };
+      //   }
+      // }
+      results.whatsapp = { success: false, error: 'WhatsApp desabilitado' };
       
       // Atualizar histórico com resultado dos envios
       const historicoLengthAfter = tickets[ticketIndex].historico.length;
@@ -2339,12 +2370,8 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
         autor: 'Sistema',
         statusAnterior: 'EM_OPERACAO',
         statusNovo: 'EM_OPERACAO',
-        mensagem: results.email?.success && results.whatsapp?.success
-          ? 'Confirmação de pagamento enviada por email e WhatsApp'
-          : results.email?.success
+        mensagem: results.email?.success
           ? 'Confirmação de pagamento enviada por email'
-          : results.whatsapp?.success
-          ? 'Confirmação de pagamento enviada por WhatsApp'
           : 'Confirmação de pagamento não enviada',
         enviouEmail: results.email?.success || false,
         enviouWhatsApp: results.whatsapp?.success || false,
