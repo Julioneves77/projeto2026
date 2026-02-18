@@ -101,25 +101,33 @@ const Payment = () => {
   const locationState = location.state || {};
   const [searchParams] = useSearchParams();
   
-  // Detectar origem: parâmetro URL ou referrer
-  const detectOrigin = (): 'portalcacesso' | 'solicite' => {
+  // Detectar origem: parâmetro URL, hostname ou referrer
+  const detectOrigin = (): 'portalcacesso' | 'solicite' | 'guia-central' => {
     // 1. Verificar parâmetro na URL
     const urlSource = searchParams.get('source');
-    if (urlSource === 'portalcacesso') {
-      return 'portalcacesso';
+    if (urlSource === 'portalcacesso') return 'portalcacesso';
+    if (urlSource === 'guia-central') return 'guia-central';
+
+    // 2. Verificar hostname atual (usuário está no guia-central)
+    const hostname = window.location.hostname || '';
+    if (hostname.includes('guia-central.online')) {
+      return 'guia-central';
     }
-    
-    // 2. Verificar referrer como fallback
+
+    // 3. Verificar referrer como fallback
     const referrer = document.referrer || '';
     if (referrer.includes('portalcacesso.online') || referrer.includes('portalcacesso')) {
       return 'portalcacesso';
     }
+    if (referrer.includes('guia-central.online') || referrer.includes('guia-central')) {
+      return 'guia-central';
+    }
     if (referrer.includes('solicite.link') || referrer.includes('solicite')) {
       return 'solicite';
     }
-    
-    // 3. Padrão: solicite
-    return 'solicite';
+
+    // 4. Padrão: guia-central (este app é o guia-central)
+    return 'guia-central';
   };
   
   const origem = detectOrigin();
@@ -638,52 +646,43 @@ const Payment = () => {
     }
   };
 
-  // Função para redirecionar para página de obrigado via /event (dispara evento GTM)
+  // Função para redirecionar para página de obrigado
   const redirectToThankYou = async (ticket: any) => {
-    // Determinar URL base baseado na origem
-    const currentOrigin = origem || localStorage.getItem('payment_origin') || 'solicite';
+    const currentOrigin = origem || localStorage.getItem('payment_origin') || 'guia-central';
     const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
     const PORTAL_ACESSO_URL = import.meta.env.VITE_PORTAL_ACESSO_URL || 'https://portalcacesso.online';
-    
-    const baseUrl = currentOrigin === 'portalcacesso' ? PORTAL_ACESSO_URL : SOLICITE_LINK_URL;
-    
+
     const ticketCodigo = ticket?.codigo || '';
     const planoNome = selectedPlan.name || '';
     const planoId = selectedPlan.id || 'padrao';
     const email = formData.email || '';
-    
-    // Recuperar utm_campaign do localStorage ou URL
-    let utmCampaign: string | null = null;
-    try {
-      // Tentar da URL primeiro
-      const urlParams = new URLSearchParams(window.location.search);
-      utmCampaign = urlParams.get('utm_campaign');
-      
-      // Se não encontrou na URL, tentar do localStorage
-      if (!utmCampaign) {
-        utmCampaign = localStorage.getItem('utm_campaign');
-      }
-      
-      // Se encontrou, salvar no localStorage para preservar
-      if (utmCampaign) {
-        localStorage.setItem('utm_campaign', utmCampaign);
-      }
-    } catch (e) {
-      // Ignorar erro
-    }
-    
-    // Salvar no localStorage como fallback (será lido pela página /obrigado)
+
     if (ticketCodigo) localStorage.setItem('ticketCodigo', ticketCodigo);
     if (planoNome) localStorage.setItem('planoNome', planoNome);
     if (planoId) localStorage.setItem('planoId', planoId);
     if (email) localStorage.setItem('ticketEmail', email);
     if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
     if (currentOrigin) localStorage.setItem('payment_origin', currentOrigin);
-    
-    // Gerar session ID único para anti-duplicidade
+
+    // Para guia-central: redirecionar diretamente para /obrigado (SPA, sem /event)
+    if (currentOrigin === 'guia-central') {
+      console.log('🚀 [guia-central Payment] Redirecionando para /obrigado');
+      navigate('/obrigado', {
+        state: { formData, selectedPlan, certificateType },
+        replace: true,
+      });
+      return;
+    }
+
+    // Para portalcacesso e solicite: fluxo externo via /event
+    const baseUrl = currentOrigin === 'portalcacesso' ? PORTAL_ACESSO_URL : SOLICITE_LINK_URL;
+    let utmCampaign: string | null = null;
+    try {
+      utmCampaign = new URLSearchParams(window.location.search).get('utm_campaign') || localStorage.getItem('utm_campaign');
+      if (utmCampaign) localStorage.setItem('utm_campaign', utmCampaign);
+    } catch (e) {}
+
     const sessionId = `${ticketCodigo}_${Date.now()}`;
-    
-    // Redirecionar para /event primeiro (dispara evento GTM) e depois vai para /obrigado
     const eventUrl = new URL(`${baseUrl}/event`);
     eventUrl.searchParams.set('type', 'payment_completed');
     eventUrl.searchParams.set('sid', sessionId);
@@ -692,15 +691,9 @@ const Payment = () => {
     eventUrl.searchParams.set('planoId', planoId);
     eventUrl.searchParams.set('email', email);
     eventUrl.searchParams.set('tipo', certificateType);
-    
-    // Incluir utm_campaign na URL se disponível
-    if (utmCampaign) {
-      eventUrl.searchParams.set('utm_campaign', utmCampaign);
-    }
-    
-    console.log(`🚀 [PORTAL Payment] Origem: ${currentOrigin}, Redirecionando para ${baseUrl}/event:`, eventUrl.toString());
-    
-    // Redirecionar para o domínio correto baseado na origem
+    if (utmCampaign) eventUrl.searchParams.set('utm_campaign', utmCampaign);
+
+    console.log(`🚀 [Payment] Origem: ${currentOrigin}, Redirecionando para ${baseUrl}/event`);
     window.location.href = eventUrl.toString();
   };
 

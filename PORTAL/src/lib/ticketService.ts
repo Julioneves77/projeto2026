@@ -309,7 +309,7 @@ async function mapFormDataToTicket(
     telefone: telefone || '',
     email: email || '',
     tipoCertidao: certificateType || 'Não especificado',
-    dominio: 'portalcertidao.com.br',
+    dominio: 'www.portalcertidao.org',
     dataCadastro: new Date().toISOString(),
     prioridade,
     status: 'GERAL', // IMPORTANTE: Tickets criados no PORTAL sempre começam com status GERAL

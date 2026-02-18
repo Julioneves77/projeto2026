@@ -22,10 +22,11 @@ command -v certbot >/dev/null || { sudo apt-get update -qq; sudo apt-get install
 echo ""
 echo "🔐 Configurando certificados SSL..."
 
-# guia-central.online
+# guia-central.online (certonly --webroot: NÃO altera Nginx - deploy-guia-central aplica a config)
 echo "  → guia-central.online"
-sudo certbot --nginx -d www.guia-central.online -d guia-central.online \
-    --non-interactive --agree-tos --email contato@guia-central.online --redirect --expand 2>/dev/null || echo "    (já existe ou falhou)"
+sudo certbot certonly --webroot -w /var/www/guia-central/dist \
+    -d www.guia-central.online -d guia-central.online \
+    --non-interactive --agree-tos --email contato@guia-central.online --expand 2>/dev/null || echo "    (já existe ou falhou)"
 
 # centraldascertidoes.com / guiadascertidoes.online (mesmo servidor)
 echo "  → centraldascertidoes.com"

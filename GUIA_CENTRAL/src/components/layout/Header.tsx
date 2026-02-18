@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import HiddenDisclaimer from "@/components/HiddenDisclaimer";
 
 const certificates = [
   { id: "federais", type: "criminal" as const, title: "Certidão Negativa Criminal Federal" },
@@ -24,6 +25,7 @@ const Header = () => {
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
+      <HiddenDisclaimer />
       <div className="container mx-auto flex items-center justify-between py-3 px-4">
         <Link to="/" className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-lg gradient-hero flex items-center justify-center">

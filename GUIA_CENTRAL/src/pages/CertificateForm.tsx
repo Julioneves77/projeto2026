@@ -915,18 +915,19 @@ const CertificateForm = () => {
             )}
 
             {/* Navegação Voltar / Próximo */}
-            <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
+            <div className="flex flex-col-reverse sm:flex-row gap-4 pt-4 border-t border-border">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : navigate(-1))}
-                className="gap-2"
+                size="lg"
+                className="gap-2 w-full sm:flex-1"
               >
                 <ChevronLeft className="size-4" />
                 Voltar
               </Button>
               {isReviewStep ? (
-                <Button type="submit" variant="hero" size="lg" className="gap-2 flex-1 shadow-hero">
+                <Button type="submit" variant="hero" size="lg" className="gap-2 w-full sm:flex-1 shadow-hero">
                   Confirmar e Pagar via PIX
                   <ChevronRight className="size-4" />
                 </Button>
@@ -936,7 +937,7 @@ const CertificateForm = () => {
                   variant="hero"
                   size="lg"
                   onClick={() => canProceed() && setCurrentStep(currentStep + 1)}
-                  className="gap-2 flex-1 shadow-hero"
+                  className="gap-2 w-full sm:flex-1 shadow-hero"
                 >
                   Próximo
                   <ChevronRight className="size-4" />

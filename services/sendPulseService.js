@@ -78,6 +78,13 @@ function getSenderByDomain(dominio) {
       website: 'www.portalcertidao.org',
       websiteUrl: 'https://www.portalcertidao.org'
     },
+    // Compatibilidade: tickets antigos do PORTAL usavam portalcertidao.com.br
+    'portalcertidao.com.br': {
+      email: process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org',
+      name: process.env.SENDPULSE_SENDER_NAME || 'Portal Certidão',
+      website: 'www.portalcertidao.org',
+      websiteUrl: 'https://www.portalcertidao.org'
+    },
     'centraldascertidoes.com': {
       email: process.env.GUIA_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@centraldascertidoes.com',
       name: process.env.GUIA_SENDER_NAME || 'Guia das Certidões',
@@ -207,7 +214,7 @@ async function sendConfirmationEmail(ticketData) {
     dominio = dominio.replace(/^www\./i, '').toLowerCase();
     
     // Se não for um domínio conhecido, usar fallback
-    if (dominio !== 'suporteonline.digital' && dominio !== 'portalcertidao.org' && dominio !== 'centraldascertidoes.com' && dominio !== 'guia-central.online') {
+    if (dominio !== 'suporteonline.digital' && dominio !== 'portalcertidao.org' && dominio !== 'portalcertidao.com.br' && dominio !== 'centraldascertidoes.com' && dominio !== 'guia-central.online') {
       console.warn(`⚠️ [SendPulse] Domínio desconhecido: ${dominio}, usando fallback suporteonline.digital`);
       dominio = 'suporteonline.digital';
     }

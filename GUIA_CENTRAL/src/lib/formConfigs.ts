@@ -193,10 +193,32 @@ const estaduaisConfigs: Record<string, FormConfig> = {
       ]},
     ],
   },
+  rs: {
+    title: "Certidão Negativa Criminal - Rio Grande do Sul",
+    description: "Tribunal de Justiça do Estado do Rio Grande do Sul",
+    steps: [
+      { title: "Tipo de Documento", fields: [
+        { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
+        { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "rg", label: "RG", type: "text", required: true, placeholder: "Número do RG", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "rgOrgaoEmissor", label: "Órgão Expedidor", type: "text", required: true, placeholder: "Ex: SSP/RS", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+        { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+      ]},
+      { title: "Endereço, Contato e Confirmação", fields: [
+        { name: "enderecoCompleto", label: "Endereço", type: "text", required: true, placeholder: "Endereço completo" },
+        ...globalContactFields.slice(1),
+        ...termsFields,
+      ]},
+    ],
+  },
 };
 
 // Add remaining states with similar structure
-["ac", "al", "am", "ap", "ce", "es", "ma", "ms", "pa", "pb", "pe", "pi", "rn", "ro", "rs", "sc", "se"].forEach((state) => {
+["ac", "al", "am", "ap", "ce", "es", "ma", "ms", "pa", "pb", "pe", "pi", "rn", "ro", "sc", "se"].forEach((state) => {
   if (!estaduaisConfigs[state]) {
     estaduaisConfigs[state] = {
       title: `Certidão Negativa Criminal - ${state.toUpperCase()}`,

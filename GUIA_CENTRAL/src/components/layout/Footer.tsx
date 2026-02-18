@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
+import HiddenDisclaimer from "@/components/HiddenDisclaimer";
 
 const Footer = () => {
   return (
     <footer className="border-t border-border bg-card py-10">
+      <HiddenDisclaimer />
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
@@ -20,6 +22,9 @@ const Footer = () => {
           <div>
             <h4 className="font-heading font-semibold text-foreground mb-3 text-sm">Links Úteis</h4>
             <div className="space-y-2">
+              <Link to="/sobre" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
+                Sobre
+              </Link>
               <Link to="/politica-privacidade" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
                 Política de Privacidade
               </Link>

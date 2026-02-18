@@ -10,10 +10,11 @@ import FAQ from "./pages/FAQ";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Contact from "./pages/Contact";
+import Sobre from "./pages/Sobre";
 import CertificateForm from "./pages/CertificateForm";
 import Payment from "./pages/Payment";
 import ThankYou from "./pages/ThankYou";
-import CookieConsent from "./components/CookieConsent";
+import CookieBanner from "./components/CookieBanner";
 
 const queryClient = new QueryClient();
 
@@ -23,7 +24,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <CookieConsent />
+        <CookieBanner />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/como-funciona" element={<HowItWorks />} />
@@ -31,6 +32,7 @@ const App = () => (
           <Route path="/politica-privacidade" element={<Privacy />} />
           <Route path="/termos-uso" element={<Terms />} />
           <Route path="/contato" element={<Contact />} />
+          <Route path="/sobre" element={<Sobre />} />
           <Route path="/certidao/:category" element={<CertificateForm />} />
           <Route path="/pagamento" element={<Payment />} />
           <Route path="/obrigado" element={<ThankYou />} />

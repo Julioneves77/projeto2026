@@ -81,13 +81,14 @@ server {
 TEMPHTTP
         sudo ln -sf /etc/nginx/sites-available/guia-central.online /etc/nginx/sites-enabled/
         sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
-        echo "🔐 Obtendo certificado SSL (DNS deve apontar para este servidor)..."
-        if sudo certbot --nginx -d www.guia-central.online -d guia-central.online \
-            --non-interactive --agree-tos --email contato@guia-central.online --redirect 2>/dev/null; then
+        echo "🔐 Obtendo certificado SSL (certonly --webroot, sem alterar Nginx)..."
+        if sudo certbot certonly --webroot -w /var/www/guia-central/dist \
+            -d www.guia-central.online -d guia-central.online \
+            --non-interactive --agree-tos --email contato@guia-central.online 2>/dev/null; then
             echo "✅ Certificado obtido com sucesso!"
         else
             echo "⚠️  Certbot falhou. Verifique: DNS (A record) apontando para este servidor."
-            echo "   Execute manualmente: sudo certbot --nginx -d www.guia-central.online -d guia-central.online"
+            echo "   Execute: sudo certbot certonly --webroot -w /var/www/guia-central/dist -d www.guia-central.online -d guia-central.online"
         fi
         CERT_DIR="/etc/letsencrypt/live/www.guia-central.online"
         [ ! -d "$CERT_DIR" ] && CERT_DIR="/etc/letsencrypt/live/guia-central.online"
@@ -164,6 +165,46 @@ HTTPEOF
     echo "🔄 Recarregando Nginx..."
     sudo systemctl reload nginx
     echo "✅ Nginx configurado"
+
+    # Instalar hook de renovação: restaura nossa config após certbot renew (evita HTTPS quebrar)
+    echo "📌 Instalando hook de renovação Certbot..."
+    sudo tee /etc/letsencrypt/renewal-hooks/deploy/restore-guia-central-nginx.sh > /dev/null << 'HOOKEOF'
+#!/bin/bash
+CERT_DIR="/etc/letsencrypt/live/guia-central.online"
+[ ! -d "$CERT_DIR" ] && CERT_DIR="/etc/letsencrypt/live/www.guia-central.online"
+[ ! -d "$CERT_DIR" ] && exit 0
+sudo tee /etc/nginx/sites-available/guia-central.online > /dev/null << NGX
+server {
+    listen 80;
+    server_name www.guia-central.online guia-central.online;
+    return 301 https://\$host\$request_uri;
+}
+server {
+    listen 143.198.10.145:443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.guia-central.online guia-central.online;
+    root /var/www/guia-central/dist;
+    index index.html;
+    ssl_certificate ${CERT_DIR}/fullchain.pem;
+    ssl_certificate_key ${CERT_DIR}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    location / { try_files \$uri \$uri/ /index.html; }
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+NGX
+sudo ln -sf /etc/nginx/sites-available/guia-central.online /etc/nginx/sites-enabled/
+sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
+HOOKEOF
+    sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/restore-guia-central-nginx.sh
+    echo "✅ Hook instalado (restaura config após certbot renew)"
 NGINX_EOF
 
 echo -e "${YELLOW}🔐 Configurando permissões...${NC}"

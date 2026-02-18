@@ -1,6 +1,8 @@
 import { Search, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import HiddenDisclaimer from "./HiddenDisclaimer";
+import HiddenCertidaoInfo from "./HiddenCertidaoInfo";
 
 const certificates = [
   { id: "federais", type: "criminal" as const, title: "Certidão Negativa Criminal Federal" },
@@ -26,6 +28,7 @@ const HeroAndServices = () => {
 
   return (
     <section className="relative">
+      <HiddenDisclaimer />
       {/* Top banner */}
       <div className="gradient-hero py-3 text-center">
         <p className="text-primary-foreground/90 text-sm font-medium">
@@ -51,16 +54,18 @@ const HeroAndServices = () => {
         {/* Service list */}
         <div className="space-y-3">
           {filtered.map((cert, index) => (
-            <Link
-              key={index}
-              to={getLink(cert)}
-              className="group flex items-center justify-between bg-card border border-border rounded-xl px-6 py-5 hover:shadow-card-hover hover:border-primary/30 transition-all duration-200"
-            >
-              <h3 className="font-heading font-semibold text-foreground text-base group-hover:text-primary transition-colors">
-                {cert.title}
-              </h3>
-              <ChevronRight className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" size={20} />
-            </Link>
+            <div key={index}>
+              <HiddenCertidaoInfo certidaoName={cert.title} />
+              <Link
+                to={getLink(cert)}
+                className="group flex items-center justify-between bg-card border border-border rounded-xl px-6 py-5 hover:shadow-card-hover hover:border-primary/30 transition-all duration-200"
+              >
+                <h3 className="font-heading font-semibold text-foreground text-base group-hover:text-primary transition-colors">
+                  {cert.title}
+                </h3>
+                <ChevronRight className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" size={20} />
+              </Link>
+            </div>
           ))}
         </div>
       </div>

@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
@@ -9,39 +8,6 @@ import { CheckCircle, Mail, MessageCircle, Clock, ArrowRight, Home } from "lucid
 const ThankYou = () => {
   const location = useLocation();
   const { formData, selectedPlan, certificateType } = location.state || {};
-  
-  // URL do SOLICITE LINK - configurável via variável de ambiente
-  const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
-
-  // Redirecionar automaticamente para SOLICITE LINK após 3 segundos
-  useEffect(() => {
-    if (formData && selectedPlan) {
-      // Preparar dados para passar via URL params
-      const planoNome = selectedPlan.name || '';
-      const planoId = selectedPlan.id || 'padrao';
-      const email = formData.email || '';
-      
-      // Construir URL do SOLICITE LINK com parâmetros
-      const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
-      obrigadoUrl.searchParams.set('plano', planoNome);
-      obrigadoUrl.searchParams.set('planoId', planoId);
-      obrigadoUrl.searchParams.set('email', email);
-      if (certificateType) obrigadoUrl.searchParams.set('tipo', certificateType);
-      
-      // Também salvar no localStorage como fallback
-      if (planoNome) localStorage.setItem('planoNome', planoNome);
-      if (planoId) localStorage.setItem('planoId', planoId);
-      if (email) localStorage.setItem('ticketEmail', email);
-      if (certificateType) localStorage.setItem('tipoCertidao', certificateType);
-      
-      // Redirecionar após 3 segundos
-      const timer = setTimeout(() => {
-        window.location.href = obrigadoUrl.toString();
-      }, 3000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [formData, selectedPlan, certificateType, SOLICITE_LINK_URL]);
 
   if (!formData || !selectedPlan) {
     return (
@@ -164,10 +130,10 @@ const ThankYou = () => {
               </p>
             </div>
 
-            {/* Next Steps */}
+            {/* Orientação - Próximos Passos */}
             <div className="space-y-4 mb-8">
               <h3 className="font-heading font-semibold text-foreground">
-                Próximos Passos
+                Orientação — O que fazer a seguir
               </h3>
               <ul className="space-y-3">
                 <li className="flex items-start gap-3">
@@ -175,7 +141,7 @@ const ThankYou = () => {
                     1
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Você receberá um e-mail de confirmação com os detalhes do pedido.
+                    Você receberá um e-mail de confirmação com os detalhes do pedido. Verifique sua caixa de entrada e a pasta de spam.
                   </p>
                 </li>
                 <li className="flex items-start gap-3">
@@ -183,7 +149,7 @@ const ThankYou = () => {
                     2
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Nossa equipe iniciará o processamento da sua certidão.
+                    Nossa equipe iniciará o processamento da sua certidão. O prazo de entrega é {deliveryInfo.time} conforme o plano escolhido.
                   </p>
                 </li>
                 <li className="flex items-start gap-3">
@@ -195,35 +161,18 @@ const ThankYou = () => {
                   </p>
                 </li>
               </ul>
-            </div>
-
-            {/* Mensagem de Redirecionamento */}
-            <div className="text-center mb-6 p-4 bg-primary/10 rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                Você será redirecionado automaticamente em alguns instantes...
+              <p className="text-sm text-muted-foreground mt-4">
+                Dúvidas? Entre em contato: <a href="mailto:contato@guia-central.online" className="text-primary hover:underline font-medium">contato@guia-central.online</a>
               </p>
             </div>
 
             {/* CTA */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button 
-                size="lg"
-                onClick={() => {
-                  const planoNome = selectedPlan.name || '';
-                  const planoId = selectedPlan.id || 'padrao';
-                  const email = formData.email || '';
-                  
-                  const obrigadoUrl = new URL(`${SOLICITE_LINK_URL}/obrigado`);
-                  obrigadoUrl.searchParams.set('plano', planoNome);
-                  obrigadoUrl.searchParams.set('planoId', planoId);
-                  obrigadoUrl.searchParams.set('email', email);
-                  if (certificateType) obrigadoUrl.searchParams.set('tipo', certificateType);
-                  
-                  window.location.href = obrigadoUrl.toString();
-                }}
-              >
-                Continuar
-                <ArrowRight className="h-4 w-4 ml-2" />
+              <Button asChild size="lg">
+                <Link to="/">
+                  Voltar ao Início
+                  <Home className="h-4 w-4 ml-2" />
+                </Link>
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link to="/contato">

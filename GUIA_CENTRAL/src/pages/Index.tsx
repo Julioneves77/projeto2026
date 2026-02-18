@@ -4,20 +4,20 @@ import StructuredData from "@/components/StructuredData";
 import HeroAndServices from "@/components/HeroAndServices";
 import HowItWorks from "@/components/HowItWorks";
 import Disclaimer from "@/components/Disclaimer";
-import FAQTemplate from "@/components/FAQTemplate";
+import FAQ from "@/components/FAQ";
 
 const Index = () => {
   return (
     <Layout>
       <SEOHead
-        title="Plataforma de Automação Documental | Guia Central"
-        description="Guia Central - Todas as suas certidões direto no seu E-mail e WhatsApp. Processo rápido, seguro e 100% online."
+        title="Guia Central - Plataforma Privada de Processamento Digital de Certidões"
+        description="Plataforma PRIVADA e INDEPENDENTE de processamento digital de certidões e documentos. NÃO somos órgão público. Utilizamos tecnologia e IA para automatizar solicitações. Antecedentes criminais, CND, quitação eleitoral e mais."
       />
       <StructuredData />
       <HeroAndServices />
       <HowItWorks />
       <Disclaimer />
-      <FAQTemplate />
+      <FAQ />
     </Layout>
   );
 };

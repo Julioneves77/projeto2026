@@ -1,3 +1,5 @@
+import HiddenDisclaimer from "./HiddenDisclaimer";
+
 const steps = [
   { num: "0", title: "Assistente de IA ⚡", desc: "O sistema conversa com você, entende sua necessidade e indica automaticamente qual tipo de documento ou consulta é mais adequado." },
   { num: "1", title: "Escolha o documento", desc: "Selecione o tipo de documento que precisa processar." },
@@ -9,6 +11,7 @@ const steps = [
 const HowItWorks = () => {
   return (
     <section className="bg-secondary/50 py-16 md:py-20">
+      <HiddenDisclaimer />
       <div className="container mx-auto px-4">
         <div className="text-center mb-12">
           <h2 className="font-heading text-2xl md:text-4xl font-bold text-foreground mb-3">

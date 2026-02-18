@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import FormField from "@/components/forms/FormField";
 import { validateEmail, validatePhone, formatPhone } from "@/lib/validations";
 import { toast } from "@/hooks/use-toast";
-import { Mail, Phone, Clock, Send, Loader2 } from "lucide-react";
+import { Clock, Send, Loader2 } from "lucide-react";
 import { RECAPTCHA_CONFIG } from "@/config/recaptcha";
 
 interface ContactForm {
@@ -129,18 +129,6 @@ const Contact = () => {
           <div className="mx-auto max-w-5xl">
             <div className="grid gap-12 lg:grid-cols-3">
               <div className="space-y-6">
-                <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><Mail className="h-6 w-6" /></div>
-                    <div><h3 className="font-heading font-semibold text-foreground">E-mail</h3><p className="mt-1 text-sm text-muted-foreground">contato@guia-central.online</p></div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><Phone className="h-6 w-6" /></div>
-                    <div><h3 className="font-heading font-semibold text-foreground">Telefone</h3><p className="mt-1 text-sm text-muted-foreground">(11) 994392-5211</p></div>
-                  </div>
-                </div>
                 <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><Clock className="h-6 w-6" /></div>
