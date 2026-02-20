@@ -7,7 +7,8 @@ import {
   FileText,
   TrendingUp,
   Globe,
-  PieChart
+  PieChart,
+  DollarSign
 } from 'lucide-react';
 
 export function Statistics() {
@@ -30,25 +31,51 @@ export function Statistics() {
   const resultado = useMemo(() => {
     if (!dataInicio || !dataFim) return null;
 
-    const inicio = new Date(dataInicio);
-    inicio.setHours(0, 0, 0, 0);
-    const fim = new Date(dataFim);
-    fim.setHours(23, 59, 59, 999);
+    // Parse como data LOCAL (evita bug: "2026-02-18" em UTC vira 17/02 no Brasil)
+    const [yi, mi, di] = dataInicio.split('-').map(Number);
+    const inicio = new Date(yi, mi - 1, di, 0, 0, 0, 0);
+    const [yf, mf, df] = dataFim.split('-').map(Number);
+    const fim = new Date(yf, mf - 1, df, 23, 59, 59, 999);
 
-    // Filtrar tickets concluídos no período
+    // Filtrar tickets que ENTRARAM (foram cadastrados) no período
     const ticketsFiltrados = tickets.filter(t => {
-      if (t.status !== 'CONCLUIDO') return false;
-      if (!t.dataConclusao) return false;
-      
-      const conclusao = new Date(t.dataConclusao);
-      return conclusao >= inicio && conclusao <= fim;
+      const dataRef = t.dataCadastro;
+      if (!dataRef) return false;
+      const data = new Date(dataRef);
+      return data >= inicio && data <= fim;
     });
 
-    // Agrupar por tipo de certidão
+    // Normalizar tipo de certidão para agrupar variantes (ex: "criminal-estadual", "Certidão Federal - CRIMINAL", etc.)
+    const normalizarTipo = (s: string): string => {
+      const v = (s || '').trim();
+      if (!v) return 'Não especificado';
+      const lower = v.toLowerCase();
+      if (lower.includes('criminal federal') || lower.includes('federal - criminal') || lower === 'criminal-federal') return 'Certidão Negativa Criminal Federal';
+      if (lower.includes('criminal estadual') || lower.includes('estadual - criminal') || lower === 'criminal-estadual' || (lower.includes('estadual') && lower.includes('criminal'))) return 'Certidão Negativa Criminal Estadual';
+      if (lower.includes('cível federal') || lower.includes('civel federal') || lower.includes('civil federal') || lower === 'civel-federal') return 'Certidão Negativa Cível Federal';
+      if (lower.includes('cível estadual') || lower.includes('civel estadual') || lower.includes('civil estadual') || lower === 'civel-estadual' || (lower.includes('estadual') && (lower.includes('civel') || lower.includes('civil')))) return 'Certidão Negativa Cível Estadual';
+      if (lower.includes('eleitoral') || lower.includes('quitação eleitoral')) return 'Certidão de Quitação Eleitoral';
+      if (lower.includes('antecedentes') || (lower.includes('pf') && lower.includes('criminal'))) return 'Antecedentes - Polícia Federal';
+      if (lower.includes('cnd') || lower.includes('débitos') || lower.includes('debitos')) return 'CND - Certidão Negativa de Débitos';
+      if (lower.includes('cpf regular') || lower.includes('situação cadastral')) return 'Situação Cadastral do CPF';
+      return v;
+    };
+
+    // Pagos = saíram de GERAL (status EM_OPERACAO, CONCLUIDO, etc. = pagamento confirmado)
+    const ticketsPagos = ticketsFiltrados.filter(t => (t.status || 'GERAL') !== 'GERAL');
+
     const porTipoCertidao: Record<string, number> = {};
     ticketsFiltrados.forEach(t => {
-      const tipo = t.tipoCertidao || 'Não especificado';
+      const tipoRaw = t.tipoCertidao || (t.dadosFormulario?.tipoCertidao as string) || '';
+      const tipo = normalizarTipo(tipoRaw);
       porTipoCertidao[tipo] = (porTipoCertidao[tipo] || 0) + 1;
+    });
+
+    const porTipoCertidaoPagos: Record<string, number> = {};
+    ticketsPagos.forEach(t => {
+      const tipoRaw = t.tipoCertidao || (t.dadosFormulario?.tipoCertidao as string) || '';
+      const tipo = normalizarTipo(tipoRaw);
+      porTipoCertidaoPagos[tipo] = (porTipoCertidaoPagos[tipo] || 0) + 1;
     });
 
     // Agrupar por domínio inicial (origem)
@@ -89,16 +116,23 @@ export function Statistics() {
       .sort((a, b) => b[1] - a[1])
       .map(([tipo, quantidade]) => ({ tipo, quantidade }));
 
+    const tiposOrdenadosPagos = Object.entries(porTipoCertidaoPagos)
+      .sort((a, b) => b[1] - a[1])
+      .map(([tipo, quantidade]) => ({ tipo, quantidade }));
+
     const dominiosOrdenados = Object.entries(porDominio)
       .sort((a, b) => b[1] - a[1])
       .map(([dominio, quantidade]) => ({ dominio, quantidade }));
 
     return {
-      periodo: `${new Date(dataInicio).toLocaleDateString('pt-BR')} - ${new Date(dataFim).toLocaleDateString('pt-BR')}`,
-      totalCertidoes: ticketsFiltrados.length,
+      periodo: `${inicio.toLocaleDateString('pt-BR')} - ${fim.toLocaleDateString('pt-BR')}`,
+      totalGeral: ticketsFiltrados.length,
+      totalPagos: ticketsPagos.length,
       porTipoCertidao: tiposOrdenados,
+      porTipoCertidaoPagos: tiposOrdenadosPagos,
       porDominio: dominiosOrdenados,
-      tickets: ticketsFiltrados
+      tickets: ticketsFiltrados,
+      ticketsPagos
     };
   }, [dataInicio, dataFim, tickets]);
 
@@ -161,7 +195,7 @@ export function Statistics() {
       {resultado && (
         <div className="space-y-6 animate-fade-in">
           {/* Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card-stat">
               <div className="flex items-start justify-between">
                 <div>
@@ -177,11 +211,25 @@ export function Statistics() {
             <div className="card-stat">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Certidões</p>
-                  <p className="text-3xl font-bold text-foreground mt-1">{resultado.totalCertidoes}</p>
+                  <p className="text-sm text-muted-foreground">Total (Geral)</p>
+                  <p className="text-3xl font-bold text-foreground mt-1">{resultado.totalGeral}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">entradas no período</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-status-complete-bg flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-status-complete" />
+                <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </div>
+            </div>
+
+            <div className="card-stat border-2 border-primary/30 bg-primary/5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-primary">Total Pagos</p>
+                  <p className="text-3xl font-bold text-foreground mt-1">{resultado.totalPagos}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">pagamento confirmado</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                  <DollarSign className="w-5 h-5 text-primary" />
                 </div>
               </div>
             </div>
@@ -189,8 +237,8 @@ export function Statistics() {
             <div className="card-stat">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Tipos de Certidão</p>
-                  <p className="text-3xl font-bold text-foreground mt-1">{resultado.porTipoCertidao.length}</p>
+                  <p className="text-sm text-muted-foreground">Tipos Pagos</p>
+                  <p className="text-3xl font-bold text-foreground mt-1">{resultado.porTipoCertidaoPagos.length}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-status-financial-bg flex items-center justify-center">
                   <PieChart className="w-5 h-5 text-status-financial" />
@@ -199,11 +247,44 @@ export function Statistics() {
             </div>
           </div>
 
-          {/* Resumo Rápido por Tipo de Certidão */}
+          {/* ENFASE: Certidões Pagas por Tipo */}
+          <div className="bg-card rounded-xl border-2 border-primary/30 p-6 bg-primary/5">
+            <div className="flex items-center gap-2 mb-4">
+              <DollarSign className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold text-foreground">Certidões Pagas por Tipo</h3>
+              <span className="text-sm text-muted-foreground">(qual tipo está sendo pago)</span>
+            </div>
+            
+            {resultado.porTipoCertidaoPagos.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {resultado.porTipoCertidaoPagos.map((item, index) => {
+                  const cor = coresTipo[index % coresTipo.length];
+                  const pct = resultado.totalPagos > 0 ? (item.quantidade / resultado.totalPagos * 100).toFixed(1) : '0';
+                  return (
+                    <div 
+                      key={item.tipo}
+                      className="bg-background rounded-lg p-3 border-2 border-primary/20 hover:border-primary/40 transition-colors shadow-sm"
+                    >
+                      <p className="text-2xl font-bold text-foreground">{item.quantidade}</p>
+                      <p className="text-xs text-muted-foreground truncate" title={item.tipo}>
+                        {item.tipo}
+                      </p>
+                      <p className="text-xs font-medium text-primary mt-1">{pct}% dos pagos</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-4">Nenhuma certidão paga no período</p>
+            )}
+          </div>
+
+          {/* Total Geral por Tipo (referência) */}
           <div className="bg-card rounded-xl border border-border p-6">
             <div className="flex items-center gap-2 mb-4">
-              <FileText className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Certidões por Tipo (Resumo do Dia)</h3>
+              <FileText className="w-5 h-5 text-muted-foreground" />
+              <h3 className="font-semibold text-foreground">Total Geral por Tipo</h3>
+              <span className="text-sm text-muted-foreground">(todas as entradas)</span>
             </div>
             
             {resultado.porTipoCertidao.length > 0 ? (
@@ -213,9 +294,9 @@ export function Statistics() {
                   return (
                     <div 
                       key={item.tipo}
-                      className="bg-muted/50 rounded-lg p-3 border border-border hover:border-primary/30 transition-colors"
+                      className="bg-muted/30 rounded-lg p-3 border border-border hover:border-primary/20 transition-colors"
                     >
-                      <p className="text-2xl font-bold text-foreground">{item.quantidade}</p>
+                      <p className="text-xl font-bold text-foreground">{item.quantidade}</p>
                       <p className="text-xs text-muted-foreground truncate" title={item.tipo}>
                         {item.tipo}
                       </p>
@@ -230,17 +311,17 @@ export function Statistics() {
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Por Tipo de Certidão */}
-            <div className="bg-card rounded-xl border border-border p-6">
+            {/* Por Tipo de Certidão PAGOS (ênfase) */}
+            <div className="bg-card rounded-xl border-2 border-primary/20 p-6 bg-primary/5">
               <div className="flex items-center gap-2 mb-4">
-                <PieChart className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">Por Tipo de Certidão</h3>
+                <DollarSign className="w-5 h-5 text-primary" />
+                <h3 className="font-semibold text-foreground">Tipos Pagos (distribuição)</h3>
               </div>
 
-              {resultado.porTipoCertidao.length > 0 ? (
+              {resultado.porTipoCertidaoPagos.length > 0 ? (
                 <div className="space-y-3">
-                  {resultado.porTipoCertidao.map((item, index) => {
-                    const porcentagem = (item.quantidade / resultado.totalCertidoes) * 100;
+                  {resultado.porTipoCertidaoPagos.map((item, index) => {
+                    const porcentagem = resultado.totalPagos > 0 ? (item.quantidade / resultado.totalPagos) * 100 : 0;
                     const cor = coresTipo[index % coresTipo.length];
                     return (
                       <div key={item.tipo}>
@@ -263,44 +344,57 @@ export function Statistics() {
                   })}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">Sem dados para exibir</p>
+                <p className="text-center text-muted-foreground py-8">Nenhum pago no período</p>
               )}
             </div>
 
-            {/* Por Domínio */}
+            {/* Por Domínio (dos pagos) */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Globe className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">Por Domínio de Origem</h3>
+                <h3 className="font-semibold text-foreground">Domínio de Origem (pagos)</h3>
               </div>
 
-              {resultado.porDominio.length > 0 ? (
+              {resultado.totalPagos > 0 ? (
                 <div className="space-y-3">
-                  {resultado.porDominio.map((item, index) => {
-                    const porcentagem = (item.quantidade / resultado.totalCertidoes) * 100;
-                    const cor = coresDominio[index % coresDominio.length];
-                    return (
-                      <div key={item.dominio}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm text-foreground truncate max-w-[200px]" title={item.dominio}>
-                            {item.dominio}
-                          </span>
-                          <span className="text-sm font-medium text-foreground">
-                            {item.quantidade} ({porcentagem.toFixed(1)}%)
-                          </span>
+                  {(() => {
+                    const porDominioPagos: Record<string, number> = {};
+                    resultado.ticketsPagos.forEach(t => {
+                      const dominio = t.dominio;
+                      const origem = t.dadosFormulario?.origem;
+                      let dominioFormatado = 'Não especificado';
+                      if (dominio) {
+                        if (dominio === 'www.verificacaoassistida.online' || dominio === 'verificacaoassistida.online') dominioFormatado = 'Verificação Assistida';
+                        else if (dominio === 'portalcertidao.com.br' || dominio === 'www.portalcertidao.org') dominioFormatado = 'Portal Certidão';
+                        else if (dominio.includes('portalcacesso')) dominioFormatado = 'Portal Acesso';
+                        else if (dominio.includes('solicite')) dominioFormatado = 'Solicite Link';
+                        else if (dominio.includes('guia-central')) dominioFormatado = 'Guia Central';
+                        else dominioFormatado = dominio;
+                      } else if (origem) {
+                        dominioFormatado = origem === 'portalcacesso' ? 'Portal Acesso' : origem === 'solicite' ? 'Solicite Link' : origem;
+                      }
+                      porDominioPagos[dominioFormatado] = (porDominioPagos[dominioFormatado] || 0) + 1;
+                    });
+                    const dominiosPagosOrdenados = Object.entries(porDominioPagos).sort((a, b) => b[1] - a[1]);
+                    return dominiosPagosOrdenados.map(([dominio, qtd], index) => {
+                      const porcentagem = (qtd / resultado.totalPagos) * 100;
+                      const cor = coresDominio[index % coresDominio.length];
+                      return (
+                        <div key={dominio}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm text-foreground truncate max-w-[200px]" title={dominio}>{dominio}</span>
+                            <span className="text-sm font-medium text-foreground">{qtd} ({porcentagem.toFixed(1)}%)</span>
+                          </div>
+                          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full ${cor} transition-all duration-500 rounded-full`} style={{ width: `${porcentagem}%` }} />
+                          </div>
                         </div>
-                        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full ${cor} transition-all duration-500 rounded-full`}
-                            style={{ width: `${porcentagem}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">Sem dados para exibir</p>
+                <p className="text-center text-muted-foreground py-8">Nenhum pago no período</p>
               )}
             </div>
           </div>
@@ -319,7 +413,7 @@ export function Statistics() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Tipo Certidão</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Domínio</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Operador</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Data Conclusão</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Data Entrada</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -362,7 +456,7 @@ export function Statistics() {
                         </td>
                         <td className="px-4 py-3 text-sm text-foreground">{ticket.operador || '-'}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {ticket.dataConclusao && new Date(ticket.dataConclusao).toLocaleDateString('pt-BR')}
+                          {ticket.dataCadastro && new Date(ticket.dataCadastro).toLocaleDateString('pt-BR')}
                         </td>
                       </tr>
                     ))}

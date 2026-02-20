@@ -281,9 +281,10 @@ async function mapFormDataToTicket(
       dadosFormulario[key] = value;
     }
   }
-  // Adicionar estado selecionado se disponível
-  if (state) {
-    dadosFormulario['estadoSelecionado'] = state;
+  // Estado de Emissão: SEMPRE usar o valor escolhido pelo cliente (evitar conflito)
+  const estadoCliente = (state || formData.estadoEmissao || formData.estado || '').toString().trim();
+  if (estadoCliente) {
+    dadosFormulario['estadoSelecionado'] = estadoCliente;
   }
   // Adicionar origem se disponível
   if (origem) {

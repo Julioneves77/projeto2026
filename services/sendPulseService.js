@@ -107,19 +107,34 @@ function getSenderByDomain(dominio) {
   };
 }
 
+// Cores e estilo Guia Central (hsl 215 90% 50% = #2563eb, hsl 185 80% 45% = #0d9488)
+const GUIA_CENTRAL_STYLE = {
+  primary: '#2563eb',
+  primaryLight: '#3b82f6',
+  cyan: '#0d9488',
+  bg: '#f8fafc',
+  cardBg: '#ffffff',
+  text: '#1e293b',
+  textMuted: '#64748b',
+  border: '#e2e8f0'
+};
+
+function isGuiaCentral(domainInfo) {
+  const d = (domainInfo?.website || '').toLowerCase();
+  return d.includes('guia-central');
+}
+
 /**
  * Cria template HTML para email de confirmação de pagamento
+ * Usa formatação Guia Central quando domínio for guia-central.online
  */
 function createEmailTemplate(ticketData, domainInfo) {
-  const { nomeCompleto, codigo, tipoCertidao, email, telefone, prioridade } = ticketData;
-  
-  // Prazo de entrega fixo conforme solicitado
-  const prazoEntrega = 'Depende da Comarca mas maioria até 2 horas';
+  const { nomeCompleto, codigo, tipoCertidao } = ticketData;
+  const isGC = isGuiaCentral(domainInfo);
+  const s = isGC ? GUIA_CENTRAL_STYLE : { primary: '#28a745', primaryLight: '#28a745', cyan: '#007bff', bg: '#f8f9fa', cardBg: '#fff', text: '#333', textMuted: '#666', border: '#ddd' };
 
-  // Mapear tipo de certidão para nome amigável
-  // Suporta tanto os nomes do Guia das Certidões quanto os códigos antigos
+  const prazoEntrega = 'Depende da Comarca mas maioria até 2 horas';
   const tipoCertidaoNome = {
-    // Códigos antigos (compatibilidade)
     'criminal-federal': 'Certidão Criminal Federal',
     'criminal-estadual': 'Certidão Criminal Estadual',
     'antecedentes-pf': 'Antecedentes Criminais',
@@ -128,7 +143,6 @@ function createEmailTemplate(ticketData, domainInfo) {
     'civil-estadual': 'Certidão Cível Estadual',
     'cnd': 'Certidão Negativa de Débitos (CND)',
     'cpf-regular': 'Certidão de CPF Regular',
-    // Nomes do Guia das Certidões (exatos)
     'Certidão de Quitação Eleitoral': 'Certidão de Quitação Eleitoral',
     'Antecedentes Criminais (Polícia Federal)': 'Antecedentes Criminais',
     'Antecedentes Criminais': 'Antecedentes Criminais',
@@ -142,6 +156,13 @@ function createEmailTemplate(ticketData, domainInfo) {
     'CCIR - Cadastro de Imóvel Rural': 'CCIR - Cadastro de Imóvel Rural'
   }[tipoCertidao] || tipoCertidao;
 
+  const headerHtml = isGC ? `
+    <div style="background: linear-gradient(135deg, ${s.primary} 0%, ${s.cyan} 100%); padding: 24px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+      <span style="font-family: 'Segoe UI', system-ui, sans-serif; font-weight: 700; font-size: 18px; letter-spacing: 0.1em; color: #fff;">GUIA <span style="color: rgba(255,255,255,0.95);">CENTRAL</span></span>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: rgba(255,255,255,0.85); letter-spacing: 0.15em; text-transform: uppercase;">Automação por IA</p>
+    </div>
+  ` : '';
+
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -149,33 +170,31 @@ function createEmailTemplate(ticketData, domainInfo) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Confirmação de Pagamento</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-    <h1 style="color: #28a745; margin-top: 0;">Pagamento Confirmado!</h1>
-    
-    <p>Olá <strong>${nomeCompleto}</strong>,</p>
-    
-    <p>Seu pagamento foi confirmado com sucesso. Seu pedido está sendo processado.</p>
-    
-    <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
-      <h2 style="margin-top: 0; color: #333;">Detalhes do Pedido</h2>
-      <p><strong>Código do Ticket:</strong> ${codigo}</p>
-      <p><strong>Tipo de Certidão:</strong> ${tipoCertidaoNome}</p>
-      <p><strong>Prazo de Entrega:</strong> ${prazoEntrega}</p>
-      <p><strong>Status:</strong> Em Processamento</p>
+<body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: ${s.text}; max-width: 600px; margin: 0 auto; padding: 20px; background: ${s.bg};">
+  <div style="background: ${s.cardBg}; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.06);">
+    ${headerHtml}
+    <div style="padding: 24px 20px;">
+      <h1 style="color: ${s.primary}; margin: 0 0 16px 0; font-size: 22px; font-weight: 700;">Pagamento Confirmado!</h1>
+      <p style="margin: 0 0 16px 0;">Olá <strong>${nomeCompleto}</strong>,</p>
+      <p style="margin: 0 0 20px 0;">Seu pagamento foi confirmado com sucesso. Seu pedido está sendo processado.</p>
+      <div style="background: ${s.bg}; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid ${s.primary};">
+        <h2 style="margin: 0 0 12px 0; color: ${s.text}; font-size: 16px; font-weight: 600;">Detalhes do Pedido</h2>
+        <p style="margin: 6px 0;"><strong>Código:</strong> ${codigo}</p>
+        <p style="margin: 6px 0;"><strong>Tipo de Certidão:</strong> ${tipoCertidaoNome}</p>
+        <p style="margin: 6px 0;"><strong>Prazo de Entrega:</strong> ${prazoEntrega}</p>
+        <p style="margin: 6px 0;"><strong>Status:</strong> Em Processamento</p>
+      </div>
+      <p style="margin: 20px 0;">Você receberá sua certidão por e-mail assim que estiver pronta.</p>
+      <p style="margin: 0;">Dúvidas: <a href="${domainInfo.websiteUrl}" style="color: ${s.primary}; text-decoration: none; font-weight: 500;">${domainInfo.website}</a></p>
     </div>
-    
-    <p>Você vai receber sua Solicitação por Email assim que estiver Pronta.</p>
-    
-    <p>Dúvidas acesse: <a href="${domainInfo.websiteUrl}" style="color: #28a745; text-decoration: none;">${domainInfo.website}</a></p>
-    
-    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-    
-    <p style="font-size: 12px; color: #666;">
-      Este é um email automático, por favor não responda.<br>
-      ${domainInfo.name} - Todos os direitos reservados.
-    </p>
+    <div style="padding: 16px 20px; background: ${s.bg}; border-top: 1px solid ${s.border};">
+      <p style="font-size: 12px; color: ${s.textMuted}; margin: 0;">
+        Este é um e-mail automático. Por favor não responda.<br>
+        ${domainInfo.name} — Todos os direitos reservados.
+      </p>
+    </div>
   </div>
 </body>
 </html>
@@ -356,14 +375,15 @@ ${domainInfo.name}
 }
 
 /**
- * Cria template HTML para email de conclusão de ticket
+ * Cria template HTML para email de conclusão (certidão pronta)
+ * Usa formatação Guia Central quando domínio for guia-central.online
  */
 function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo) {
   const { nomeCompleto, codigo, tipoCertidao } = ticketData;
-  
-  // Mapear tipo de certidão para nome amigável (email de conclusão)
+  const isGC = isGuiaCentral(domainInfo);
+  const s = isGC ? GUIA_CENTRAL_STYLE : { primary: '#28a745', primaryLight: '#28a745', cyan: '#007bff', bg: '#f8f9fa', cardBg: '#fff', text: '#333', textMuted: '#666', border: '#ddd' };
+
   const tipoCertidaoNome = {
-    // Códigos antigos (compatibilidade)
     'criminal-federal': 'Certidão Criminal Federal',
     'criminal-estadual': 'Certidão Criminal Estadual',
     'antecedentes-pf': 'Antecedentes Criminais',
@@ -372,7 +392,6 @@ function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo
     'civil-estadual': 'Certidão Cível Estadual',
     'cnd': 'Certidão Negativa de Débitos (CND)',
     'cpf-regular': 'Certidão de CPF Regular',
-    // Nomes do Guia das Certidões (exatos)
     'Certidão de Quitação Eleitoral': 'Certidão de Quitação Eleitoral',
     'Antecedentes Criminais (Polícia Federal)': 'Antecedentes Criminais',
     'Antecedentes Criminais': 'Antecedentes Criminais',
@@ -386,6 +405,13 @@ function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo
     'CCIR - Cadastro de Imóvel Rural': 'CCIR - Cadastro de Imóvel Rural'
   }[tipoCertidao] || tipoCertidao;
 
+  const headerHtml = isGC ? `
+    <div style="background: linear-gradient(135deg, ${s.primary} 0%, ${s.cyan} 100%); padding: 24px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+      <span style="font-family: 'Segoe UI', system-ui, sans-serif; font-weight: 700; font-size: 18px; letter-spacing: 0.1em; color: #fff;">GUIA <span style="color: rgba(255,255,255,0.95);">CENTRAL</span></span>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: rgba(255,255,255,0.85); letter-spacing: 0.15em; text-transform: uppercase;">Automação por IA</p>
+    </div>
+  ` : '';
+
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -393,39 +419,36 @@ function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Certidão Pronta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-    <h1 style="color: #28a745; margin-top: 0;">✅ Certidão Pronta!</h1>
-    
-    <p>Olá <strong>${nomeCompleto}</strong>,</p>
-    
-    <p>Sua certidão está pronta e disponível para download.</p>
-    
-    <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
-      <h2 style="margin-top: 0; color: #333;">Detalhes da Certidão</h2>
-      <p><strong>Código do Ticket:</strong> ${codigo}</p>
-      <p><strong>Tipo de Certidão:</strong> ${tipoCertidaoNome}</p>
-      <p><strong>Status:</strong> Concluída</p>
+<body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: ${s.text}; max-width: 600px; margin: 0 auto; padding: 20px; background: ${s.bg};">
+  <div style="background: ${s.cardBg}; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.06);">
+    ${headerHtml}
+    <div style="padding: 24px 20px;">
+      <h1 style="color: ${s.primary}; margin: 0 0 16px 0; font-size: 22px; font-weight: 700;">✅ Certidão Pronta!</h1>
+      <p style="margin: 0 0 16px 0;">Olá <strong>${nomeCompleto}</strong>,</p>
+      <p style="margin: 0 0 20px 0;">Sua certidão está pronta e disponível em anexo neste e-mail.</p>
+      <div style="background: ${s.bg}; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid ${s.primary};">
+        <h2 style="margin: 0 0 12px 0; color: ${s.text}; font-size: 16px; font-weight: 600;">Detalhes da Certidão</h2>
+        <p style="margin: 6px 0;"><strong>Código:</strong> ${codigo}</p>
+        <p style="margin: 6px 0;"><strong>Tipo:</strong> ${tipoCertidaoNome}</p>
+        <p style="margin: 6px 0;"><strong>Status:</strong> Concluída</p>
+      </div>
+      ${mensagemInteracao ? `
+      <div style="background: rgba(37, 99, 235, 0.06); padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid ${s.cyan};">
+        <h3 style="margin: 0 0 8px 0; color: ${s.text}; font-size: 14px; font-weight: 600;">Informações Adicionais</h3>
+        <p style="margin: 0; white-space: pre-wrap; font-size: 14px;">${mensagemInteracao}</p>
+      </div>
+      ` : ''}
+      <p style="margin: 20px 0;">O arquivo PDF está disponível em anexo.</p>
+      <p style="margin: 0;">Dúvidas: <a href="${domainInfo.websiteUrl}" style="color: ${s.primary}; text-decoration: none; font-weight: 500;">${domainInfo.website}</a></p>
     </div>
-    
-    ${mensagemInteracao ? `
-    <div style="background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
-      <h3 style="margin-top: 0; color: #333;">Informações Adicionais:</h3>
-      <p style="white-space: pre-wrap;">${mensagemInteracao}</p>
+    <div style="padding: 16px 20px; background: ${s.bg}; border-top: 1px solid ${s.border};">
+      <p style="font-size: 12px; color: ${s.textMuted}; margin: 0;">
+        Este é um e-mail automático. Por favor não responda.<br>
+        ${domainInfo.name} — Todos os direitos reservados.
+      </p>
     </div>
-    ` : ''}
-    
-    <p>Seu arquivo está disponível em anexo neste email.</p>
-    
-    <p>Dúvidas acesse: <a href="${domainInfo.websiteUrl}" style="color: #007bff; text-decoration: none;">${domainInfo.website}</a></p>
-    
-    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-    
-    <p style="font-size: 12px; color: #666;">
-      Este é um email automático, por favor não responda.<br>
-      ${domainInfo.name} - Todos os direitos reservados.
-    </p>
   </div>
 </body>
 </html>
@@ -672,6 +695,92 @@ ${domainInfo.name}
 }
 
 /**
+ * Envia email quando Plexi retorna bloqueio (ex: "já solicitado há menos de 30 dias")
+ * Informa o cliente sobre o prazo para nova solicitação
+ */
+async function sendPlexiBlockedEmail(ticketData, mensagemErro) {
+  try {
+    await initializeSendPulse();
+
+    const email = ticketData.email || ticketData.dadosFormulario?.email;
+    const nomeCompleto = ticketData.nomeCompleto || ticketData.dadosFormulario?.nomeCompleto || 'Cliente';
+    const codigo = ticketData.codigo;
+
+    if (!email) {
+      console.warn(`⚠️ [SendPulse] Email não disponível para enviar notificação de bloqueio (Ticket: ${codigo})`);
+      return { success: false, error: 'Email do cliente não fornecido' };
+    }
+
+    const dominio = ticketData.dominio || ticketData.dadosFormulario?.origem || 'suporteonline.digital';
+    const domainInfo = getSenderByDomain(dominio);
+
+    const prazoTexto = mensagemErro && (mensagemErro.includes('30') || mensagemErro.toLowerCase().includes('dias'))
+      ? 'Você poderá solicitar novamente em até 30 dias a partir da última solicitação na mesma comarca.'
+      : 'Entre em contato conosco para verificar o prazo para nova solicitação.';
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:600px;margin:0 auto;padding:20px;} .box{background:#f8f9fa;border-left:4px solid #ffc107;padding:16px;margin:16px 0;} .footer{font-size:12px;color:#666;margin-top:24px;}</style></head>
+<body>
+  <p>Olá ${nomeCompleto},</p>
+  <p>Informamos que sua solicitação de certidão (Ticket ${codigo}) não pôde ser concluída automaticamente.</p>
+  <div class="box">
+    <strong>Motivo:</strong><br>
+    ${mensagemErro || 'Solicitação já realizada anteriormente.'}
+  </div>
+  <p><strong>Prazo:</strong> ${prazoTexto}</p>
+  <p>Se tiver dúvidas, entre em contato conosco.</p>
+  <div class="footer">
+    ${domainInfo.name}<br>
+    ${domainInfo.website}
+  </div>
+</body>
+</html>`.trim();
+
+    const textContent = `
+Olá ${nomeCompleto},
+
+Informamos que sua solicitação de certidão (Ticket ${codigo}) não pôde ser concluída automaticamente.
+
+Motivo: ${mensagemErro || 'Solicitação já realizada anteriormente.'}
+
+Prazo: ${prazoTexto}
+
+Dúvidas: ${domainInfo.website}
+
+${domainInfo.name}
+    `.trim();
+
+    const emailData = {
+      subject: `Solicitação em análise - Ticket ${codigo}`,
+      html: htmlContent,
+      text: textContent,
+      from: { name: domainInfo.name, email: domainInfo.email },
+      to: [{ email }]
+    };
+
+    console.log(`📧 [SendPulse] Enviando email de bloqueio Plexi para ${email} (Ticket: ${codigo})`);
+
+    return new Promise((resolve) => {
+      sendpulse.smtpSendMail((response) => {
+        const hasError = response?.is_error || response?.error_code;
+        if (hasError) {
+          console.error(`❌ [SendPulse] Erro ao enviar email de bloqueio:`, response?.message || response?.error);
+          resolve({ success: false, error: response?.message || response?.error, email });
+        } else {
+          console.log(`✅ [SendPulse] Email de bloqueio enviado para ${email}`);
+          resolve({ success: true, messageId: response?.id, email });
+        }
+      }, emailData);
+    });
+  } catch (error) {
+    console.error('❌ [SendPulse] Erro ao enviar email de bloqueio:', error);
+    return { success: false, error: error.message, email: ticketData.email };
+  }
+}
+
+/**
  * Enviar email genérico via SendPulse
  * @param {Object} options - Opções do email
  * @param {string|string[]} options.to - Email(s) destinatário(s)
@@ -777,6 +886,7 @@ async function sendEmail({ to, subject, html, from, cc, bcc }) {
 module.exports = {
   sendConfirmationEmail,
   sendCompletionEmail,
+  sendPlexiBlockedEmail,
   sendEmail,
   initializeSendPulse
 };

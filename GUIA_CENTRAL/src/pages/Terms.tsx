@@ -13,7 +13,7 @@ const Terms = () => {
         <div className="container max-w-4xl mx-auto px-4">
           {/* Título */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-foreground mb-2">Termos de Uso</h1>
+            <h1 className="font-orbitron text-4xl font-bold text-foreground mb-2">Termos de Uso</h1>
             <p className="text-lg text-muted-foreground mb-1">Condições Gerais de Uso dos Serviços</p>
             <p className="text-sm text-muted-foreground">Última atualização: 07/02/2026</p>
           </div>

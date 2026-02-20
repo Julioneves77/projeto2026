@@ -50,7 +50,7 @@ const Sobre = () => {
       />
       <main className="flex-1 py-12">
         <div className="container max-w-4xl mx-auto px-4">
-          <h1 className="text-3xl md:text-4xl font-heading font-bold text-foreground mb-10">
+          <h1 className="font-orbitron text-3xl md:text-4xl font-bold text-foreground mb-10">
             Sobre a Plataforma Guia Central
           </h1>
 

@@ -231,10 +231,12 @@ async function mapFormDataToTicket(
     genero = tipoPessoa === 'CNPJ' ? 'Empresa' : 'Não informado';
   }
   
+  // Estado de Emissão: SEMPRE priorizar a escolha explícita do cliente no formulário
+  // Federais: estadoEmissao vem do campo do form; Estaduais: state vem da URL/seleção
   const estadoEmissao = (
-    state || 
-    formData.estadoEmissao || 
-    formData.estado || 
+    formData.estadoEmissao ||
+    formData.estado ||
+    state ||
     formData.estadoSolicitante ||
     ''
   ).toString().trim();
@@ -273,17 +275,16 @@ async function mapFormDataToTicket(
   // Gerar código do ticket (aguardar se necessário)
   const codigo = await generateTicketCode();
   
-  // Preservar TODOS os dados do formulário (campos obrigatórios como nomeMae, rg, comarca, etc.)
+  // Preservar TODOS os dados do formulário - obrigatório que cheguem na plataforma
   const dadosFormulario: Record<string, string | boolean> = {};
   for (const [key, value] of Object.entries(formData)) {
-    // Ignorar checkbox de termos, mas preservar todos os outros campos
-    if (key !== 'termos') {
-      dadosFormulario[key] = value;
-    }
+    if (key === 'termos') continue;
+    dadosFormulario[key] = value;
   }
-  // Adicionar estado selecionado se disponível
-  if (state) {
-    dadosFormulario['estadoSelecionado'] = state;
+  // Estado de Emissão: priorizar escolha do formulário (federais) ou state (estaduais)
+  const estadoCliente = (formData.estadoEmissao || formData.estado || state || '').toString().trim();
+  if (estadoCliente) {
+    dadosFormulario['estadoSelecionado'] = estadoCliente;
   }
   // Adicionar origem se disponível
   if (origem) {

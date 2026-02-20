@@ -14,7 +14,8 @@ import {
   Trash2,
   Star,
   Phone,
-  Pencil
+  Pencil,
+  RefreshCw
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -23,23 +24,53 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-type TabType = 'geral' | 'em_operacao' | 'concluidos';
+type TabType = 'geral' | 'solicitadas' | 'em_operacao' | 'concluidos';
 
 export function Tickets() {
   const { currentUser, userRole } = useAuth();
-  const { tickets, atribuirTicket, updateTicket, deleteTicket } = useTickets();
+  const { tickets, atribuirTicket, updateTicket, deleteTicket, refreshTickets } = useTickets();
   const { columnWidths, isResizing, resizingColumn, tableRef, handleResizeStart, handleDoubleClick } = useColumnResize();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('em_operacao');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [recoveringPlexi, setRecoveringPlexi] = useState(false);
+
+  const plexiPendingCount = tickets.filter(t => 
+    t.status === 'EM_OPERACAO' && !t.automationStatus
+  ).length;
+
+  const handleRecoverPlexi = async () => {
+    setRecoveringPlexi(true);
+    try {
+      const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+      const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      const res = await fetch(`${SYNC_SERVER_URL}/tickets/plexi/recover`, {
+        method: 'POST',
+        headers,
+      });
+      if (res.ok) {
+        toast({ title: 'Recuperação executada', description: 'Tickets pendentes enfileirados para Plexi.' });
+        await refreshTickets();
+      } else {
+        throw new Error(await res.text());
+      }
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao recuperar', variant: 'destructive' });
+    } finally {
+      setRecoveringPlexi(false);
+    }
+  };
 
   // Definir abas visíveis por perfil
-  // Atendente vê "Em Operação" e "Concluídos" (somente dele no dia)
+  // Solicitadas = tickets em processamento Plexi (automação)
   const tabs: { id: TabType; label: string; roles: string[] }[] = [
     { id: 'geral', label: 'Geral', roles: ['admin', 'financeiro'] },
     { id: 'em_operacao', label: 'Em Operação', roles: ['admin', 'financeiro', 'atendente'] },
+    { id: 'solicitadas', label: 'Solicitadas', roles: ['admin', 'financeiro', 'atendente'] },
     { id: 'concluidos', label: 'Concluídos', roles: ['admin', 'financeiro', 'atendente'] },
   ];
 
@@ -55,13 +86,25 @@ export function Tickets() {
            d.getFullYear() === today.getFullYear();
   };
 
+  // Tickets "em solicitação" = PROCESSING ou bloqueado (já solicitado) - ficam em Solicitadas, não em Em Operação
+  const isEmSolicitadas = (t: Ticket) => {
+    if (!['EM_OPERACAO', 'EM_ATENDIMENTO'].includes(t.status)) return false;
+    if (t.automationStatus === 'PROCESSING') return true;
+    if (t.automationStatus === 'BLOCKED') return true;
+    if (t.automationStatus === 'FAILED_FINAL' && t.automationLastError && /já foi solicitado|já solicitado|menos de 30 dias|30 dias/i.test(t.automationLastError)) return true;
+    return false;
+  };
+
   // Filtrar tickets por aba
   const filterByTab = (ticket: Ticket): boolean => {
     switch (activeTab) {
       case 'geral':
         return ticket.status === 'GERAL';
+      case 'solicitadas':
+        return isEmSolicitadas(ticket);
       case 'em_operacao':
-        return ['EM_OPERACAO', 'EM_ATENDIMENTO', 'AGUARDANDO_INFO', 'FINANCEIRO'].includes(ticket.status);
+        return ['EM_OPERACAO', 'EM_ATENDIMENTO', 'AGUARDANDO_INFO', 'FINANCEIRO'].includes(ticket.status) &&
+          !isEmSolicitadas(ticket);
       case 'concluidos':
         return ticket.status === 'CONCLUIDO';
       default:
@@ -74,8 +117,8 @@ export function Tickets() {
     if (userRole === 'admin') return true;
 
     if (userRole === 'financeiro') {
-      // Financeiro não vê tickets atribuídos para outras pessoas.
       if (tabId === 'geral') return true;
+      if (tabId === 'solicitadas') return true;
       if (tabId === 'em_operacao') return !ticket.operador || ticket.operador === currentUser?.nome;
       if (tabId === 'concluidos') return ticket.operador === currentUser?.nome;
       return false;
@@ -83,6 +126,7 @@ export function Tickets() {
 
     if (userRole === 'atendente') {
       if (tabId === 'geral') return false;
+      if (tabId === 'solicitadas') return true;
       if (tabId === 'concluidos') return ticket.operador === currentUser?.nome && isToday(ticket.dataConclusao);
       return !ticket.operador || ticket.operador === currentUser?.nome;
     }
@@ -120,7 +164,7 @@ export function Tickets() {
         return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
       }
       
-      // Na aba Em Operação: primeiro por prioridade, depois por data
+      // Solicitadas e Em Operação: primeiro por prioridade, depois por data
       const prioridadeDiff = getPrioridadeOrder(a.prioridade) - getPrioridadeOrder(b.prioridade);
       if (prioridadeDiff !== 0) return prioridadeDiff;
       return new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime();
@@ -341,16 +385,27 @@ export function Tickets() {
           <p className="text-muted-foreground">Gerencie as solicitações de certidões</p>
         </div>
 
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por código, nome, CPF..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-          />
+        <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+          {plexiPendingCount > 0 && (
+            <button
+              onClick={handleRecoverPlexi}
+              disabled={recoveringPlexi}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${recoveringPlexi ? 'animate-spin' : ''}`} />
+              Recuperar {plexiPendingCount} Plexi pendente{plexiPendingCount > 1 ? 's' : ''}
+            </button>
+          )}
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por código, nome, CPF..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+            />
+          </div>
         </div>
       </div>
 
@@ -370,7 +425,8 @@ export function Tickets() {
             <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-muted">
               {tickets.filter(t => {
                 const matchesTab = tab.id === 'geral' ? t.status === 'GERAL' :
-                  tab.id === 'em_operacao' ? ['EM_OPERACAO', 'EM_ATENDIMENTO', 'AGUARDANDO_INFO', 'FINANCEIRO'].includes(t.status) :
+                  tab.id === 'solicitadas' ? isEmSolicitadas(t) :
+                  tab.id === 'em_operacao' ? ['EM_OPERACAO', 'EM_ATENDIMENTO', 'AGUARDANDO_INFO', 'FINANCEIRO'].includes(t.status) && !isEmSolicitadas(t) :
                   t.status === 'CONCLUIDO';
                 return matchesTab && canSeeTicketForRole(t, tab.id);
               }).length}
@@ -601,9 +657,30 @@ export function Tickets() {
                     )}
                   </td>
                   <td className="px-3 py-3" style={{ width: columnWidths.status }}>
-                    <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${getStatusBadgeClass(ticket.status)}`}>
-                      {getStatusLabel(ticket.status)}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${getStatusBadgeClass(ticket.status)}`}>
+                        {getStatusLabel(ticket.status)}
+                      </span>
+                      {['EM_OPERACAO', 'EM_ATENDIMENTO'].includes(ticket.status) && (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
+                            ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+                            ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+                            ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
+                            ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+                            'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'
+                          }`}>
+                            Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'DONE' ? 'Concluído' : ticket.automationStatus || 'Pendente'}
+                          </span>
+                          {(ticket.automationLastError && ticket.automationStatus !== 'DONE') && (
+                            <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={ticket.automationLastError}>
+                              {ticket.automationLastError.length > 50 ? `${ticket.automationLastError.slice(0, 50)}...` : ticket.automationLastError}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-3" style={{ width: columnWidths.operador }}>
                     <span className="text-sm text-foreground truncate block">

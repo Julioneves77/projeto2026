@@ -7,12 +7,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 const sendPulseService = require('./services/sendPulseService');
 const zapApiService = require('./services/zapApiService');
+const plexiWorker = require('./services/plexi/worker');
+const { getRegistryKey, validateRequiredFields, formatMissingFieldsForUser, ServiceRegistry } = require('./services/plexi/registry');
 const { validateEmail, validatePhone } = require('./utils/validators');
 const logger = require('./utils/logger');
 const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
@@ -40,6 +43,7 @@ const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
 const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
 const COPIES_FILE = path.join(__dirname, 'copies-data.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const STORAGE_CERTIDOES_PATH = path.join(__dirname, 'storage', 'certidoes');
 
 // Configuração de CORS
 // IMPORTANTE: Quando credentials: true, não podemos usar '*' como origem
@@ -312,6 +316,60 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     port: PORT
   });
+});
+
+// Secret key reCAPTCHA para Guia Central (guia-central.online)
+const RECAPTCHA_GUIA_SECRET_KEY = process.env.RECAPTCHA_GUIA_SECRET_KEY || process.env.RECAPTCHA_SECRET_KEY;
+
+// POST /api/contato - Formulário Fale Conosco (SMTP GoDaddy)
+app.post('/api/contato', createTicketLimiter, express.json(), async (req, res) => {
+  try {
+    const { nome, email, mensagem, recaptchaToken } = req.body || {};
+    if (!nome || !email || !mensagem) {
+      return res.status(400).json({ ok: false, error: 'Campos obrigatórios: nome, email, mensagem' });
+    }
+    if (!validateEmail(email)) {
+      return res.status(400).json({ ok: false, error: 'E-mail inválido' });
+    }
+    if (!recaptchaToken) {
+      return res.status(400).json({ ok: false, error: 'Verificação reCAPTCHA obrigatória' });
+    }
+    const guiaSecretKey = RECAPTCHA_GUIA_SECRET_KEY;
+    if (!guiaSecretKey) {
+      console.error('[SYNC] RECAPTCHA_GUIA_SECRET_KEY não configurada');
+      return res.status(500).json({ ok: false, error: 'Configuração reCAPTCHA incompleta' });
+    }
+    const recaptchaRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `secret=${guiaSecretKey}&response=${recaptchaToken}`
+    });
+    const recaptchaData = await recaptchaRes.json();
+    if (!recaptchaData.success) {
+      return res.status(400).json({ ok: false, error: 'Verificação reCAPTCHA falhou' });
+    }
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+    await transporter.sendMail({
+      from: '"Guia Central" <contato@guia-central.online>',
+      to: 'contato@guia-central.online',
+      replyTo: email,
+      subject: `Fale Conosco — ${nome}`,
+      text: `Nome: ${nome}\nE-mail: ${email}\n\nMensagem:\n${mensagem}`,
+      html: `<p><strong>Nome:</strong> ${nome}</p><p><strong>E-mail:</strong> <a href="mailto:${email}">${email}</a></p><p><strong>Mensagem:</strong></p><p>${String(mensagem).replace(/\n/g, '<br>')}</p>`
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[SYNC] Erro ao enviar email contato:', err);
+    return res.status(500).json({ ok: false, error: 'Erro ao enviar mensagem. Tente novamente mais tarde.' });
+  }
 });
 
 // Root endpoint (sem autenticação)
@@ -1224,6 +1282,44 @@ function saveTickets(tickets) {
   }
 }
 
+// Inicializar worker Plexi
+plexiWorker.init({
+  readTickets,
+  saveTickets,
+  storageCertidoesPath: STORAGE_CERTIDOES_PATH,
+  sendPulseService
+});
+
+// Recuperar tickets EM_OPERACAO com Plexi pendente (nunca processados)
+// Útil após reinício do servidor ou quando enqueue falhou
+function recoverPlexiPendingTickets() {
+  try {
+    const tickets = readTickets();
+    const toEnqueue = tickets.filter(t => {
+      if (t.status !== 'EM_OPERACAO') return false;
+      if (t.pdfLocalPath || t.completedEmailSentAt) return false;
+      const autoStatus = t.automationStatus;
+      return !autoStatus || autoStatus === '' || autoStatus === 'PENDING';
+    });
+    if (toEnqueue.length > 0) {
+      console.log(`🤖 [Plexi Recovery] Enfileirando ${toEnqueue.length} ticket(s) pendente(s) para processamento automático`);
+      toEnqueue.forEach(t => {
+        plexiWorker.enqueue(t.id);
+        console.log(`🤖 [Plexi Recovery] Ticket ${t.codigo} enfileirado`);
+      });
+    }
+  } catch (err) {
+    console.error('❌ [Plexi Recovery] Erro:', err.message);
+  }
+}
+
+// Executar recuperação na inicialização (após 3s para dar tempo do servidor subir)
+setTimeout(recoverPlexiPendingTickets, 3000);
+
+// Executar recuperação periodicamente (a cada 5 min) para pegar tickets que ficaram pendentes
+const PLEXI_RECOVERY_INTERVAL = 5 * 60 * 1000;
+setInterval(recoverPlexiPendingTickets, PLEXI_RECOVERY_INTERVAL);
+
 // ============================================
 // LIMPEZA AUTOMÁTICA DE TICKETS ANTIGOS
 // ============================================
@@ -1655,6 +1751,12 @@ app.put('/tickets/:id', (req, res) => {
   console.log(`📤 [SYNC] Status após atualização: ${updatedTicket.status}`);
   console.log(`📤 [SYNC] Data conclusão: ${updatedTicket.dataConclusao || 'não definida'}`);
   
+  // Ao mover para EM_OPERACAO (ex: manualmente da aba Geral), enfileirar Plexi
+  if (updates.status === 'EM_OPERACAO' && currentTicket.status !== 'EM_OPERACAO') {
+    plexiWorker.enqueue(updatedTicket.id);
+    console.log(`🤖 [Plexi] Ticket ${updatedTicket.codigo} enfileirado para processamento automático`);
+  }
+  
   if (saveTickets(tickets)) {
     logger.info(`Ticket ${id} atualizado com sucesso`, { 
       codigo: updatedTicket.codigo,
@@ -1820,6 +1922,119 @@ app.post('/tickets/:id/send-confirmation', async (req, res) => {
   }
 });
 
+// POST /tickets/plexi/recover - Recuperar todos os tickets pendentes (EM_OPERACAO sem automationStatus)
+app.post('/tickets/plexi/recover', authenticateRequest, express.json(), (req, res) => {
+  logger.info('POST /tickets/plexi/recover - Recuperar tickets Plexi pendentes', { ip: req.ip });
+  try {
+    recoverPlexiPendingTickets();
+    return res.json({
+      success: true,
+      message: 'Recuperação de tickets Plexi pendentes executada'
+    });
+  } catch (err) {
+    logger.logError(err, { endpoint: '/tickets/plexi/recover', ip: req.ip });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tickets/:id/plexi/retry - Reenviar para Plexi
+app.post('/tickets/:id/plexi/retry', authenticateRequest, express.json(), (req, res) => {
+  const { id } = req.params;
+  logger.info(`POST /tickets/${id}/plexi/retry - Reenviar para Plexi`, { ip: req.ip });
+
+  const tickets = readTickets();
+  const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
+  if (ticketIndex === -1) {
+    return res.status(404).json({ error: 'Ticket não encontrado' });
+  }
+
+  const ticket = tickets[ticketIndex];
+  if (ticket.status !== 'EM_OPERACAO') {
+    return res.status(400).json({
+      error: 'Ticket deve estar em EM_OPERACAO para reenviar para Plexi',
+      currentStatus: ticket.status
+    });
+  }
+
+  const registryKey = getRegistryKey(ticket.tipoCertidao);
+  if (!registryKey || !ServiceRegistry[registryKey]) {
+    return res.status(400).json({
+      error: `Esta certidão não possui API disponível na Plexi. Tipo: ${ticket.tipoCertidao}. A Plexi não oferece endpoint para este tipo de certidão.`,
+      reason: 'NO_API'
+    });
+  }
+
+  const config = ServiceRegistry[registryKey];
+  const { valid, missing } = validateRequiredFields(ticket, config.requiredFields);
+  if (!valid) {
+    const labels = formatMissingFieldsForUser(missing);
+    return res.status(400).json({
+      error: `Dados faltando: ${labels}. Adicione esses campos no formulário de solicitação ou preencha manualmente no ticket e reenvie.`,
+      reason: 'MISSING_FIELDS',
+      missingFields: missing,
+      missingFieldsLabels: labels
+    });
+  }
+
+  plexiWorker.enqueue(ticket.id);
+  return res.json({
+    success: true,
+    message: 'Ticket enfileirado para processamento Plexi',
+    ticketCodigo: ticket.codigo
+  });
+});
+
+// POST /tickets/:id/plexi/reset - Resetar Plexi (apenas admin/suporte autenticado)
+app.post('/tickets/:id/plexi/reset', authenticateRequest, express.json(), (req, res) => {
+  const { id } = req.params;
+  logger.info(`POST /tickets/${id}/plexi/reset - Resetar Plexi`, { ip: req.ip });
+
+  const tickets = readTickets();
+  const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
+  if (ticketIndex === -1) {
+    return res.status(404).json({ error: 'Ticket não encontrado' });
+  }
+
+  const ticket = tickets[ticketIndex];
+  if (ticket.status !== 'EM_OPERACAO') {
+    return res.status(400).json({
+      error: 'Ticket deve estar em EM_OPERACAO para resetar Plexi',
+      currentStatus: ticket.status
+    });
+  }
+
+  const historico = ticket.historico || [];
+  const now = new Date().toISOString();
+  const uniqueId = `h-${Date.now()}-${historico.length}-${Math.random().toString(36).substr(2, 9)}-plexi-reset`;
+  const historicoItem = {
+    id: uniqueId,
+    dataHora: now,
+    autor: 'Sistema',
+    statusAnterior: ticket.status,
+    statusNovo: ticket.status,
+    mensagem: 'Plexi resetado por admin',
+    enviouEmail: false,
+    enviouWhatsApp: false
+  };
+
+  tickets[ticketIndex] = {
+    ...ticket,
+    plexiRequestId: null,
+    plexiStatus: null,
+    automationLastError: null,
+    automationLockAt: null,
+    automationLockOwner: null,
+    historico: [...historico, historicoItem]
+  };
+  saveTickets(tickets);
+
+  return res.json({
+    success: true,
+    message: 'Plexi resetado. Use Reenviar para processar novamente.',
+    ticketCodigo: ticket.codigo
+  });
+});
+
 // POST /tickets/:id/send-completion - Enviar resultado de conclusão (email e WhatsApp)
 app.post('/tickets/:id/send-completion', async (req, res) => {
   const { id } = req.params;
@@ -1884,7 +2099,7 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       return dataHora > vinteQuatroHorasAtras;
     });
     
-    const jaEnviouEmailCompleto = historicoRecente.some(h => 
+    let jaEnviouEmailCompleto = historicoRecente.some(h => 
       h.statusNovo === 'CONCLUIDO' && 
       h.enviouEmail === true && 
       h.dataEnvioEmail &&
@@ -1903,10 +2118,15 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
       !h.mensagem?.includes('erro') &&
       !h.mensagem?.includes('falhou')
     );
-    
+
     // Permitir reenvio forçado apenas se configurado via variável de ambiente
     // Em produção, deixe FORCE_RESEND=false ou não defina a variável
     const FORCE_RESEND = process.env.FORCE_RESEND === 'true' || process.env.FORCE_RESEND === '1';
+
+    // Proteção anti-duplicidade: completedEmailSentAt (automação Plexi ou manual anterior)
+    if (ticket.completedEmailSentAt && !FORCE_RESEND) {
+      jaEnviouEmailCompleto = true;
+    }
     
     console.log(`📧 [SYNC] Verificação de duplicatas (últimas 24h):`);
     console.log(`📧 [SYNC]   Histórico total: ${historicoCompleto.length} itens`);
@@ -2052,6 +2272,10 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
         };
         
         tickets[ticketIndex].historico = [...historico, historicoItem];
+        if (emailEnviado) {
+          tickets[ticketIndex].completedEmailSentAt = now;
+          tickets[ticketIndex].completedBy = 'MANUAL_SUPPORT';
+        }
         saveTickets(tickets);
       }
       
@@ -2309,7 +2533,10 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
     
     saveTickets(tickets);
     console.log('✅ [Pagar.me Webhook] Ticket atualizado para EM_OPERACAO:', ticket.codigo);
-    
+
+    // Enfileirar job Plexi para processamento automático
+    plexiWorker.enqueue(ticket.id);
+
     // Enviar confirmação de pagamento (email e WhatsApp)
     try {
       const results = {

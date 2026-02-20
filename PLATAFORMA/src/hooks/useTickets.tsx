@@ -11,6 +11,7 @@ interface TicketsContextType {
   createTicket: (ticket: Omit<Ticket, 'id' | 'codigo' | 'dataCadastro'>) => Promise<Ticket>;
   pausePolling: () => void;
   resumePolling: () => void;
+  refreshTickets: () => Promise<void>;
 }
 
 const TicketsContext = createContext<TicketsContextType | undefined>(undefined);
@@ -501,6 +502,10 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
     return newTicket;
   };
 
+  const refreshTickets = useCallback(async () => {
+    await loadTickets();
+  }, []);
+
   return (
     <TicketsContext.Provider value={{
       tickets,
@@ -510,7 +515,8 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       atribuirTicket,
       createTicket,
       pausePolling,
-      resumePolling
+      resumePolling,
+      refreshTickets
     }}>
       {children}
     </TicketsContext.Provider>

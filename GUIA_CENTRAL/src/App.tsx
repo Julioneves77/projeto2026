@@ -3,6 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { GoogleReCaptchaProvider } from "react-google-recaptcha-v3";
+import ScrollToTop from "@/components/ScrollToTop";
+import { RECAPTCHA_CONFIG } from "@/config/recaptcha";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HowItWorks from "./pages/HowItWorks";
@@ -20,10 +23,17 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+    <GoogleReCaptchaProvider
+      reCaptchaKey={RECAPTCHA_CONFIG.siteKey}
+      language="pt-BR"
+      useRecaptchaNet={true}
+      scriptProps={{ async: true, defer: true, appendTo: "head" }}
+    >
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+        <ScrollToTop />
         <CookieBanner />
         <Routes>
           <Route path="/" element={<Index />} />
@@ -31,6 +41,7 @@ const App = () => (
           <Route path="/faq" element={<FAQ />} />
           <Route path="/politica-privacidade" element={<Privacy />} />
           <Route path="/termos-uso" element={<Terms />} />
+          <Route path="/termos-de-uso" element={<Terms />} />
           <Route path="/contato" element={<Contact />} />
           <Route path="/sobre" element={<Sobre />} />
           <Route path="/certidao/:category" element={<CertificateForm />} />
@@ -40,6 +51,7 @@ const App = () => (
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
+    </GoogleReCaptchaProvider>
   </QueryClientProvider>
 );
 

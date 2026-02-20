@@ -1,61 +1,96 @@
+import { Bot, Terminal } from "lucide-react";
 import { Link } from "react-router-dom";
 import HiddenDisclaimer from "@/components/HiddenDisclaimer";
 
 const Footer = () => {
   return (
-    <footer className="border-t border-border bg-card py-10">
+    <footer className="border-t border-border/60 bg-card/50 relative">
+      <div className="absolute inset-0 cyber-grid opacity-10 pointer-events-none" />
       <HiddenDisclaimer />
-      <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="container mx-auto px-6 py-12 relative">
+        <div className="grid md:grid-cols-3 gap-8 mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg gradient-hero flex items-center justify-center">
-                <span className="text-primary-foreground font-heading font-bold">G</span>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center glow-blue">
+                <Bot className="w-5 h-5 text-primary" />
               </div>
-              <span className="font-heading font-bold text-foreground">GUIA CENTRAL</span>
+              <div className="flex flex-col">
+                <span className="font-orbitron font-bold text-foreground text-sm tracking-widest">
+                  GUIA<span className="text-primary"> CENTRAL</span>
+                </span>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Plataforma privada de tecnologia para processamento digital de documentos e certidões.
+            <p className="text-muted-foreground text-xs font-mono leading-relaxed">
+              Plataforma privada de automação com inteligência artificial para processamento de documentos.
             </p>
           </div>
 
           <div>
-            <h4 className="font-heading font-semibold text-foreground mb-3 text-sm">Links Úteis</h4>
-            <div className="space-y-2">
-              <Link to="/sobre" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
-                Sobre
-              </Link>
-              <Link to="/politica-privacidade" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
-                Política de Privacidade
-              </Link>
-              <Link to="/termos-uso" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
-                Termos de Uso
-              </Link>
-              <Link to="/contato" className="block text-sm text-muted-foreground hover:text-primary transition-colors">
-                Contato
-              </Link>
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("open-cookie-preferences"))}
-                className="block text-sm text-muted-foreground hover:text-primary transition-colors text-left"
-              >
-                Preferências de Cookies
-              </button>
-            </div>
+            <h4 className="font-orbitron text-[10px] text-primary tracking-[0.15em] mb-4">NAVEGAÇÃO</h4>
+            <ul className="space-y-2">
+              <li>
+                <Link
+                  to="/"
+                  onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })}
+                  className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono"
+                >
+                  <Terminal className="w-3 h-3" />
+                  Início
+                </Link>
+              </li>
+              <li>
+                <Link to="/sobre" className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono">
+                  <Terminal className="w-3 h-3" />
+                  Sobre
+                </Link>
+              </li>
+              <li>
+                <Link to="/contato" className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono">
+                  <Terminal className="w-3 h-3" />
+                  Fale Conosco
+                </Link>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent("open-cookie-preferences"))}
+                  className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono text-left"
+                >
+                  <Terminal className="w-3 h-3" />
+                  Preferências de Cookies
+                </button>
+              </li>
+            </ul>
           </div>
 
           <div>
-            <h4 className="font-heading font-semibold text-foreground mb-3 text-sm">Aviso Legal</h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Esta é uma plataforma privada e independente. NÃO possuímos vínculo com órgãos públicos. Os documentos são emitidos pelas fontes oficiais. Nosso serviço automatiza a solicitação.
-            </p>
+            <h4 className="font-orbitron text-[10px] text-primary tracking-[0.15em] mb-4">LEGAL</h4>
+            <ul className="space-y-2">
+              <li>
+                <Link to="/politica-privacidade" className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono">
+                  <Terminal className="w-3 h-3" />
+                  Política de Privacidade
+                </Link>
+              </li>
+              <li>
+                <Link to="/termos-uso" className="text-muted-foreground text-sm hover:text-primary transition-colors flex items-center gap-2 font-mono">
+                  <Terminal className="w-3 h-3" />
+                  Termos de Uso
+                </Link>
+              </li>
+            </ul>
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-6 text-center">
-          <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Guia Central — guia-central.online — Todos os direitos reservados.
-          </p>
+        <div className="border-t border-border/50 pt-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+            <p className="text-muted-foreground/60 text-xs font-mono">
+              © {new Date().getFullYear()} GUIA CENTRAL — Plataforma privada • Automação com IA
+            </p>
+            <p className="text-muted-foreground/40 text-[10px] font-mono text-center">
+              Este site não é um órgão público. Somos uma empresa de tecnologia.
+            </p>
+          </div>
         </div>
       </div>
     </footer>

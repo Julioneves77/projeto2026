@@ -1,19 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Background -->
+  <!-- Background - rounded square like site logo -->
   <rect width="64" height="64" rx="12" fill="#2563eb"/>
-  
-  <!-- Document/Certificate Icon -->
-  <g transform="translate(16, 12)">
-    <!-- Document base -->
-    <rect x="0" y="0" width="32" height="40" rx="2" fill="#ffffff" opacity="0.95"/>
-    
-    <!-- Lines on document -->
-    <line x1="6" y1="10" x2="26" y2="10" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="6" y1="16" x2="26" y2="16" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="6" y1="22" x2="20" y2="22" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round"/>
-    
-    <!-- Seal/Badge -->
-    <circle cx="24" cy="8" r="4" fill="#10b981" opacity="0.9"/>
-    <path d="M 22 8 L 23.5 9.5 L 26 7" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Bot icon (Lucide) - scaled and centered, white -->
+  <g transform="translate(12, 8) scale(1.67)" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 8V4H8"/>
+    <rect width="16" height="12" x="4" y="8" rx="2"/>
+    <path d="M2 14h2"/>
+    <path d="M20 14h2"/>
+    <path d="M15 13v2"/>
+    <path d="M9 13v2"/>
   </g>
 </svg>

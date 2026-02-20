@@ -5,7 +5,7 @@ import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Copy, Check, QrCode, Clock, Shield } from "lucide-react";
+import { ArrowLeft, Copy, Check, QrCode, Clock, Shield, Zap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
 import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
@@ -18,6 +18,7 @@ import {
   type PagarmeTransaction 
 } from "@/lib/pagarmeService";
 import { validateEmail } from "@/lib/validations";
+import { getFormConfig } from "@/lib/formConfigs";
 
 // Mock data for testing
 const mockPlan = {
@@ -144,6 +145,19 @@ const Payment = () => {
   const state = locationState.state || "SP";
   const selectedPlan = locationState.selectedPlan || mockPlan;
   
+  // Verificar se a certidão tem entrega automática via Plexi
+  const entregaAutomatica = (() => {
+    if (!originalCategory) return false;
+    const typeForConfig =
+      originalCategory === "estaduais"
+        ? (state || "").toLowerCase()
+        : originalCategory === "federais"
+        ? ((formData?.tipoCertidao as string) || "criminal").toLowerCase().replace("cível", "civel")
+        : "";
+    const config = getFormConfig(originalCategory, typeForConfig);
+    return !!config?.entregaAutomatica;
+  })();
+
   const [copied, setCopied] = useState(false);
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null);
   const [pixTransaction, setPixTransaction] = useState<PagarmeTransaction | null>(null);
@@ -824,7 +838,7 @@ const Payment = () => {
         <div className="container max-w-5xl">
           {/* Resumo Curto Mobile - Aparece antes do QR no mobile */}
           <div className="md:hidden mb-4">
-            <Card className="p-4">
+            <Card className="tech-card hex-corners p-4 border-border/60">
               <h2 className="font-heading text-lg font-bold text-foreground mb-3">
                 Resumo
               </h2>
@@ -849,12 +863,23 @@ const Payment = () => {
                   {formatPrice(selectedPlan.price)}
                 </span>
               </div>
+              {entregaAutomatica && (
+                <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                  <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground mb-0.5">Entrega Automática</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Após a confirmação do pagamento, a certidão será enviada automaticamente para o e-mail informado.
+                    </p>
+                  </div>
+                </div>
+              )}
             </Card>
           </div>
 
           {/* Seção Pagamento Mobile - Título e Botão PIX */}
           <div className="md:hidden mb-4">
-            <Card className="p-4">
+            <Card className="tech-card hex-corners p-4 border-border/60">
               <h2 className="font-heading text-lg font-bold text-foreground mb-4">
                 Pagamento
               </h2>
@@ -871,7 +896,7 @@ const Payment = () => {
 
           <div className="grid gap-6 md:grid-cols-2">
             {/* Order Summary - Desktop */}
-            <Card className="hidden md:block p-5 order-2 md:order-2">
+            <Card className="tech-card hex-corners hidden md:block p-5 order-2 md:order-2 border-border/60">
               <h2 className="font-heading text-xl font-bold text-foreground mb-4">
                 Resumo
               </h2>
@@ -942,6 +967,18 @@ const Payment = () => {
                   </div>
                 )}
 
+                {entregaAutomatica && (
+                  <div className="flex items-start gap-2 text-xs text-foreground bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/30">
+                    <Zap className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium mb-1 text-foreground">Entrega Automática</p>
+                      <p className="text-muted-foreground">
+                        Após a confirmação do pagamento, a certidão será enviada automaticamente para o e-mail informado.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Security Notice */}
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Shield className="h-3 w-3 flex-shrink-0" />
@@ -951,7 +988,7 @@ const Payment = () => {
             </Card>
 
             {/* QR Code Section */}
-            <Card className="p-4 sm:p-5 overflow-hidden order-1 md:order-1">
+            <Card className="tech-card hex-corners p-4 sm:p-5 overflow-hidden order-1 md:order-1 border-border/60">
               <div className="text-center overflow-hidden">
                 <h2 className="font-heading text-xl font-bold text-foreground mb-4 hidden md:block">
                   Pagamento

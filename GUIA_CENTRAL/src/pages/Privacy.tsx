@@ -40,13 +40,13 @@ const Privacy = () => {
         <div className="container max-w-4xl mx-auto px-4">
           {/* Título */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-foreground mb-2">Política de Privacidade</h1>
+            <h1 className="font-orbitron text-4xl font-bold text-foreground mb-2">Política de Privacidade</h1>
             <p className="text-lg text-muted-foreground mb-1">Em conformidade com a Lei Geral de Proteção de Dados (LGPD)</p>
             <p className="text-sm text-muted-foreground">Última atualização: 24 de janeiro de 2025</p>
           </div>
 
           {/* Seção 1 - Identificação do Controlador */}
-          <section className="mb-10 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+          <section className="mb-10 tech-card bg-card/80 border border-border/60 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                 <span className="text-blue-600 dark:text-blue-400 font-bold">1</span>
@@ -65,7 +65,7 @@ const Privacy = () => {
           </section>
 
           {/* Seção 2 - Dados Pessoais Coletados */}
-          <section className="mb-10 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+          <section className="mb-10 tech-card bg-card/80 border border-border/60 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                 <span className="text-blue-600 dark:text-blue-400 font-bold">2</span>

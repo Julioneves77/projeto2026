@@ -116,6 +116,15 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     
+    location /api/chat {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.html;
     }
@@ -142,6 +151,15 @@ server {
     root /var/www/guia-central/dist;
     index index.html;
     
+    location /api/chat {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.html;
     }
@@ -189,6 +207,7 @@ server {
     ssl_certificate_key ${CERT_DIR}/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    location /api/chat { proxy_pass http://127.0.0.1:3002; proxy_http_version 1.1; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto \$scheme; }
     location / { try_files \$uri \$uri/ /index.html; }
     gzip on;
     gzip_vary on;
@@ -213,6 +232,19 @@ ssh ${SERVER_USER}@${SERVER_IP} << EOF
     sudo chmod -R 755 $APP_DIR
     echo "✅ Permissões configuradas"
 EOF
+
+echo -e "${YELLOW}💬 Deploy do Chat...${NC}"
+ssh ${SERVER_USER}@${SERVER_IP} "mkdir -p /var/www/chat-guia-central"
+rsync -avz chat-native/server/server.js chat-native/server/package.json chat-native/server/ecosystem.config.cjs \
+  ${SERVER_USER}@${SERVER_IP}:/var/www/chat-guia-central/
+ssh ${SERVER_USER}@${SERVER_IP} << 'CHAT_EOF'
+  cd /var/www/chat-guia-central
+  npm install --production 2>/dev/null || npm install
+  npx pm2 delete chat-guia-central 2>/dev/null || true
+  npx pm2 start ecosystem.config.cjs
+  npx pm2 save 2>/dev/null || true
+  echo "✅ Chat iniciado"
+CHAT_EOF
 
 echo ""
 echo -e "${GREEN}✅ Deploy concluído com sucesso!${NC}"

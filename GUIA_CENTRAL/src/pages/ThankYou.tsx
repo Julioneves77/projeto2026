@@ -65,7 +65,7 @@ const ThankYou = () => {
       <section className="relative overflow-hidden gradient-hero py-16 lg:py-20">
         <div className="container relative">
           <div className="animate-slide-up text-center max-w-2xl mx-auto">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary-foreground/20 rounded-full mb-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary-foreground/20 rounded-full mb-6 glow-green">
               <CheckCircle className="h-10 w-10 text-primary-foreground" />
             </div>
             <h1 className="font-heading text-3xl font-bold text-primary-foreground sm:text-4xl">
@@ -81,7 +81,7 @@ const ThankYou = () => {
       {/* Content */}
       <section className="py-12">
         <div className="container max-w-2xl">
-          <Card className="p-8">
+          <Card className="tech-card hex-corners p-8 border-border/60">
             <div className="text-center mb-8">
               <h2 className="font-heading text-xl font-bold text-foreground mb-2">
                 {selectedPlan.name}
@@ -118,6 +118,9 @@ const ThankYou = () => {
                   </div>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground text-center mt-4">
+                Os prazos podem variar dependendo da certidão ou comarca, podendo chegar até 24 horas em alguns casos.
+              </p>
             </div>
 
             {/* Email Info */}

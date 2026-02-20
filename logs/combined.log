@@ -1532,3 +1532,26 @@
 {"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-02T16:53:25.479Z"}
 {"level":"info","message":"Backup periódico de tickets concluído: 19 tickets","service":"sync-server","timestamp":"2026-02-02T18:48:48.323Z"}
 {"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-02T18:48:48.398Z"}
+{"authentication":"enabled","corsOrigins":"http://localhost:8081,http://localhost:3000,https://www.portalcertidao.org,https://plataforma.portalcertidao.org,https://www.solicite.link","environment":"production","level":"info","message":"🚀 Servidor de sincronização iniciado","port":"3001","rateLimiting":"enabled","service":"sync-server","ticketsCount":19,"timestamp":"2026-02-18T20:52:34.855Z"}
+{"level":"info","message":"Cleanup: 5 tickets removidos","service":"sync-server","timestamp":"2026-02-18T20:53:34.898Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-19T02:52:35.047Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-19T02:52:35.054Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-19T09:10:51.304Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-19T09:10:51.314Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-19T15:10:51.090Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-19T15:10:51.111Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-19T21:38:07.313Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-19T21:38:07.326Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-20T03:53:32.889Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-20T03:53:32.896Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-20T09:57:22.569Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-20T09:57:22.574Z"}
+{"authentication":"enabled","corsOrigins":"http://localhost:8081,http://localhost:3000,https://www.portalcertidao.org,https://plataforma.portalcertidao.org,https://www.solicite.link","environment":"production","level":"info","message":"🚀 Servidor de sincronização iniciado","port":"3001","rateLimiting":"enabled","service":"sync-server","ticketsCount":14,"timestamp":"2026-02-20T15:19:29.591Z"}
+{"authentication":"enabled","corsOrigins":"http://localhost:8081,http://localhost:3000,https://www.portalcertidao.org,https://plataforma.portalcertidao.org,https://www.solicite.link","environment":"production","level":"info","message":"🚀 Servidor de sincronização iniciado","port":"3002","rateLimiting":"enabled","service":"sync-server","ticketsCount":14,"timestamp":"2026-02-20T15:20:23.420Z"}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"GET","path":"/health","responseTime":"3ms","service":"sync-server","statusCode":200,"timestamp":"2026-02-20T15:20:26.560Z","userAgent":"curl/8.7.1"}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"POST","path":"/api/contato","responseTime":"3739ms","service":"sync-server","statusCode":200,"timestamp":"2026-02-20T15:20:47.318Z","userAgent":"curl/8.7.1"}
+{"ip":"::1","level":"warn","message":"HTTP Request","method":"GET","path":"/api/contato","responseTime":"28ms","service":"sync-server","statusCode":404,"timestamp":"2026-02-20T15:25:02.907Z","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cursor/2.4.31 Chrome/142.0.7444.235 Electron/39.2.7 Safari/537.36"}
+{"ip":"::1","level":"warn","message":"HTTP Request","method":"GET","path":"/api/contato","responseTime":"2ms","service":"sync-server","statusCode":404,"timestamp":"2026-02-20T15:25:03.335Z","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cursor/2.4.31 Chrome/142.0.7444.235 Electron/39.2.7 Safari/537.36"}
+{"authentication":"enabled","corsOrigins":"http://localhost:8081,http://localhost:3000,https://www.portalcertidao.org,https://plataforma.portalcertidao.org,https://www.solicite.link","environment":"production","level":"info","message":"🚀 Servidor de sincronização iniciado","port":"3002","rateLimiting":"enabled","service":"sync-server","ticketsCount":14,"timestamp":"2026-02-20T15:26:44.444Z"}
+{"level":"info","message":"Backup periódico de tickets concluído: 14 tickets","service":"sync-server","timestamp":"2026-02-20T15:57:22.693Z"}
+{"level":"info","message":"Backup periódico de mensagens concluído: 0 mensagens","service":"sync-server","timestamp":"2026-02-20T15:57:22.699Z"}

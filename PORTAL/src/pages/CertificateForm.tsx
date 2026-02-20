@@ -791,6 +791,26 @@ const CertificateForm = () => {
 
                 {/* Campos do step */}
                 <div className="space-y-5">
+                  {(() => {
+                    const hasConditionalRequired = fields.some(
+                      (f) => f.required && f.showWhen && formData[f.showWhen.field] !== f.showWhen.value
+                    );
+                    const conditionField = fields.find((f) =>
+                      fields.some((other) => other.showWhen?.field === f.name)
+                    );
+                    if (hasConditionalRequired && conditionField) {
+                      const condLabel = conditionField.label.toLowerCase();
+                      return (
+                        <div key={`hint-${stepIndex}`} className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-amber-800 dark:text-amber-200">
+                            Selecione <strong>{condLabel}</strong> para exibir todos os campos obrigatórios.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {fields.map((field, fieldIndex) => renderField(field, stepIndex, fieldIndex))}
                 </div>
               </div>

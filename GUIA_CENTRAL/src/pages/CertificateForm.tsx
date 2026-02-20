@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Info, AlertCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Info, AlertCircle, Zap } from "lucide-react";
 import {
   validateCPF,
   validateCNPJ,
@@ -286,20 +286,20 @@ const CertificateForm = () => {
   if (category === "estaduais" && !selectedState) {
     return (
       <Layout>
-        <section className="relative overflow-hidden gradient-hero py-10 lg:py-12">
+        <section className="relative overflow-hidden py-16 lg:py-20 bg-background">
           <div className="container relative">
             <Link
               to="/"
-              className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80 hover:text-primary-foreground mb-4 transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-primary mb-4 transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               Voltar
             </Link>
             <div className="animate-slide-up">
-              <h1 className="font-heading text-2xl font-bold text-primary-foreground sm:text-3xl">
+              <h1 className="font-orbitron text-2xl font-bold text-foreground sm:text-3xl tracking-wider">
                 {getCertificateTitle()}
               </h1>
-              <p className="mt-1 text-primary-foreground/80">
+              <p className="mt-1 text-muted-foreground font-mono text-sm">
                 Selecione o estado para continuar
               </p>
             </div>
@@ -308,10 +308,10 @@ const CertificateForm = () => {
 
         <section className="py-10">
           <div className="container max-w-lg">
-            <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+            <div className="tech-card hex-corners bg-card rounded-xl border border-border/60 p-6 shadow-card backdrop-blur-sm">
               <FormField label="Estado" required>
                 <Select value={selectedState} onValueChange={setSelectedState}>
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger>
                     <SelectValue placeholder="Selecione o estado" />
                   </SelectTrigger>
                   <SelectContent className="bg-card border-border z-50 max-h-60">
@@ -334,10 +334,10 @@ const CertificateForm = () => {
     return (
       <Layout>
         <div className="container py-20 text-center">
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1 className="font-orbitron text-2xl font-bold text-foreground tracking-wider">
             Formulário não encontrado
           </h1>
-          <Button asChild className="mt-6">
+          <Button asChild className="mt-6 font-mono glow-blue" variant="hero">
             <Link to="/">Voltar ao Início</Link>
           </Button>
         </div>
@@ -391,6 +391,58 @@ const CertificateForm = () => {
       default:
         return value;
     }
+  };
+
+  const validateCurrentStep = (): { isValid: boolean; stepErrors: Record<string, string> } => {
+    if (isReviewStep) return { isValid: true, stepErrors: {} };
+    const step = formConfig.steps[currentStep];
+    const stepErrors: Record<string, string> = {};
+
+    for (const field of step.fields) {
+      if (field.showWhen) {
+        const conditionValue = formData[field.showWhen.field];
+        if (conditionValue !== field.showWhen.value) continue;
+      }
+
+      const value = formData[field.name];
+
+      if (field.required && (!value || (typeof value === "string" && !value.trim()))) {
+        stepErrors[field.name] = `${field.label} é obrigatório`;
+        continue;
+      }
+
+      if (value && typeof value === "string" && value.trim()) {
+        switch (field.name) {
+          case "cpf":
+            if (!validateCPF(value)) stepErrors[field.name] = "CPF inválido";
+            break;
+          case "cnpj":
+            if (!validateCNPJ(value)) stepErrors[field.name] = "CNPJ inválido";
+            break;
+          case "cpfOuCnpj":
+          case "documento":
+            const clean = value.replace(/\D/g, "");
+            if (clean.length <= 11 && !validateCPF(value)) stepErrors[field.name] = "CPF inválido";
+            if (clean.length > 11 && !validateCNPJ(value)) stepErrors[field.name] = "CNPJ inválido";
+            break;
+          case "email":
+            if (!validateEmail(value)) stepErrors[field.name] = "E-mail inválido";
+            break;
+          case "telefone":
+            if (!validatePhone(value)) stepErrors[field.name] = "Telefone inválido";
+            break;
+          case "dataNascimento":
+            if (!validateDate(value)) stepErrors[field.name] = "Data inválida (DD/MM/AAAA)";
+            break;
+        }
+      }
+    }
+
+    setErrors(stepErrors);
+    return {
+      isValid: Object.keys(stepErrors).length === 0,
+      stepErrors,
+    };
   };
 
   const validateAllSteps = (): { isValid: boolean; missingFields: string[] } => {
@@ -651,7 +703,7 @@ const CertificateForm = () => {
               value={value as string}
               onValueChange={(val) => updateField(field.name, val)}
             >
-              <SelectTrigger className="bg-card" data-error={hasError ? "true" : undefined}>
+              <SelectTrigger data-error={hasError ? "true" : undefined}>
                 <SelectValue placeholder={field.placeholder || `Selecione ${field.label.toLowerCase()}`} />
               </SelectTrigger>
               <SelectContent className="bg-card border-border z-50 max-h-60">
@@ -757,7 +809,7 @@ const CertificateForm = () => {
 
   // Componente ReviewRow para o step de revisão
   const ReviewRow = ({ label, value }: { label: string; value: string }) => (
-    <div className="flex justify-between text-sm">
+    <div className="flex justify-between text-sm font-mono">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-foreground font-medium text-right">{value}</span>
     </div>
@@ -798,7 +850,7 @@ const CertificateForm = () => {
         description={formConfig.description || "Preencha o formulário para solicitar sua certidão. Processo rápido, seguro e 100% online."}
       />
       {/* Hero */}
-      <section className="relative overflow-hidden gradient-hero py-10 lg:py-12">
+      <section className="relative overflow-hidden py-16 lg:py-20 bg-background">
         <div className="container relative">
           <button
             onClick={() => {
@@ -808,17 +860,17 @@ const CertificateForm = () => {
                 navigate(-1);
               }
             }}
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80 hover:text-primary-foreground mb-4 transition-colors"
+            className="inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-primary mb-4 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Voltar
           </button>
 
           <div className="animate-slide-up">
-            <h1 className="font-heading text-2xl font-bold text-primary-foreground sm:text-3xl">
+            <h1 className="font-orbitron text-2xl font-bold text-foreground sm:text-3xl tracking-wider">
               {getCertificateTitle()}
             </h1>
-            <p className="mt-1 text-primary-foreground/80">
+            <p className="mt-1 text-muted-foreground font-mono text-sm">
               {category === "federais" && formData.estadoEmissao
                 ? `Tribunal Regional Federal (${formData.estadoEmissao})`
                 : category === "federais"
@@ -833,22 +885,43 @@ const CertificateForm = () => {
       <section className="py-10">
         <div className="container max-w-2xl mx-auto">
           {/* Explicação de Campos Obrigatórios */}
-          <Card className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+          <Card className="mb-6 p-4 tech-card hex-corners rounded-xl bg-card border border-border/60 shadow-sm">
             <div className="flex items-start gap-3">
-              <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 glow-blue">
+                <Info className="h-4 w-4 text-primary" />
+              </div>
               <div className="flex-1">
-                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                <h3 className="text-sm font-semibold text-foreground mb-1 font-mono">
                   Campos Obrigatórios
                 </h3>
-                <p className="text-xs text-blue-800 dark:text-blue-200">
+                <p className="text-xs text-muted-foreground font-mono">
                   Os campos marcados com <span className="text-destructive font-semibold">*</span> são obrigatórios e devem ser preenchidos corretamente para prosseguir com a solicitação da certidão.
                 </p>
               </div>
             </div>
           </Card>
 
+          {/* Entrega Automática - texto explicativo para certidões via Plexi */}
+          {formConfig.entregaAutomatica && (
+            <Card className="mb-6 p-4 tech-card hex-corners rounded-xl bg-card border border-emerald-500/40 shadow-sm bg-emerald-500/5">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                  <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-foreground mb-1 font-mono">
+                    Entrega Automática
+                  </h3>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Este documento possui entrega automática via processamento digital. Após a confirmação do pagamento, a certidão será gerada e enviada automaticamente para o e-mail informado, sem necessidade de retirada presencial.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Formulário Multi-Step */}
-          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="rounded-xl border border-border bg-card p-6 shadow-card animate-fade-in space-y-8">
+          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="tech-card hex-corners rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-card animate-fade-in space-y-8">
             {/* Abas de step (multi-step) */}
             <div className={`grid gap-1 mb-6 ${totalSteps <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
               {stepLabels.map((label, i) => (
@@ -856,12 +929,12 @@ const CertificateForm = () => {
                   key={label}
                   type="button"
                   onClick={() => i < currentStep && setCurrentStep(i)}
-                  className={`py-3 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                  className={`py-3 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all ${
                     i === currentStep
-                      ? "gradient-hero text-primary-foreground shadow-hero"
+                      ? "bg-primary text-primary-foreground shadow-md glow-blue"
                       : i < currentStep
-                      ? "bg-primary/10 text-primary"
-                      : "bg-secondary text-muted-foreground"
+                      ? "bg-primary/10 text-primary border border-primary/20"
+                      : "bg-secondary text-muted-foreground border border-border/60"
                   }`}
                 >
                   {label}
@@ -874,19 +947,41 @@ const CertificateForm = () => {
               <div className="space-y-5">
                 {formConfig.steps[currentStep].title && (
                   <div className="border-b border-border pb-2 mb-4">
-                    <h3 className="font-semibold text-foreground text-base">
+                    <h3 className="font-orbitron font-semibold text-foreground text-sm tracking-wider">
                       {currentStep === 0
                         ? `Formulário ${getCertificateTitle()}`
                         : formConfig.steps[currentStep].title}
                     </h3>
                     {formConfig.steps[currentStep].description && (
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-muted-foreground mt-1 font-mono">
                         {formConfig.steps[currentStep].description}
                       </p>
                     )}
                   </div>
                 )}
                 <div className="space-y-5">
+                  {/* Dica quando há campos obrigatórios condicionais (ex: tipoDocumento) ainda não exibidos */}
+                  {(() => {
+                    const stepFields = formConfig.steps[currentStep].fields;
+                    const hasConditionalRequired = stepFields.some(
+                      (f) => f.required && f.showWhen && formData[f.showWhen.field] !== f.showWhen.value
+                    );
+                    const conditionField = stepFields.find((f) =>
+                      stepFields.some((other) => other.showWhen?.field === f.name)
+                    );
+                    if (hasConditionalRequired && conditionField) {
+                      const condLabel = conditionField.label.toLowerCase();
+                      return (
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 font-mono">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-amber-800 dark:text-amber-200">
+                            Selecione <strong>{condLabel}</strong> para exibir todos os campos obrigatórios.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {formConfig.steps[currentStep].fields.map((field, fieldIndex) =>
                     renderField(field, currentStep, fieldIndex)
                   )}
@@ -895,14 +990,14 @@ const CertificateForm = () => {
             ) : (
               /* Step N: Revisão e Pagamento */
               <div className="space-y-6">
-                <h3 className="font-semibold text-foreground text-base">Revisão e Pagamento</h3>
-                <Card className="border bg-card">
+                <h3 className="font-orbitron font-semibold text-foreground text-sm tracking-wider">Revisão e Pagamento</h3>
+                <Card className="tech-card hex-corners border border-border/60 bg-card shadow-sm">
                   <CardContent className="pt-6">
                     <div className="space-y-3">{renderReviewRows()}</div>
                   </CardContent>
                 </Card>
                 {/* Bloco de total e PIX */}
-                <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                <div className="tech-card hex-corners rounded-xl border border-border/60 bg-secondary/50 p-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Total</span>
                     <span className="font-semibold text-foreground">R$ 39,90</span>
@@ -921,13 +1016,13 @@ const CertificateForm = () => {
                 variant="outline"
                 onClick={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : navigate(-1))}
                 size="lg"
-                className="gap-2 w-full sm:flex-1"
+                className="gap-2 w-full sm:flex-1 font-mono border-border/60 hover:border-primary/30"
               >
                 <ChevronLeft className="size-4" />
                 Voltar
               </Button>
               {isReviewStep ? (
-                <Button type="submit" variant="hero" size="lg" className="gap-2 w-full sm:flex-1 shadow-hero">
+                <Button type="submit" variant="hero" size="lg" className="gap-2 w-full sm:flex-1 shadow-hero glow-blue font-mono">
                   Confirmar e Pagar via PIX
                   <ChevronRight className="size-4" />
                 </Button>
@@ -936,8 +1031,32 @@ const CertificateForm = () => {
                   type="button"
                   variant="hero"
                   size="lg"
-                  onClick={() => canProceed() && setCurrentStep(currentStep + 1)}
-                  className="gap-2 w-full sm:flex-1 shadow-hero"
+                  onClick={() => {
+                    if (canProceed()) {
+                      setErrors({});
+                      setCurrentStep(currentStep + 1);
+                    } else {
+                      const validation = validateCurrentStep();
+                      if (!validation.isValid) {
+                        toast({
+                          title: "Corrija os campos",
+                          description: "Preencha corretamente os campos obrigatórios antes de continuar.",
+                          variant: "destructive",
+                        });
+                        setTimeout(() => {
+                          if (formRef.current) {
+                            const firstError = formRef.current.querySelector('[data-error="true"]');
+                            if (firstError) {
+                              firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+                            } else {
+                              formRef.current.querySelector('.text-destructive')?.closest('.space-y-2')?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }
+                          }
+                        }, 150);
+                      }
+                    }
+                  }}
+                  className="gap-2 w-full sm:flex-1 shadow-hero glow-blue font-mono"
                 >
                   Próximo
                   <ChevronRight className="size-4" />

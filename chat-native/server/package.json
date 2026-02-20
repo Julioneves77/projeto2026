@@ -1,0 +1,13 @@
+{
+  "name": "chat-native-guia-central",
+  "version": "1.0.0",
+  "description": "Chat widget backend para Guia Central - OpenAI Responses API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}

@@ -24,7 +24,7 @@ echo ""
 
 # Criar diretórios no servidor
 echo "📁 Criando diretórios no servidor..."
-ssh ${SERVER_USER}@${SERVER_IP} "mkdir -p ${SERVER_PATH}/portal/dist ${SERVER_PATH}/plataforma/dist ${SERVER_PATH}/solicite-link/dist ${SERVER_PATH}/portal-certidao/{uploads,logs} && chown -R \$(whoami):\$(whoami) ${SERVER_PATH}/{portal,plataforma,solicite-link,portal-certidao}" || {
+ssh ${SERVER_USER}@${SERVER_IP} "mkdir -p ${SERVER_PATH}/portal/dist ${SERVER_PATH}/plataforma/dist ${SERVER_PATH}/solicite-link/dist ${SERVER_PATH}/portal-certidao/uploads ${SERVER_PATH}/portal-certidao/logs ${SERVER_PATH}/portal-certidao/storage/certidoes && chown -R \$(whoami):\$(whoami) ${SERVER_PATH}/portal ${SERVER_PATH}/plataforma ${SERVER_PATH}/solicite-link ${SERVER_PATH}/portal-certidao" || {
     echo "⚠️  Erro ao criar diretórios. Continuando..."
 }
 echo ""
@@ -63,6 +63,10 @@ rsync -avz services/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/portal-certidao/
 rsync -avz utils/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/portal-certidao/utils/ || exit 1
 rsync -avz package.json ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/portal-certidao/ || exit 1
 rsync -avz ecosystem.config.js ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/portal-certidao/ || exit 1
+# PM2 roda de /root/projeto-2026-estrutura - sincronizar sync-server completo
+echo "📤 Sincronizando sync-server para PM2 (projeto-2026-estrutura)..."
+rsync -avz sync-server.js services/ utils/ package.json ecosystem.config.js ${SERVER_USER}@${SERVER_IP}:/root/projeto-2026-estrutura/ 2>/dev/null || true
+ssh ${SERVER_USER}@${SERVER_IP} "cd /root/projeto-2026-estrutura && pm2 restart sync-server" 2>/dev/null || true
 
 # Enviar .env se existir
 if [ -f ".env" ]; then

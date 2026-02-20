@@ -13,7 +13,7 @@ interface FormFieldProps {
 const FormField = ({ label, required = false, error, children, className }: FormFieldProps) => {
   return (
     <div className={cn("space-y-2", className)}>
-      <Label className="text-sm font-medium text-foreground">
+      <Label className="text-sm font-medium text-foreground font-mono">
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
       </Label>

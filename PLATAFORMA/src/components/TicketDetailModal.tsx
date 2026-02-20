@@ -11,7 +11,7 @@ import {
   Check, 
   FileText, 
   MessageSquare, 
-  BookOpen,
+  ClipboardPaste,
   Send,
   Paperclip,
   Mail,
@@ -23,7 +23,9 @@ import {
   Pencil,
   Trash2,
   Download,
-  MessageCircle
+  MessageCircle,
+  RefreshCw,
+  RotateCcw
 } from 'lucide-react';
 
 interface TicketDetailModalProps {
@@ -31,7 +33,7 @@ interface TicketDetailModalProps {
   onClose: () => void;
 }
 
-type ModalTab = 'dados' | 'interacao' | 'respostas';
+type ModalTab = 'dados' | 'interacao';
 
 // Limites para evitar travamentos com tickets pesados
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB por anexo
@@ -42,13 +44,15 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
   console.log('🔍 [TicketDetailModal] Componente renderizado para ticket:', ticket?.codigo);
   
   const { currentUser, userRole } = useAuth();
-  const { addHistorico, updateTicket, pausePolling, resumePolling } = useTickets();
+  const { addHistorico, updateTicket, pausePolling, resumePolling, refreshTickets } = useTickets();
   const { respostas, addResposta, updateResposta, deleteResposta } = useRespostasProntas();
   const { toast } = useToast();
   
   const [activeTab, setActiveTab] = useState<ModalTab>('dados');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPlexiRetrying, setIsPlexiRetrying] = useState(false);
+  const [isPlexiResetting, setIsPlexiResetting] = useState(false);
   
   // Interação state
   const [novoStatus, setNovoStatus] = useState<TicketStatus>(ticket.status);
@@ -115,7 +119,6 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
   const tabs: { id: ModalTab; label: string; icon: React.ElementType }[] = [
     { id: 'dados', label: 'Dados', icon: FileText },
     { id: 'interacao', label: 'Interação', icon: MessageSquare },
-    { id: 'respostas', label: 'Respostas Prontas', icon: BookOpen },
   ];
 
   const copyToClipboard = async (text: string, fieldId: string) => {
@@ -125,6 +128,20 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
       setTimeout(() => setCopiedField(null), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+    }
+  };
+
+  const handlePasteToMensagem = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setMensagem((prev) => prev + (prev ? '\n' : '') + text);
+      toast({ title: 'Colar', description: 'Texto colado na mensagem.' });
+    } catch (err) {
+      toast({
+        title: 'Erro ao colar',
+        description: 'Não foi possível acessar a área de transferência. Verifique as permissões do navegador.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -383,6 +400,74 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     setOpenRespostaMenu(null);
   };
 
+  const handlePlexiRetry = async () => {
+    const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+    const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+    setIsPlexiRetrying(true);
+    try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      const res = await fetch(`${SYNC_SERVER_URL}/tickets/${ticket.id}/plexi/retry`, {
+        method: 'POST',
+        headers,
+        body: '{}'
+      });
+      const text = await res.text();
+      let data: { error?: string; message?: string; missingFields?: string[] } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        toast({ title: 'Erro', description: `Resposta inválida do servidor (${res.status})`, variant: 'destructive' });
+        return;
+      }
+      if (res.ok) {
+        toast({ title: 'Sucesso', description: data.message || 'Ticket enfileirado para Plexi', variant: 'default' });
+        await refreshTickets();
+      } else {
+        const desc = data.error || (data.missingFieldsLabels ? `Dados faltando: ${data.missingFieldsLabels}` : data.missingFields?.join(', ')) || 'Falha ao reenviar';
+        toast({ title: 'Erro', description: desc, variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao reenviar', variant: 'destructive' });
+    } finally {
+      setIsPlexiRetrying(false);
+    }
+  };
+
+  const handlePlexiReset = async () => {
+    if (!confirm('Resetar Plexi? O ticket será limpo para nova tentativa automática.')) return;
+    const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+    const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+    setIsPlexiResetting(true);
+    try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      const res = await fetch(`${SYNC_SERVER_URL}/tickets/${ticket.id}/plexi/reset`, {
+        method: 'POST',
+        headers,
+        body: '{}'
+      });
+      const text = await res.text();
+      let data: { error?: string; message?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        toast({ title: 'Erro', description: `Resposta inválida do servidor (${res.status})`, variant: 'destructive' });
+        return;
+      }
+      if (res.ok) {
+        toast({ title: 'Sucesso', description: data.message || 'Plexi resetado', variant: 'default' });
+        await refreshTickets();
+      } else {
+        toast({ title: 'Erro', description: data.error || 'Falha ao resetar', variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao resetar', variant: 'destructive' });
+    } finally {
+      setIsPlexiResetting(false);
+    }
+  };
+
   const formatDate = useCallback((date: Date | null) => {
     if (!date) return '-';
     return new Date(date).toLocaleString('pt-BR');
@@ -596,15 +681,49 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     { value: 'CONCLUIDO', label: 'Concluído' },
   ];
 
+  // Estado de Emissão: priorizar valor escolhido pelo cliente no formulário (evitar conflito)
+  const estadoEmissaoExibido = (
+    ticket.dadosFormulario?.estadoSelecionado ||
+    ticket.dadosFormulario?.estadoEmissao ||
+    ticket.estadoEmissao
+  )?.toString().trim() || ticket.estadoEmissao || '';
+
+  // Campos obrigatórios do formulário que devem aparecer em Dados da Solicitação (se preenchidos)
+  const camposFormObrigatorios: Array<{ key: string; label: string }> = [
+    { key: 'nomeMae', label: 'Nome da Mãe' },
+    { key: 'rg', label: 'RG' },
+    { key: 'rgOrgaoEmissor', label: 'Órgão Emissor do RG' },
+    { key: 'comarca', label: 'Comarca' },
+    { key: 'finalidade', label: 'Finalidade' },
+    { key: 'enderecoCompleto', label: 'Endereço Completo' },
+    { key: 'nacionalidade', label: 'Nacionalidade' },
+    { key: 'estadoCivil', label: 'Estado Civil' },
+    { key: 'paisNascimento', label: 'País de Nascimento' },
+    { key: 'ufNascimento', label: 'UF de Nascimento' },
+    { key: 'municipioNascimento', label: 'Município de Nascimento' },
+    { key: 'cidadeNascimento', label: 'Cidade de Nascimento' },
+    { key: 'razaoSocial', label: 'Razão Social' },
+    { key: 'nomeFantasia', label: 'Nome Fantasia' },
+  ];
+
+  const camposFormExtra = camposFormObrigatorios
+    .map(({ key, label }) => {
+      const val = ticket.dadosFormulario?.[key];
+      if (val === undefined || val === null || val === '' || val === false) return null;
+      return { id: `form_${key}`, label, value: String(val) };
+    })
+    .filter(Boolean) as Array<{ id: string; label: string; value: string }>;
+
   const dadosSolicitacao = [
     { id: 'tipoCertidao', label: 'Tipo de Certidão', value: ticket.tipoCertidao },
-    { id: 'estadoEmissao', label: 'Estado da Emissão', value: ticket.estadoEmissao },
+    { id: 'estadoEmissao', label: 'Estado da Emissão', value: estadoEmissaoExibido },
     ...(ticket.cidadeEmissao ? [{ id: 'cidadeEmissao', label: 'Cidade da Emissão', value: ticket.cidadeEmissao }] : []),
     { id: 'tipoPessoa', label: 'Tipo de Pessoa', value: ticket.tipoPessoa },
     { id: 'nomeCompleto', label: 'Nome Completo', value: ticket.nomeCompleto },
     { id: 'cpfSolicitante', label: ticket.tipoPessoa === 'CPF' ? 'CPF' : 'CNPJ', value: ticket.cpfSolicitante },
     { id: 'dataNascimento', label: 'Data de Nascimento', value: formatBirthDate(ticket.dataNascimento) },
     { id: 'genero', label: 'Gênero', value: ticket.genero },
+    ...camposFormExtra,
     { id: 'telefone', label: 'Telefone (WhatsApp)', value: ticket.telefone },
     { id: 'email', label: 'E-mail', value: ticket.email },
   ];
@@ -669,6 +788,49 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
             {/* Tab: Dados */}
             {activeTab === 'dados' && (
               <div className="space-y-6">
+                {/* Automação Plexi - em destaque no topo quando EM_OPERACAO */}
+                {ticket.status === 'EM_OPERACAO' && (
+                  <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                      Automação Plexi
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' :
+                        ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+                        ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                        ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus || 'Pendente'}
+                      </span>
+                      <button
+                        onClick={handlePlexiRetry}
+                        disabled={isPlexiRetrying || ticket.automationStatus === 'PROCESSING'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isPlexiRetrying ? 'animate-spin' : ''}`} />
+                        Reenviar para Plexi
+                      </button>
+                      {userRole === 'admin' && (
+                        <button
+                          onClick={handlePlexiReset}
+                          disabled={isPlexiResetting || ticket.automationStatus === 'PROCESSING'}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted disabled:opacity-50"
+                        >
+                          <RotateCcw className={`w-3.5 h-3.5 ${isPlexiResetting ? 'animate-spin' : ''}`} />
+                          Resetar Plexi
+                        </button>
+                      )}
+                    </div>
+                    {ticket.automationLastError && ticket.automationStatus !== 'DONE' && (
+                      <p className="text-xs text-muted-foreground">{ticket.automationLastError}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Dados da Solicitação */}
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
@@ -711,6 +873,10 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                           if (key === 'origem' && userRole !== 'admin') {
                             return false;
                           }
+                          // Evitar conflito: se estadoSelecionado existe, não mostrar estadoEmissao separado (mesmo valor)
+                          if (key === 'estadoEmissao' && ticket.dadosFormulario?.estadoSelecionado) {
+                            return false;
+                          }
                           return value !== '' && value !== false;
                         })
                         .map(([key, value]) => {
@@ -735,11 +901,12 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                             pessoa: 'Pessoa',
                             tipoCertidao: 'Tipo de Certidão',
                             estadoEmissao: 'Estado de Emissão',
-                            estadoSelecionado: 'Estado Selecionado',
+                            estadoSelecionado: 'Estado de Emissão', // Mesmo conceito - valor escolhido pelo cliente
                             estado: 'Estado da Solicitação',
                             paisNascimento: 'País de Nascimento',
                             ufNascimento: 'UF de Nascimento',
                             municipioNascimento: 'Município de Nascimento',
+                            cidadeNascimento: 'Cidade de Nascimento',
                             telefone: 'Telefone',
                             email: 'E-mail',
                             sexo: 'Sexo',
@@ -819,6 +986,50 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
             {/* Tab: Interação */}
             {activeTab === 'interacao' && (
               <div className="space-y-6">
+                {/* Automação Plexi - apenas para EM_OPERACAO */}
+                {ticket.status === 'EM_OPERACAO' && (
+                  <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                      Automação Plexi
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' :
+                        ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+                        ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                        ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus || 'Pendente'}
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handlePlexiRetry}
+                          disabled={isPlexiRetrying || ticket.automationStatus === 'PROCESSING'}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isPlexiRetrying ? 'animate-spin' : ''}`} />
+                          Reenviar para Plexi
+                        </button>
+                        {userRole === 'admin' && (
+                          <button
+                            onClick={handlePlexiReset}
+                            disabled={isPlexiResetting || ticket.automationStatus === 'PROCESSING'}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted disabled:opacity-50"
+                          >
+                            <RotateCcw className={`w-3.5 h-3.5 ${isPlexiResetting ? 'animate-spin' : ''}`} />
+                            Resetar Plexi
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {ticket.automationLastError && ticket.automationStatus !== 'DONE' && (
+                      <p className="text-xs text-muted-foreground">{ticket.automationLastError}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Nova Interação */}
                 {ticket.status !== 'CONCLUIDO' && (
                   <div>
@@ -865,9 +1076,20 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-foreground mb-2">
-                          Mensagem
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-medium text-foreground">
+                            Mensagem
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handlePasteToMensagem}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted transition-colors"
+                            title="Colar texto da área de transferência"
+                          >
+                            <ClipboardPaste className="w-4 h-4" />
+                            Colar
+                          </button>
+                        </div>
                         <textarea
                           value={mensagem}
                           onChange={(e) => setMensagem(e.target.value)}
@@ -901,6 +1123,112 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                         <Send className="w-5 h-5" />
                         {isSaving ? 'Salvando...' : 'Salvar Atualização'}
                       </button>
+
+                      {/* Respostas Prontas - integrado na tela de Interação */}
+                      <div className="border-t border-border pt-4 mt-4">
+                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Respostas Prontas</h4>
+                        <div className="space-y-3">
+                          {respostas.map((resp) => (
+                            <div key={resp.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
+                              <p className="text-sm text-foreground flex-1 mr-3">{resp.texto}</p>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    copyToClipboard(resp.texto, `resp-${resp.id}`);
+                                    setMensagem((prev) => prev + (prev ? '\n' : '') + resp.texto);
+                                    toast({ title: 'Copiado e colado', description: 'Resposta adicionada à mensagem.' });
+                                  }}
+                                  className="copy-btn p-2 rounded-lg hover:bg-muted transition-colors"
+                                  title="Copiar e colar na mensagem"
+                                >
+                                  {copiedField === `resp-${resp.id}` ? (
+                                    <Check className="w-4 h-4 text-status-complete" />
+                                  ) : (
+                                    <Copy className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                </button>
+                                {canAddRespostas && (
+                                  <div className="relative">
+                                    <button
+                                      onClick={() => setOpenRespostaMenu(openRespostaMenu === resp.id ? null : resp.id)}
+                                      className="p-2 rounded-lg hover:bg-muted transition-colors"
+                                    >
+                                      <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                                    </button>
+                                    {openRespostaMenu === resp.id && (
+                                      <div className="absolute right-0 mt-1 w-36 bg-popover border border-border rounded-lg shadow-medium z-50 animate-fade-in">
+                                        <div className="py-1">
+                                          <button
+                                            onClick={() => handleEditResposta(resp.id, resp.texto)}
+                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted"
+                                          >
+                                            <Pencil className="w-4 h-4" />
+                                            Alterar
+                                          </button>
+                                          {canDeleteRespostas && (
+                                            <button
+                                              onClick={() => handleDeleteResposta(resp.id)}
+                                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                              Deletar
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {canAddRespostas && (
+                          <div className="mt-4 pt-4 border-t border-border">
+                            <h4 className="text-sm font-medium text-foreground mb-3">Adicionar Nova Resposta</h4>
+                            <div className="flex gap-2">
+                              <textarea
+                                value={novaResposta}
+                                onChange={(e) => setNovaResposta(e.target.value)}
+                                rows={2}
+                                placeholder="Digite uma nova resposta pronta..."
+                                className="flex-1 px-4 py-2 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                              />
+                              <button
+                                onClick={handleAddResposta}
+                                className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors"
+                              >
+                                <Plus className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Respostas Prontas - visível também quando ticket concluído */}
+                {ticket.status === 'CONCLUIDO' && (
+                  <div className="border-t border-border pt-6">
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Respostas Prontas</h4>
+                    <div className="space-y-3">
+                      {respostas.map((resp) => (
+                        <div key={resp.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
+                          <p className="text-sm text-foreground flex-1 mr-3">{resp.texto}</p>
+                          <button
+                            onClick={() => copyToClipboard(resp.texto, `resp-${resp.id}`)}
+                            className="copy-btn p-2 rounded-lg hover:bg-muted transition-colors"
+                            title="Copiar resposta"
+                          >
+                            {copiedField === `resp-${resp.id}` ? (
+                              <Check className="w-4 h-4 text-status-complete" />
+                            ) : (
+                              <Copy className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -941,83 +1269,6 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Tab: Respostas Prontas */}
-            {activeTab === 'respostas' && (
-              <div className="space-y-4">
-                {respostas.map((resp) => (
-                  <div key={resp.id} className="flex items-start justify-between p-4 bg-muted/30 rounded-lg">
-                    <p className="text-sm text-foreground flex-1 mr-4">{resp.texto}</p>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => copyToClipboard(resp.texto, `resp-${resp.id}`)}
-                        className="copy-btn"
-                        title="Copiar resposta"
-                      >
-                        {copiedField === `resp-${resp.id}` ? (
-                          <Check className="w-4 h-4 text-status-complete" />
-                        ) : (
-                          <Copy className="w-4 h-4 text-muted-foreground" />
-                        )}
-                      </button>
-                      {canAddRespostas && (
-                        <div className="relative">
-                          <button
-                            onClick={() => setOpenRespostaMenu(openRespostaMenu === resp.id ? null : resp.id)}
-                            className="p-2 rounded-lg hover:bg-muted transition-colors"
-                          >
-                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                          {openRespostaMenu === resp.id && (
-                            <div className="absolute right-0 mt-1 w-36 bg-popover border border-border rounded-lg shadow-medium z-50 animate-fade-in">
-                              <div className="py-1">
-                                <button
-                                  onClick={() => handleEditResposta(resp.id, resp.texto)}
-                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                  Alterar
-                                </button>
-                                {canDeleteRespostas && (
-                                  <button
-                                    onClick={() => handleDeleteResposta(resp.id)}
-                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    Deletar
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {canAddRespostas && (
-                  <div className="border-t border-border pt-4 mt-4">
-                    <h4 className="text-sm font-medium text-foreground mb-3">Adicionar Nova Resposta</h4>
-                    <div className="flex gap-2">
-                      <textarea
-                        value={novaResposta}
-                        onChange={(e) => setNovaResposta(e.target.value)}
-                        rows={2}
-                        placeholder="Digite uma nova resposta pronta..."
-                        className="flex-1 px-4 py-2 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
-                      />
-                      <button
-                        onClick={handleAddResposta}
-                        className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>

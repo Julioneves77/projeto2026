@@ -22,6 +22,8 @@ export interface FormConfig {
   title: string;
   description: string;
   steps: StepConfig[];
+  /** Certidões com entrega automática via Plexi (processamento digital e envio por e-mail) */
+  entregaAutomatica?: boolean;
 }
 
 const globalContactFields: FieldConfig[] = [
@@ -220,23 +222,27 @@ const estaduaisConfigs: Record<string, FormConfig> = {
 // Add remaining states with similar structure
 ["ac", "al", "am", "ap", "ce", "es", "ma", "ms", "pa", "pb", "pe", "pi", "rn", "ro", "sc", "se"].forEach((state) => {
   if (!estaduaisConfigs[state]) {
+    const step1Fields: FieldConfig[] = [
+      { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
+      { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+      { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+      { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
+      { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+      ...(state === "ce" ? [{ name: "comarca", label: "Comarca", type: "text" as const, required: true, placeholder: "Ex: Fortaleza, Sobral", showWhen: { field: "tipoDocumento", value: "CPF" } }] : []),
+      { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+      { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+    ];
+    const step2Fields: FieldConfig[] = [
+      ...(state === "pa" ? [{ name: "enderecoCompleto", label: "Endereço Completo", type: "text" as const, required: true }] : []),
+      ...globalContactFields.slice(1),
+      ...termsFields,
+    ];
     estaduaisConfigs[state] = {
       title: `Certidão Negativa Criminal - ${state.toUpperCase()}`,
       description: `Tribunal de Justiça do Estado`,
       steps: [
-        { title: "Tipo de Documento", fields: [
-          { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
-          { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
-          { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
-          { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
-          { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
-          { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
-          { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
-        ]},
-        { title: "Contato e Confirmação", fields: [
-          ...globalContactFields.slice(1),
-          ...termsFields,
-        ]},
+        { title: "Tipo de Documento", fields: step1Fields },
+        { title: state === "pa" ? "Endereço, Contato e Confirmação" : "Contato e Confirmação", fields: step2Fields },
       ],
     };
   }
@@ -246,12 +252,15 @@ const estaduaisConfigs: Record<string, FormConfig> = {
 const federaisConfig: FormConfig = {
   title: "Certidão Federal",
   description: "Tribunal Regional Federal",
+  entregaAutomatica: true,
   steps: [
     { title: "Tipo de Certidão", fields: [
       { name: "tipoCertidao", label: "Tipo de Certidão", type: "select", required: true, options: "tipoCertidao" },
       { name: "estadoEmissao", label: "Estado de Emissão da certidão", type: "select", required: true, options: "estados" },
       { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
       { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+      { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+      { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
       { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
       { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
       { name: "nomeFantasia", label: "Nome Fantasia", type: "text", required: false, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
@@ -268,6 +277,7 @@ const federaisConfig: FormConfig = {
 const policiaFederalConfig: FormConfig = {
   title: "Antecedentes Criminais - Polícia Federal",
   description: "Certidão de Antecedentes Criminais",
+  entregaAutomatica: true,
   steps: [
     { title: "Dados Pessoais", fields: [
       { name: "cpf", label: "CPF", type: "text", required: true },
@@ -332,6 +342,7 @@ const policiaFederalConfig: FormConfig = {
 const cndConfig: FormConfig = {
   title: "CND - Certidão Negativa de Débitos",
   description: "Certidão Negativa de Débitos Federais",
+  entregaAutomatica: true,
   steps: [
     { title: "Tipo de Documento", fields: [
       { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
@@ -352,6 +363,7 @@ const cndConfig: FormConfig = {
 const cpfRegularConfig: FormConfig = {
   title: "Situação Cadastral do CPF",
   description: "Comprovante de Regularidade do CPF",
+  entregaAutomatica: true,
   steps: [
     { title: "Dados", fields: [
       { name: "cpf", label: "CPF", type: "text", required: true },
@@ -374,7 +386,8 @@ export function getAvailableStates() {
 export function getFormConfig(category: string, type: string): FormConfig | null {
   switch (category) {
     case "estaduais":
-      return estaduaisConfigs[type] || null;
+      const cfg = estaduaisConfigs[type];
+      return cfg ? { ...cfg, entregaAutomatica: true } : null;
     case "federais":
       const tipoMap: Record<string, string> = {
         "criminal": "Certidão Negativa Criminal Federal",
