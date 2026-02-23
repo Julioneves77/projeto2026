@@ -191,6 +191,124 @@ function extractClientEmail(credentialsJson) {
   }
 }
 
+/**
+ * Diagnóstico completo: read, write, permissão, aba, header
+ */
+async function fullDiagnostic(credentialsJson, spreadsheetId, sheetName) {
+  const now = new Date().toISOString();
+  const base = {
+    ok: false,
+    checks: {
+      canRead: false,
+      canWrite: false,
+      hasPermission: false,
+      sheetExists: false,
+      headerOk: false
+    },
+    lastTestAt: now,
+    message: ''
+  };
+  if (!credentialsJson || !spreadsheetId) {
+    base.message = 'Credenciais e Spreadsheet ID são obrigatórios';
+    return base;
+  }
+  try {
+    const creds = typeof credentialsJson === 'string' ? JSON.parse(credentialsJson) : credentialsJson;
+    const auth = await getAuthClient(creds);
+    const sheets = google.sheets({ version: 'v4', auth });
+    const tab = (sheetName || 'Conversões').toString().trim() || 'Conversões';
+
+    try {
+      const meta = await sheets.spreadsheets.get({ spreadsheetId });
+      base.checks.hasPermission = true;
+      const sheetsList = meta.data.sheets || [];
+      base.checks.sheetExists = sheetsList.some((s) => (s.properties?.title || '').trim() === tab);
+      if (!base.checks.sheetExists) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] }
+        });
+        base.checks.sheetExists = true;
+        log('Worksheet criada no diagnóstico', { sheetName: tab });
+      }
+    } catch (e) {
+      base.message = normalizeErrorMessage(e);
+      if (/permission|403/i.test(String(e.message))) base.checks.hasPermission = false;
+      return base;
+    }
+
+    const rangeHeader = sheetTitleToA1(tab, 'A1:E1');
+    try {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: rangeHeader });
+      base.checks.canRead = true;
+      const values = res.data.values || [];
+      const current = values[0] ? values[0].join(',') : '';
+      const expected = HEADER_ROW.join(',');
+      base.checks.headerOk = current === expected;
+      if (!base.checks.headerOk) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: rangeHeader,
+          valueInputOption: 'RAW',
+          requestBody: { values: [HEADER_ROW] }
+        });
+        base.checks.headerOk = true;
+      }
+    } catch (e) {
+      base.message = normalizeErrorMessage(e);
+      return base;
+    }
+
+    const testRow = ['TEST-CONN', 'TEST', formatConversionTime(now), '0.01', 'BRL'];
+    const rangeAppend = sheetTitleToA1(tab, 'A:E');
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: rangeAppend,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [testRow] }
+      });
+      base.checks.canWrite = true;
+    } catch (e) {
+      base.message = normalizeErrorMessage(e);
+      return base;
+    }
+
+    base.ok = base.checks.canRead && base.checks.canWrite && base.checks.hasPermission && base.checks.headerOk;
+    base.message = base.ok ? 'Conexão OK (leitura e escrita)' : base.message || 'Falha no diagnóstico';
+    log('Diagnóstico Sheets', { ok: base.ok, checks: base.checks });
+    return base;
+  } catch (err) {
+    base.message = normalizeErrorMessage(err);
+    return base;
+  }
+}
+
+/**
+ * Escreve apenas uma linha de teste (usado pelo botão "Escrever linha teste")
+ */
+async function testWrite(credentialsJson, spreadsheetId, sheetName) {
+  const now = new Date().toISOString();
+  if (!credentialsJson || !spreadsheetId) {
+    return { ok: false, message: 'Credenciais e Spreadsheet ID são obrigatórios', lastWriteAt: null };
+  }
+  try {
+    const creds = typeof credentialsJson === 'string' ? JSON.parse(credentialsJson) : credentialsJson;
+    const auth = await getAuthClient(creds);
+    const sheets = google.sheets({ version: 'v4', auth });
+    const tab = (sheetName || 'Conversões').toString().trim() || 'Conversões';
+    await ensureWorksheetExists(sheets, spreadsheetId, tab);
+    await ensureHeader(sheets, spreadsheetId, tab);
+    const testRow = ['TEST-CONN', 'TEST', formatConversionTime(now), '0.01', 'BRL'];
+    await appendRows(sheets, spreadsheetId, tab, [testRow]);
+    log('Linha teste escrita', { spreadsheetId });
+    return { ok: true, message: 'Linha de teste escrita com sucesso', lastWriteAt: now };
+  } catch (err) {
+    return { ok: false, message: normalizeErrorMessage(err), lastWriteAt: null };
+  }
+}
+
 async function clearWorksheetData(credentialsJson, spreadsheetId, sheetName) {
   if (!credentialsJson || !spreadsheetId) {
     return { success: false, message: 'Credenciais e Spreadsheet ID são obrigatórios' };
@@ -214,6 +332,8 @@ async function clearWorksheetData(credentialsJson, spreadsheetId, sheetName) {
 module.exports = {
   exportPendingConversions,
   testConnection,
+  fullDiagnostic,
+  testWrite,
   extractClientEmail,
   clearWorksheetData,
   ensureWorksheetExists,

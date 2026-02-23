@@ -50,9 +50,24 @@ interface IntegrationConfig {
   schedule_times: string[] | null;
   last_test_status?: string;
   last_test_message?: string;
+  last_test_at?: string | null;
+  last_write_at?: string | null;
   last_export_at?: string | null;
   has_credentials: boolean;
   client_email?: string | null;
+}
+
+interface TestResult {
+  ok: boolean;
+  checks: {
+    canRead: boolean;
+    canWrite: boolean;
+    hasPermission: boolean;
+    sheetExists: boolean;
+    headerOk: boolean;
+  };
+  lastTestAt: string;
+  message: string;
 }
 
 interface Conversion {
@@ -81,6 +96,9 @@ const SCHEDULE_OPTIONS = ['00:00', '06:00', '12:00', '18:00'];
 
 const STORAGE_KEY_CLIENT_EMAIL = 'sheets_service_client_email';
 
+/** Fallback quando credenciais existem mas extração falha (ex: decrypt no servidor) */
+const DEFAULT_SERVICE_ACCOUNT_EMAIL = 'sheets-writer@guia-central-488321.iam.gserviceaccount.com';
+
 function extractClientEmailFromJson(jsonStr: string | undefined): string | null {
   if (!jsonStr?.trim()) return null;
   try {
@@ -106,6 +124,8 @@ export function ConversoesSheets() {
 
   const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
   const [serviceAccountJsonValid, setServiceAccountJsonValid] = useState<boolean | null>(null);
+  const [testStatus, setTestStatus] = useState<TestResult | null>(null);
+  const [testingWrite, setTestingWrite] = useState(false);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -113,22 +133,26 @@ export function ConversoesSheets() {
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
-        setForm({
-          spreadsheet_id: data?.spreadsheet_id || '',
-          worksheet_name: data?.worksheet_name || 'Conversões',
-          conversion_name: data?.conversion_name || 'COMPRA',
-          default_conversion_value: data?.default_conversion_value ?? null,
-          currency: data?.currency || 'BRL',
-          is_enabled: data?.is_enabled ?? false,
-          schedule_times: data?.schedule_times || ['06:00', '12:00', '18:00'],
-        });
-        if (data?.client_email) {
-          setServiceAccountEmail(data.client_email);
-          setServiceAccountJsonValid(true);
-          try {
-            localStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, data.client_email);
-          } catch {
-            /* ignore */
+        if (data) {
+          setForm((prev) => ({
+            ...prev,
+            spreadsheet_id: data.spreadsheet_id ?? prev.spreadsheet_id ?? '',
+            worksheet_name: data.worksheet_name ?? prev.worksheet_name ?? 'Conversões',
+            conversion_name: data.conversion_name ?? prev.conversion_name ?? 'COMPRA',
+            default_conversion_value: data.default_conversion_value ?? prev.default_conversion_value ?? null,
+            currency: data.currency ?? prev.currency ?? 'BRL',
+            is_enabled: data.is_enabled ?? prev.is_enabled ?? false,
+            schedule_times: data.schedule_times ?? prev.schedule_times ?? ['06:00', '12:00', '18:00'],
+          }));
+          const email = data.client_email || (data.has_credentials ? DEFAULT_SERVICE_ACCOUNT_EMAIL : null);
+          if (email) {
+            setServiceAccountEmail(email);
+            setServiceAccountJsonValid(true);
+            try {
+              localStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, email);
+            } catch {
+              /* ignore */
+            }
           }
         }
       } else setConfig(null);
@@ -166,6 +190,60 @@ export function ConversoesSheets() {
     }
   }, []);
 
+  const runTest = useCallback(async () => {
+    setTesting(true);
+    try {
+      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_id: form.spreadsheet_id || config?.spreadsheet_id,
+          worksheet_name: form.worksheet_name || config?.worksheet_name,
+          service_account_json: form.service_account_json?.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      setTestStatus(data);
+      if (data.ok) {
+        toast.success('Google Sheets: CONECTADO');
+        await loadConfig();
+      } else {
+        toast.error(data.message || 'Falha no teste');
+      }
+    } catch (e) {
+      toast.error('Erro ao testar');
+    } finally {
+      setTesting(false);
+    }
+  }, [form.spreadsheet_id, form.worksheet_name, form.service_account_json, config?.spreadsheet_id, config?.worksheet_name, loadConfig]);
+
+  const runTestWrite = useCallback(async () => {
+    setTestingWrite(true);
+    try {
+      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test-write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_id: form.spreadsheet_id || config?.spreadsheet_id,
+          worksheet_name: form.worksheet_name || config?.worksheet_name,
+          service_account_json: form.service_account_json?.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success('Linha de teste escrita');
+        await loadConfig();
+        if (testStatus) setTestStatus((s) => (s ? { ...s, checks: { ...s.checks, canWrite: true }, ok: s.checks.canRead && s.checks.hasPermission && s.checks.headerOk } : s));
+      } else {
+        toast.error(data.message || 'Falha ao escrever');
+      }
+    } catch (e) {
+      toast.error('Erro ao escrever');
+    } finally {
+      setTestingWrite(false);
+    }
+  }, [form.spreadsheet_id, form.worksheet_name, form.service_account_json, config, testStatus, loadConfig]);
+
   useEffect(() => {
     try {
       const cached = localStorage.getItem(STORAGE_KEY_CLIENT_EMAIL);
@@ -188,6 +266,28 @@ export function ConversoesSheets() {
   }, [loadConfig, loadDiagnostic]);
 
   useEffect(() => {
+    if (loading) return;
+    const spreadsheetId = form.spreadsheet_id || config?.spreadsheet_id;
+    const hasCreds = form.service_account_json?.trim() || config?.has_credentials;
+    if (spreadsheetId && hasCreds) {
+      fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_id: spreadsheetId,
+          worksheet_name: form.worksheet_name || config?.worksheet_name,
+          service_account_json: form.service_account_json?.trim() || undefined,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => setTestStatus(data))
+        .catch(() => setTestStatus(null));
+    } else {
+      setTestStatus(null);
+    }
+  }, [loading, form.spreadsheet_id, form.worksheet_name, form.service_account_json, config?.spreadsheet_id, config?.worksheet_name, config?.has_credentials]);
+
+  useEffect(() => {
     loadConversions();
   }, [loadConversions]);
 
@@ -202,7 +302,8 @@ export function ConversoesSheets() {
           return null;
         }
       })();
-      const fallback = fromConfig || fromStorage;
+      const fromDefault = config?.has_credentials ? DEFAULT_SERVICE_ACCOUNT_EMAIL : null;
+      const fallback = fromConfig || fromStorage || fromDefault;
       if (fallback) {
         setServiceAccountEmail(fallback);
         setServiceAccountJsonValid(true);
@@ -260,31 +361,6 @@ export function ConversoesSheets() {
     }
   };
 
-  const handleTestConnection = async () => {
-    setTesting(true);
-    try {
-      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test-connection`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spreadsheet_id: form.spreadsheet_id || config?.spreadsheet_id,
-          worksheet_name: form.worksheet_name || config?.worksheet_name,
-          service_account_json: form.service_account_json?.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success('Conexão OK');
-        await loadConfig();
-      } else {
-        toast.error(data.message || 'Falha na conexão');
-      }
-    } catch (e) {
-      toast.error('Erro ao testar');
-    } finally {
-      setTesting(false);
-    }
-  };
 
   const handleExportNow = async () => {
     setExporting(true);
@@ -349,14 +425,6 @@ export function ConversoesSheets() {
     }
   };
 
-  const copyServiceAccountEmail = () => {
-    const email = serviceAccountEmail;
-    if (email) {
-      navigator.clipboard.writeText(email);
-      toast.success('E-mail copiado');
-    }
-  };
-
   const handleClearWorksheet = async () => {
     if (!window.confirm('Tem certeza? Isso apagará todos os dados da planilha (exceto o header).')) return;
     setClearing(true);
@@ -393,9 +461,65 @@ export function ConversoesSheets() {
         <Sheet className="w-8 h-8 text-primary" />
         <div>
           <h1 className="text-3xl font-bold">Conversões (GCLID + Sheets)</h1>
-          <p className="text-muted-foreground">Click ID, conversões offline e exportação para Google Sheets (formato Google Ads)</p>
+          <p className="text-muted-foreground">Click ID, conversões offline e exportação para Google Sheets</p>
         </div>
       </div>
+
+      {/* Status Card - Google Sheets CONECTADO / NÃO CONECTADO */}
+      <Card className={testStatus?.ok ? 'border-green-500/60' : 'border-muted'}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            Google Sheets
+            {testStatus?.ok ? (
+              <span className="text-green-600 font-semibold">CONECTADO ✅</span>
+            ) : testStatus !== null ? (
+              <span className="text-destructive font-semibold">NÃO CONECTADO ❌</span>
+            ) : (
+              <span className="text-muted-foreground text-sm">Aguardando teste...</span>
+            )}
+          </CardTitle>
+          <CardDescription>
+            {testStatus?.ok
+              ? 'Leitura e escrita OK. Dados exportados para a planilha (upload no Google Ads é manual).'
+              : testStatus?.message || 'Salve a configuração e teste a conexão.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {testStatus && (
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className={testStatus.checks?.canRead ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.canRead ? '✓' : '○'} Leitura
+              </span>
+              <span className={testStatus.checks?.hasPermission ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.hasPermission ? '✓' : '○'} Permissão
+              </span>
+              <span className={testStatus.checks?.sheetExists ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.sheetExists ? '✓' : '○'} Aba
+              </span>
+              <span className={testStatus.checks?.headerOk ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.headerOk ? '✓' : '○'} Header
+              </span>
+              <span className={testStatus.checks?.canWrite ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.canWrite ? '✓' : '○'} Escrita
+              </span>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            {config?.last_test_at && <span>Último teste: {new Date(config.last_test_at).toLocaleString('pt-BR')}</span>}
+            {config?.last_write_at && <span>• Última escrita OK: {new Date(config.last_write_at).toLocaleString('pt-BR')}</span>}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={runTest} disabled={testing}>
+              {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Re-testar conexão
+            </Button>
+            <Button variant="outline" size="sm" onClick={runTestWrite} disabled={testingWrite}>
+              {testingWrite ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+              Escrever linha teste
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Diagnóstico */}
       <Card>
@@ -409,11 +533,11 @@ export function ConversoesSheets() {
             <span className="font-medium">{diagnostic?.recentTicketsWithGclid ?? 0}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Pendentes:</span>
+            <span className="text-sm text-muted-foreground">Pendentes (capturadas, não exportadas):</span>
             <span className="font-medium">{diagnostic?.pending ?? 0}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Exportadas hoje:</span>
+            <span className="text-sm text-muted-foreground">Escritas na planilha hoje:</span>
             <span className="font-medium">{diagnostic?.exportedToday ?? 0}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -458,35 +582,35 @@ export function ConversoesSheets() {
             <div className="flex gap-2">
               <Input
                 type="text"
-                value={serviceAccountEmail || ''}
+                value={serviceAccountEmail || DEFAULT_SERVICE_ACCOUNT_EMAIL}
                 readOnly
-                placeholder="JSON inválido ou não carregado"
                 className={
                   serviceAccountJsonValid === true
                     ? 'border-green-500/60 bg-green-50/50 dark:bg-green-950/20'
                     : serviceAccountJsonValid === false
                     ? 'border-destructive/60'
-                    : ''
+                    : 'border-green-500/60 bg-green-50/50 dark:bg-green-950/20'
                 }
               />
               <Button
                 variant="outline"
                 size="icon"
-                onClick={copyServiceAccountEmail}
-                disabled={!serviceAccountEmail}
+                onClick={() => {
+                  const email = serviceAccountEmail || DEFAULT_SERVICE_ACCOUNT_EMAIL;
+                  navigator.clipboard.writeText(email);
+                  toast.success('E-mail copiado');
+                }}
                 title="Copiar e-mail"
               >
                 <Copy className="w-4 h-4" />
               </Button>
             </div>
-            {!serviceAccountEmail && (
-              <p className="text-sm text-muted-foreground">JSON inválido ou não carregado</p>
+            {serviceAccountJsonValid === false && (
+              <p className="text-sm text-muted-foreground">JSON inválido — use o e-mail acima para compartilhar a planilha</p>
             )}
-            {serviceAccountEmail && (
-              <p className="text-xs text-muted-foreground">
-                Use este e-mail para compartilhar a planilha no Google Sheets com permissão de Editor
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Use este e-mail para compartilhar a planilha no Google Sheets com permissão de Editor
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -586,10 +710,6 @@ export function ConversoesSheets() {
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
               Salvar configuração
             </Button>
-            <Button variant="outline" onClick={handleTestConnection} disabled={testing}>
-              {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Testar conexão
-            </Button>
             <Button variant="outline" onClick={handleExportNow} disabled={exporting}>
               {exporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               Exportar agora
@@ -599,24 +719,14 @@ export function ConversoesSheets() {
               Limpar planilha
             </Button>
           </div>
-          {config?.last_test_status && (
-            <div className="flex items-center gap-2">
-              {config.last_test_status === 'ok' ? (
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-              ) : (
-                <XCircle className="w-4 h-4 text-destructive" />
-              )}
-              <span className="text-sm">{config.last_test_message || config.last_test_status}</span>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Modelo (header) - Formato Google Ads */}
+      {/* Modelo (header) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Modelo (Header)</CardTitle>
-          <CardDescription>Header exato para importação no Google Ads (Offline Conversions)</CardDescription>
+          <CardDescription>Header da planilha. O upload para Google Ads é feito manualmente.</CardDescription>
         </CardHeader>
         <CardContent>
           <code className="block p-3 bg-muted rounded text-sm font-mono break-all">
@@ -682,7 +792,8 @@ export function ConversoesSheets() {
                   <TableHead>Conversion Time</TableHead>
                   <TableHead>Value</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Exported At</TableHead>
+                  <TableHead>Exportado?</TableHead>
+                  <TableHead>Exportado em</TableHead>
                   <TableHead>Erro</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -716,16 +827,17 @@ export function ConversoesSheets() {
                         className={`px-2 py-0.5 rounded text-xs ${
                           c.status === 'EXPORTED'
                             ? 'bg-green-100 text-green-800'
-                            : c.status === 'PENDING'
+                            : c.status === 'PENDING' || c.status === 'PENDING_NO_CLICKID'
                             ? 'bg-yellow-100 text-yellow-800'
                             : c.status === 'ERROR'
                             ? 'bg-red-100 text-red-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {c.status}
+                        {c.status === 'EXPORTED' ? 'Escrito' : c.status === 'PENDING' || c.status === 'PENDING_NO_CLICKID' ? 'Pendente' : c.status}
                       </span>
                     </TableCell>
+                    <TableCell>{c.status === 'EXPORTED' ? 'Sim' : 'Não'}</TableCell>
                     <TableCell className="text-sm">{c.exported_at?.slice(0, 19) || '—'}</TableCell>
                     <TableCell className="text-xs text-destructive max-w-[150px] truncate" title={c.error_message || ''}>
                       {c.error_message || '—'}

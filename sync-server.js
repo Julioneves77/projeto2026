@@ -5,13 +5,34 @@
  */
 
 require('dotenv').config();
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+// ETAPA 6: Gerar SHEETS_CREDENTIALS_ENCRYPTION_KEY automaticamente se não existir
+const ENV_PATH = path.join(__dirname, '.env');
+if (!process.env.SHEETS_CREDENTIALS_ENCRYPTION_KEY) {
+  try {
+    const newKey = crypto.randomBytes(32).toString('base64');
+    const line = `\n# GCLID/Sheets - gerado automaticamente\nSHEETS_CREDENTIALS_ENCRYPTION_KEY=${newKey}\n`;
+    if (fs.existsSync(ENV_PATH)) {
+      fs.appendFileSync(ENV_PATH, line);
+      console.log('✅ [SYNC] SHEETS_CREDENTIALS_ENCRYPTION_KEY gerada e salva no .env');
+    } else {
+      fs.writeFileSync(ENV_PATH, `SHEETS_CREDENTIALS_ENCRYPTION_KEY=${newKey}\n`);
+      console.log('✅ [SYNC] .env criado com SHEETS_CREDENTIALS_ENCRYPTION_KEY');
+    }
+    process.env.SHEETS_CREDENTIALS_ENCRYPTION_KEY = newKey;
+  } catch (e) {
+    console.warn('⚠️ [SYNC] Não foi possível gerar/salvar SHEETS_CREDENTIALS_ENCRYPTION_KEY:', e.message);
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-const fs = require('fs');
-const path = require('path');
 const sendPulseService = require('./services/sendPulseService');
 const zapApiService = require('./services/zapApiService');
 const plexiWorker = require('./services/plexi/worker');
@@ -20,6 +41,7 @@ const { validateEmail, validatePhone } = require('./utils/validators');
 const logger = require('./utils/logger');
 const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
 const os = require('os');
+const cron = require('node-cron');
 
 // Inicializar banco de dados do funil (se feature flag estiver habilitada)
 let funnelDatabase = null;
@@ -32,6 +54,16 @@ if (process.env.COLLECTOR_ENABLED !== 'false') {
   } catch (error) {
     console.error('⚠️ [SYNC] Erro ao inicializar banco de dados do funil:', error.message);
   }
+}
+
+// Inicializar banco GCLID/Sheets (conversões offline para Google Ads)
+let gclidSheetsDb = null;
+try {
+  gclidSheetsDb = require('./services/gclidSheetsDatabase');
+  gclidSheetsDb.initDatabase();
+  console.log('✅ [SYNC] Banco GCLID/Sheets inicializado');
+} catch (error) {
+  console.error('⚠️ [SYNC] Erro ao inicializar banco GCLID/Sheets:', error.message);
 }
 
 const app = express();
@@ -319,10 +351,11 @@ app.get('/health', (req, res) => {
 });
 
 // Secret key reCAPTCHA para Guia Central (guia-central.online)
-const RECAPTCHA_GUIA_SECRET_KEY = process.env.RECAPTCHA_GUIA_SECRET_KEY || process.env.RECAPTCHA_SECRET_KEY;
+// RECAPTCHA_GUIA_SECRET_KEY = chave real | RECAPTCHA_GUIA_TEST_SECRET = fallback para testes
+const RECAPTCHA_GUIA_SECRET_KEY = process.env.RECAPTCHA_GUIA_SECRET_KEY || process.env.RECAPTCHA_GUIA_TEST_SECRET || process.env.RECAPTCHA_SECRET_KEY;
 
-// POST /api/contato - Formulário Fale Conosco (SMTP GoDaddy)
-app.post('/api/contato', createTicketLimiter, express.json(), async (req, res) => {
+// Handler do formulário Fale Conosco (reutilizado em /api/contato e /contato)
+const handleContato = async (req, res) => {
   try {
     const { nome, email, mensagem, recaptchaToken } = req.body || {};
     if (!nome || !email || !mensagem) {
@@ -348,29 +381,40 @@ app.post('/api/contato', createTicketLimiter, express.json(), async (req, res) =
     if (!recaptchaData.success) {
       return res.status(400).json({ ok: false, error: 'Verificação reCAPTCHA falhou' });
     }
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+    // Usar SendPulse (API) em vez de SMTP GoDaddy - evita timeout em servidores cloud
+    const htmlContent = `<p><strong>Nome:</strong> ${nome}</p><p><strong>E-mail:</strong> <a href="mailto:${email}">${email}</a></p><p><strong>Mensagem:</strong></p><p>${String(mensagem).replace(/\n/g, '<br>')}</p>`;
+    const textContent = `Nome: ${nome}\nE-mail: ${email}\n\nMensagem:\n${mensagem}`;
+    const fromEmail = process.env.GUIA_CENTRAL_SENDER_EMAIL || process.env.SENDPULSE_SENDER_EMAIL || 'contato@portalcertidao.org';
+    const fromName = process.env.GUIA_CENTRAL_SENDER_NAME || process.env.SENDPULSE_SENDER_NAME || 'Guia Central';
+
+    try {
+      const result = await sendPulseService.sendEmail({
+        to: 'contato@guia-central.online',
+        subject: `Fale Conosco — ${nome}`,
+        html: htmlContent,
+        text: textContent,
+        from: { name: fromName, email: fromEmail }
+      });
+      if (result.success) {
+        console.log('[SYNC] Email contato enviado via SendPulse para contato@guia-central.online');
+        return res.json({ ok: true });
       }
-    });
-    await transporter.sendMail({
-      from: '"Guia Central" <contato@guia-central.online>',
-      to: 'contato@guia-central.online',
-      replyTo: email,
-      subject: `Fale Conosco — ${nome}`,
-      text: `Nome: ${nome}\nE-mail: ${email}\n\nMensagem:\n${mensagem}`,
-      html: `<p><strong>Nome:</strong> ${nome}</p><p><strong>E-mail:</strong> <a href="mailto:${email}">${email}</a></p><p><strong>Mensagem:</strong></p><p>${String(mensagem).replace(/\n/g, '<br>')}</p>`
-    });
-    return res.json({ ok: true });
+      console.error('[SYNC] SendPulse rejeitou email contato:', result.error);
+      return res.status(500).json({ ok: false, error: 'Erro ao enviar mensagem. Tente novamente ou envie para contato@guia-central.online.' });
+    } catch (mailErr) {
+      console.error('[SYNC] Erro ao enviar email contato:', mailErr.message);
+      return res.status(500).json({ ok: false, error: 'Erro ao enviar mensagem. Tente novamente ou envie para contato@guia-central.online.' });
+    }
   } catch (err) {
     console.error('[SYNC] Erro ao enviar email contato:', err);
     return res.status(500).json({ ok: false, error: 'Erro ao enviar mensagem. Tente novamente mais tarde.' });
   }
-});
+};
+
+// POST /api/contato e POST /contato - Formulário Fale Conosco (SMTP GoDaddy)
+// /contato existe para nginx que faz proxy_pass removendo /api
+app.post('/api/contato', createTicketLimiter, express.json(), handleContato);
+app.post('/contato', createTicketLimiter, express.json(), handleContato);
 
 // Root endpoint (sem autenticação)
 app.get('/', (req, res) => {
@@ -1578,8 +1622,12 @@ app.post('/tickets', createTicketLimiter, (req, res) => {
     codigo: newTicket.codigo,
     status: newTicket.status,
     nomeCompleto: newTicket.nomeCompleto,
-    dataCadastro: newTicket.dataCadastro
+    dataCadastro: newTicket.dataCadastro,
+    dominio: newTicket.dominio
   });
+  if (newTicket.dominio && String(newTicket.dominio).includes('guia-central')) {
+    console.log('📥 [SYNC] Ticket originado do GUIA_CENTRAL (guia-central.online)');
+  }
   
   // Validar ticket
   const validation = validateTicket(newTicket);
@@ -2534,6 +2582,40 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
     saveTickets(tickets);
     console.log('✅ [Pagar.me Webhook] Ticket atualizado para EM_OPERACAO:', ticket.codigo);
 
+    // Registrar conversão offline para Google Ads (GCLID/Sheets)
+    if (gclidSheetsDb) {
+      try {
+        const integration = gclidSheetsDb.getIntegration();
+        const conversionName = integration?.conversion_name || 'COMPRA';
+        const defaultValue = integration?.default_conversion_value;
+        let conversionValue = defaultValue;
+        if (orderData?.amount != null) {
+          conversionValue = Number(orderData.amount) / 100;
+        } else if (orderData?.items?.[0]?.amount != null) {
+          conversionValue = Number(orderData.items[0].amount) / 100;
+        }
+        if (conversionValue == null || isNaN(conversionValue)) conversionValue = defaultValue ?? 0;
+        const gclid = (ticket.dadosFormulario && ticket.dadosFormulario.gclid) ? String(ticket.dadosFormulario.gclid).trim() : null;
+        const clickIdType = (ticket.dadosFormulario && ticket.dadosFormulario.clickIdType) ? String(ticket.dadosFormulario.clickIdType) : null;
+        const status = (gclid && gclid.length > 0) ? 'PENDING' : 'PENDING_NO_CLICKID';
+        const errorMsg = !gclid ? 'Sem Click ID (provável tráfego não-Google Ads)' : null;
+        gclidSheetsDb.upsertConversion({
+          ticket_id: ticket.id,
+          gclid: gclid || null,
+          click_id_type: clickIdType,
+          conversion_name: conversionName,
+          conversion_time: new Date().toISOString(),
+          conversion_value: conversionValue,
+          conversion_currency: 'BRL',
+          status,
+          error_message: errorMsg
+        });
+        console.log('✅ [Pagar.me Webhook] Conversão offline registrada:', { ticket_id: ticket.id, gclid: !!gclid, status });
+      } catch (convErr) {
+        console.error('⚠️ [Pagar.me Webhook] Erro ao registrar conversão offline:', convErr.message);
+      }
+    }
+
     // Enfileirar job Plexi para processamento automático
     plexiWorker.enqueue(ticket.id);
 
@@ -3427,7 +3509,281 @@ app.get('/funnel-validation', authenticateRequest, (req, res) => {
   }
 });
 
-// GET /contact-messages - Listar todas as mensagens de contato
+// ============================================
+// GCLID / SHEETS - Conversões Google Ads
+// ============================================
+const sheetsExportService = gclidSheetsDb ? require('./services/sheetsExportService') : null;
+const sheetsEncryption = gclidSheetsDb ? require('./services/sheetsEncryption') : null;
+
+// Helper para extrair client_email do JSON decriptografado
+function getClientEmailFromIntegration() {
+  if (!gclidSheetsDb || !sheetsExportService) return null;
+  const integration = gclidSheetsDb.getIntegration();
+  if (!integration?.service_account_json_encrypted || !sheetsEncryption) return null;
+  try {
+    const payload = JSON.parse(integration.service_account_json_encrypted);
+    const decrypted = sheetsEncryption.decrypt(payload);
+    return sheetsExportService.extractClientEmail(decrypted);
+  } catch { return null; }
+}
+
+// GET /admin/sheets/config - Obter configuração (sem JSON sensível)
+app.get('/admin/sheets/config', authenticateRequest, (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const integration = gclidSheetsDb.getIntegration();
+    if (!integration) return res.json(null);
+    const scheduleTimes = integration.schedule_times ? JSON.parse(integration.schedule_times) : null;
+    const clientEmail = getClientEmailFromIntegration();
+    res.json({
+      id: integration.id,
+      spreadsheet_id: integration.spreadsheet_id,
+      worksheet_name: integration.worksheet_name,
+      conversion_name: integration.conversion_name,
+      default_conversion_value: integration.default_conversion_value,
+      currency: integration.currency,
+      is_enabled: !!integration.is_enabled,
+      schedule_times: scheduleTimes,
+      last_test_status: integration.last_test_status,
+      last_test_message: integration.last_test_message,
+      last_test_at: integration.last_test_at || null,
+      last_write_at: integration.last_write_at || null,
+      last_export_at: integration.last_export_at,
+      has_credentials: !!(integration.service_account_json_encrypted),
+      client_email: clientEmail
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/config - Salvar configuração
+app.post('/admin/sheets/config', authenticateRequest, express.json(), (req, res) => {
+  if (!gclidSheetsDb || !sheetsEncryption) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const body = req.body || {};
+    let serviceAccountEncrypted = null;
+    let serviceAccountHash = null;
+    if (body.service_account_json && body.service_account_json.trim()) {
+      if (!process.env.SHEETS_CREDENTIALS_ENCRYPTION_KEY) {
+        return res.status(400).json({ error: 'SHEETS_CREDENTIALS_ENCRYPTION_KEY não configurada. Configure no .env para salvar credenciais.' });
+      }
+      const enc = sheetsEncryption.encrypt(body.service_account_json.trim());
+      serviceAccountEncrypted = JSON.stringify(enc);
+      serviceAccountHash = sheetsEncryption.hashJson(body.service_account_json);
+    } else {
+      const existing = gclidSheetsDb.getIntegration();
+      if (existing?.service_account_json_encrypted) {
+        serviceAccountEncrypted = existing.service_account_json_encrypted;
+        serviceAccountHash = existing.service_account_json_hash;
+      }
+    }
+    gclidSheetsDb.saveIntegration({
+      spreadsheet_id: body.spreadsheet_id || '',
+      worksheet_name: body.worksheet_name || 'Conversões',
+      conversion_name: body.conversion_name || 'COMPRA',
+      default_conversion_value: body.default_conversion_value ?? null,
+      currency: body.currency || 'BRL',
+      is_enabled: !!body.is_enabled,
+      schedule_times: Array.isArray(body.schedule_times) ? body.schedule_times : (body.schedule_times ? JSON.parse(body.schedule_times) : null),
+      service_account_json_encrypted: serviceAccountEncrypted,
+      service_account_json_hash: serviceAccountHash
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/test-connection - Testar conexão (legado, mantido para compatibilidade)
+app.post('/admin/sheets/test-connection', authenticateRequest, express.json(), async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const body = req.body || {};
+    let credentialsJson = body.service_account_json;
+    if (!credentialsJson && gclidSheetsDb.getIntegration()?.service_account_json_encrypted && sheetsEncryption) {
+      const payload = JSON.parse(gclidSheetsDb.getIntegration().service_account_json_encrypted);
+      credentialsJson = sheetsEncryption.decrypt(payload);
+    }
+    const result = await sheetsExportService.testConnection(
+      credentialsJson,
+      body.spreadsheet_id || gclidSheetsDb.getIntegration()?.spreadsheet_id,
+      body.worksheet_name || gclidSheetsDb.getIntegration()?.worksheet_name
+    );
+    if (gclidSheetsDb.getIntegration()) {
+      gclidSheetsDb.updateIntegrationTest(result.success ? 'ok' : 'error', result.message);
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /admin/sheets/test - Diagnóstico completo (read, write, permissão, aba, header)
+app.post('/admin/sheets/test', authenticateRequest, express.json(), async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const body = req.body || {};
+    const integration = gclidSheetsDb.getIntegration();
+    let credentialsJson = body.service_account_json?.trim();
+    if (!credentialsJson && integration?.service_account_json_encrypted && sheetsEncryption) {
+      const payload = JSON.parse(integration.service_account_json_encrypted);
+      credentialsJson = sheetsEncryption.decrypt(payload);
+    }
+    const spreadsheetId = body.spreadsheet_id || integration?.spreadsheet_id;
+    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Conversões';
+    const result = await sheetsExportService.fullDiagnostic(credentialsJson, spreadsheetId, worksheetName);
+    if (integration) {
+      gclidSheetsDb.updateIntegrationLastTest(result.lastTestAt, result.ok, result.message);
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message, checks: {} });
+  }
+});
+
+// POST /admin/sheets/test-write - Escrever linha de teste
+app.post('/admin/sheets/test-write', authenticateRequest, express.json(), async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const body = req.body || {};
+    const integration = gclidSheetsDb.getIntegration();
+    let credentialsJson = body.service_account_json?.trim();
+    if (!credentialsJson && integration?.service_account_json_encrypted && sheetsEncryption) {
+      const payload = JSON.parse(integration.service_account_json_encrypted);
+      credentialsJson = sheetsEncryption.decrypt(payload);
+    }
+    const spreadsheetId = body.spreadsheet_id || integration?.spreadsheet_id;
+    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Conversões';
+    const result = await sheetsExportService.testWrite(credentialsJson, spreadsheetId, worksheetName);
+    if (integration && result.lastWriteAt) {
+      gclidSheetsDb.updateIntegrationLastWrite(result.lastWriteAt);
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// POST /admin/sheets/export-now - Exportar agora
+app.post('/admin/sheets/export-now', authenticateRequest, async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const result = await sheetsExportService.exportPendingConversions();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, exported: 0 });
+  }
+});
+
+// GET /admin/sheets/conversions - Listar conversões
+app.get('/admin/sheets/conversions', authenticateRequest, (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const filters = {
+      status: req.query.status,
+      hasGclid: req.query.hasGclid === 'true' ? true : req.query.hasGclid === 'false' ? false : undefined,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: parseInt(req.query.limit, 10) || 200
+    };
+    const list = gclidSheetsDb.listConversions(filters);
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/conversions/:id/reexport - Marcar para reexportar
+app.post('/admin/sheets/conversions/:id/reexport', authenticateRequest, (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    gclidSheetsDb.setPending(parseInt(req.params.id, 10));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/conversions/:id/skip - Marcar como ignorar
+app.post('/admin/sheets/conversions/:id/skip', authenticateRequest, (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    gclidSheetsDb.markSkipped(parseInt(req.params.id, 10));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /admin/sheets/diagnostic - Diagnóstico
+app.get('/admin/sheets/diagnostic', authenticateRequest, (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  try {
+    const stats = gclidSheetsDb.getConversionStats();
+    const tickets = readTickets();
+    const recentWithGclid = tickets
+      .filter(t => t.dadosFormulario?.gclid)
+      .slice(-50)
+      .map(t => ({ id: t.id, codigo: t.codigo, gclid: t.dadosFormulario.gclid, dataCadastro: t.dataCadastro }));
+    const integration = gclidSheetsDb.getIntegration();
+    res.json({
+      ...stats,
+      recentTicketsWithGclid: recentWithGclid.length,
+      lastExportAt: integration?.last_export_at,
+      hasCredentials: !!(integration?.service_account_json_encrypted)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/test-conversion - Criar conversão de teste
+app.post('/admin/sheets/test-conversion', authenticateRequest, express.json(), (req, res) => {
+  if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
+  if (process.env.NODE_ENV === 'production' && !req.body?.confirm) {
+    return res.status(400).json({ error: 'Em produção, envie confirm: true para criar conversão de teste' });
+  }
+  try {
+    gclidSheetsDb.upsertConversion({
+      ticket_id: 'test-' + Date.now(),
+      gclid: 'TESTE123',
+      conversion_name: gclidSheetsDb.getIntegration()?.conversion_name || 'COMPRA',
+      conversion_time: new Date().toISOString(),
+      conversion_value: 1,
+      conversion_currency: 'BRL',
+      status: 'PENDING'
+    });
+    res.json({ success: true, message: 'Conversão de teste criada' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/sheets/clear - Limpar dados da planilha (header mantido, requer confirmação)
+app.post('/admin/sheets/clear', authenticateRequest, express.json(), async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  if (!req.body?.confirm) {
+    return res.status(400).json({ error: 'Envie confirm: true para confirmar a limpeza' });
+  }
+  try {
+    const integration = gclidSheetsDb.getIntegration();
+    if (!integration?.spreadsheet_id || !integration?.service_account_json_encrypted || !sheetsEncryption) {
+      return res.status(400).json({ error: 'Configuração incompleta' });
+    }
+    const payload = JSON.parse(integration.service_account_json_encrypted);
+    const credentialsJson = sheetsEncryption.decrypt(payload);
+    const result = await sheetsExportService.clearWorksheetData(
+      credentialsJson,
+      integration.spreadsheet_id,
+      integration.worksheet_name || 'Conversões'
+    );
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 app.get('/contact-messages', authenticateRequest, (req, res) => {
   try {
     const messages = readContactMessages();
@@ -5415,6 +5771,23 @@ app.listen(PORT, () => {
     console.log(`📁 Uploads públicos: ${PUBLIC_BASE_URL}/uploads`);
     console.log(`📁 Arquivo de tickets: ${TICKETS_FILE}`);
     console.log(`📊 Tickets atuais: ${readTickets().length}`);
+  }
+
+  // Cron para exportação automática de conversões (Google Sheets)
+  if (gclidSheetsDb && sheetsExportService) {
+    const scheduleExport = () => {
+      const integration = gclidSheetsDb.getIntegration();
+      if (!integration?.is_enabled || !integration?.schedule_times) return;
+      const times = typeof integration.schedule_times === 'string' ? JSON.parse(integration.schedule_times || '[]') : (integration.schedule_times || []);
+      if (times.length === 0) return;
+      const now = new Date();
+      const current = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      if (times.includes(current)) {
+        sheetsExportService.exportPendingConversions().catch(e => console.error('❌ [Sheets Cron] Erro:', e.message));
+      }
+    };
+    cron.schedule('* * * * *', scheduleExport); // Verificar a cada minuto
+    console.log('✅ [SYNC] Cron de exportação Sheets ativo');
   }
 });
 
