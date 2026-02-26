@@ -22,23 +22,42 @@ function log(msg, data = {}) {
 const PARAM_ROW_A1 = 'Parameters:TimeZone=America/Sao_Paulo';
 const HEADER_ROW = ['Google Click ID', 'Conversion Name', 'Conversion Time', 'Conversion Value', 'Conversion Currency'];
 
+const OFFSET_MINUTES = 10;
+
 /**
- * Conversion Time para teste/diagnóstico (usa "agora" +30min).
+ * Conversion Time para teste/diagnóstico (usa "agora" +10min).
  * Formato: YYYY-MM-DD HH:MM:SS (America/Sao_Paulo)
  */
 function formatConversionTime() {
-  return addMinutesToConversionTime(getSafeConversionTime(), 30);
+  return addMinutesToConversionTime(getSafeConversionTime(), OFFSET_MINUTES);
 }
 
 /**
- * Conversion Time para exportação: original +30min (evita "conversão antes do clique").
+ * Conversion Time para exportação: original +10min (evita "conversão antes do clique").
  * Formato: YYYY-MM-DD HH:MM:SS (America/Sao_Paulo)
  * Retorna null se data inválida (não exportar).
  */
 function getConversionTimeForExport(conv) {
   const source = conv?.conversion_time || getSafeConversionTime();
-  const result = addMinutesToConversionTime(source, 30);
+  const result = addMinutesToConversionTime(source, OFFSET_MINUTES);
   if (!result) return null;
+
+  const d = new Date(result + '-03:00');
+  if (isNaN(d.getTime())) {
+    log('EXPORT SKIP (conversion_time inválido)', { id: conv.id, conversion_time: source, error: 'Data não parseável' });
+    return null;
+  }
+  const now = new Date();
+  const maxFuture = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  if (d > maxFuture) {
+    log('EXPORT SKIP (conversion_time muito no futuro)', { id: conv.id, conversion_time: source, conversionTimeExport: result, error: 'Data > now + 24h' });
+    return null;
+  }
+  const minDate = new Date('2000-01-01T00:00:00-03:00');
+  if (d < minDate) {
+    log('EXPORT SKIP (conversion_time antes de 2000)', { id: conv.id, conversion_time: source, conversionTimeExport: result, error: 'Data < 2000-01-01' });
+    return null;
+  }
   return result;
 }
 
@@ -338,7 +357,7 @@ async function exportPendingConversions(opts = {}) {
     }
     const conversionTime = rows[0]?.[2];
     if (conversionTime) {
-      log('Offset +30min aplicado em todas as conversões', { conversionTime, count: rows.length });
+      log('Offset +10min aplicado em todas as conversões', { conversionTime, count: rows.length });
     }
     await appendRowsOnly(sheets, spreadsheetId, tab, rows);
     gclidDb.markExported(exportedIds, batchId);

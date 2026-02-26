@@ -1,10 +1,10 @@
 /**
  * Aplica offset de minutos e formata em America/Sao_Paulo.
  * @param {string} dateString - Data original
- * @param {number} minutesOffset - Minutos a adicionar (default 30)
+ * @param {number} minutesOffset - Minutos a adicionar (default 10)
  * @returns {string} YYYY-MM-DD HH:MM:SS
  */
-function addMinutesToConversionTime(dateString, minutesOffset = 30) {
+function addMinutesToConversionTime(dateString, minutesOffset = 10) {
   if (!dateString || typeof dateString !== 'string') return '';
   const trimmed = dateString.trim();
   if (/<<.*>>|ausente/i.test(trimmed)) return '';
