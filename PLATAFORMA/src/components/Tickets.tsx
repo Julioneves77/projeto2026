@@ -533,7 +533,7 @@ export function Tickets() {
                       ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
                       'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'
                     }`}>
-                      Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus}
+                      Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus}
                     </span>
                   )}
                 </div>
@@ -790,7 +790,7 @@ export function Tickets() {
                             ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
                             'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'
                           }`}>
-                            Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'DONE' ? 'Concluído' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus || 'Pendente'}
+                            Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'DONE' ? 'Concluído' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de dados' : ticket.automationStatus || 'Pendente'}
                           </span>
                           {(ticket.automationLastError && ticket.automationStatus !== 'DONE') && (
                             <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={ticket.automationLastError}>

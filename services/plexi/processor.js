@@ -10,7 +10,6 @@ const {
   getRegistryKey,
   validateRequiredFields,
   formatMissingFieldsForUser,
-  maskCpfCnpj,
   PLEXI_API_URL,
   PLEXI_API_KEY
 } = require('./registry');
@@ -53,6 +52,13 @@ function getPlexiHeaders() {
   return headers;
 }
 
+function maskCpfCnpj(val) {
+  if (!val || typeof val !== 'string') return '***';
+  const digits = val.replace(/\D/g, '');
+  if (digits.length < 4) return '***';
+  return `${digits.slice(0, 3)}***${digits.slice(-2)}`;
+}
+
 async function callPlexiStart(endpoint, payload, ticketId) {
   if (!PLEXI_API_URL || !PLEXI_API_KEY || !endpoint) {
     throw new Error('PLEXI_API_URL e PLEXI_API_KEY não configurados. Configure as variáveis de ambiente para ativar a automação.');
@@ -74,7 +80,8 @@ async function callPlexiStart(endpoint, payload, ticketId) {
       const data = err.response.data;
       const msg = typeof data === 'object' ? (data?.message || data?.error || JSON.stringify(data)) : String(data);
       const e = new Error(`Plexi retornou ${status}: ${msg || err.message}`);
-      e.response = err.response;
+      e.plexiStatus = status;
+      e.plexiErrors = data?.errors || data;
       throw e;
     }
     throw err;
@@ -142,7 +149,7 @@ async function processTicket(ticketId, options) {
 
   try {
     // 3. Obter config do registry
-    const registryKey = getRegistryKey(ticket);
+    const registryKey = getRegistryKey(ticket.tipoCertidao);
     if (!registryKey || !ServiceRegistry[registryKey]) {
       const errMsg = `Esta certidão não possui API disponível na Plexi. Tipo: ${ticket.tipoCertidao}. A Plexi não oferece endpoint para este tipo de certidão.`;
       tickets[ticketIndex] = {
@@ -194,24 +201,10 @@ async function processTicket(ticketId, options) {
         return;
       }
       try {
-        let payload;
-        try {
-          payload = config.buildPayload(ticket);
-        } catch (buildErr) {
-          const msg = buildErr.message || String(buildErr);
-          tickets[ticketIndex] = {
-            ...tickets[ticketIndex],
-            automationStatus: 'FAILED_FINAL',
-            automationLastError: msg,
-            automationLockAt: null,
-            automationLockOwner: null
-          };
-          addHistoricoItem(tickets, ticketIndex, `Plexi: ${msg}`);
-          saveTickets(tickets);
-          return;
-        }
-        if (registryKey === 'TRF3_ELEITORAL') {
-          console.log(`[Plexi TRF3_ELEITORAL] endpoint=${endpoint} payload.cpfCnpj=${maskCpfCnpj(payload.cpfCnpj)} tipo=${payload.tipo}`);
+        const payload = config.buildPayload(ticket);
+        if (registryKey === 'ELEITORAL_NEGATIVA' && endpoint && endpoint.includes('trf3')) {
+          const masked = payload.cpfCnpj ? { ...payload, cpfCnpj: maskCpfCnpj(payload.cpfCnpj) } : payload;
+          console.log('[Plexi] TRF3 Eleitoral request', { endpoint, payload: masked, ticketId: ticket.codigo });
         }
         const result = await callPlexiStart(endpoint, payload, ticketId);
         plexiRequestId = result.requestId || result.id || result.plexiRequestId;
@@ -225,35 +218,14 @@ async function processTicket(ticketId, options) {
         };
         saveTickets(tickets);
       } catch (err) {
-        const status = err.response?.status;
-        const data = err.response?.data;
-        if (status === 422 && data?.errors) {
-          const parts = [];
-          for (const [field, msgs] of Object.entries(data.errors)) {
-            const arr = Array.isArray(msgs) ? msgs : [msgs];
-            parts.push(`${field}: ${arr.join(', ')}`);
-          }
-          const errMsg = `ERRO_DADOS: ${parts.join('; ')}`;
-          if (registryKey === 'TRF3_ELEITORAL') {
-            console.log(`[Plexi TRF3_ELEITORAL] 422 status=${status} body=`, JSON.stringify(data));
-          }
-          tickets[ticketIndex] = {
-            ...tickets[ticketIndex],
-            automationStatus: 'ERRO_DADOS',
-            automationLastError: errMsg,
-            automationLockAt: null,
-            automationLockOwner: null
-          };
-          addHistoricoItem(tickets, ticketIndex, `Plexi (422): ${errMsg}`);
-          saveTickets(tickets);
-          return;
-        }
+        const is422 = err.plexiStatus === 422;
         const is5xx = err.response && err.response.status >= 500;
         const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT';
         const attempts = (ticket.automationAttempts || 0) + 1;
         const errMsg = err.message || String(err);
-        if (registryKey === 'TRF3_ELEITORAL' && err.response) {
-          console.log(`[Plexi TRF3_ELEITORAL] erro status=${err.response.status} body=`, JSON.stringify(err.response.data));
+
+        if (registryKey === 'ELEITORAL_NEGATIVA' && (is422 || err.plexiErrors)) {
+          console.log('[Plexi] TRF3 Eleitoral erro', { status: err.plexiStatus, errors: err.plexiErrors, ticketId: ticket.codigo });
         }
 
         if ((is5xx || isTimeout) && attempts < MAX_AUTO_RETRIES) {
@@ -269,10 +241,12 @@ async function processTicket(ticketId, options) {
           saveTickets(tickets);
           return;
         }
+        const automationStatus = is422 ? 'ERRO_DADOS' : (is5xx || isTimeout ? 'FAILED_TRANSIENT' : 'FAILED_FINAL');
+        const lastError = is422 && err.plexiErrors ? `${errMsg} | Detalhes: ${JSON.stringify(err.plexiErrors)}` : errMsg;
         tickets[ticketIndex] = {
           ...tickets[ticketIndex],
-          automationStatus: is5xx || isTimeout ? 'FAILED_TRANSIENT' : 'FAILED_FINAL',
-          automationLastError: errMsg,
+          automationStatus,
+          automationLastError: lastError,
           automationAttempts: attempts,
           automationLockAt: null,
           automationLockOwner: null
