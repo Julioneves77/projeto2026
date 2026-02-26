@@ -300,12 +300,14 @@ const ServiceRegistry = {
   ANTECEDENTES_PF: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/pf-certidao-antecedentes-criminais` : '',
     requiredFields: ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'nomeMae', 'email', 'telefone'],
-    buildPayload: (ticket) => ({
-      nome: ticket.nomeCompleto,
-      cpf: (ticket.cpfSolicitante || '').replace(/\D/g, ''),
-      nomeMae: (ticket.dadosFormulario || {}).nomeMae || '',
-      dataNascimento: formatDataPlexi(ticket.dataNascimento)
-    })
+    buildPayload: (ticket) => {
+      const df = ticket.dadosFormulario || {};
+      const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
+      const cpf = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
+      const nomeMae = (df.nomeMae || '').trim();
+      const dataNascimento = formatDataPlexi(ticket.dataNascimento || df.dataNascimento);
+      return { nome, cpf, nomeMae, dataNascimento };
+    }
   },
   ELEITORAL_NEGATIVA: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/eleitoral` : '',
@@ -346,8 +348,16 @@ const ServiceRegistry = {
 
 function formatDataPlexi(val) {
   if (!val) return '';
-  const d = new Date(val);
-  if (isNaN(d.getTime())) return String(val);
+  const str = String(val).trim();
+  if (!str) return '';
+  // Já está em DD/MM/YYYY (PLEXI espera d/m/Y)
+  const dmY = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmY) return `${dmY[1].padStart(2, '0')}/${dmY[2].padStart(2, '0')}/${dmY[3]}`;
+  // YYYY-MM-DD (ISO) - parsear sem timezone para evitar off-by-one
+  const ymd = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
