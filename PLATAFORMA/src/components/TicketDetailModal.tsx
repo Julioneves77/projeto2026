@@ -745,7 +745,7 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     <>
       <div className="modal-overlay" onClick={onClose}>
         <div 
-          className="modal-content w-full max-w-4xl animate-slide-up"
+          className="modal-content w-[95vw] sm:w-full max-w-[95vw] sm:max-w-4xl animate-slide-up overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -800,11 +800,11 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                         ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' :
                         ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
                         ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
-                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' || ticket.automationStatus === 'ERRO_DADOS' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
                         ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
                         'bg-muted text-muted-foreground'
                       }`}>
-                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus || 'Pendente'}
+                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus || 'Pendente'}
                       </span>
                       <button
                         onClick={handlePlexiRetry}
@@ -997,11 +997,11 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                         ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' :
                         ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
                         ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
-                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                        ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' || ticket.automationStatus === 'ERRO_DADOS' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
                         ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
                         'bg-muted text-muted-foreground'
                       }`}>
-                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus || 'Pendente'}
+                        {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus || 'Pendente'}
                       </span>
                       <div className="flex gap-2">
                         <button

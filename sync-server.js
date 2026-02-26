@@ -352,6 +352,7 @@ app.get('/health', (req, res) => {
 
 // Secret key reCAPTCHA para Guia Central (guia-central.online)
 // RECAPTCHA_GUIA_SECRET_KEY = chave real | RECAPTCHA_GUIA_TEST_SECRET = fallback para testes
+// Envia email via SendPulse E salva na tabela de email (contact-messages) para aparecer na plataforma
 const RECAPTCHA_GUIA_SECRET_KEY = process.env.RECAPTCHA_GUIA_SECRET_KEY || process.env.RECAPTCHA_GUIA_TEST_SECRET || process.env.RECAPTCHA_SECRET_KEY;
 
 // Handler do formulário Fale Conosco (reutilizado em /api/contato e /contato)
@@ -396,6 +397,32 @@ const handleContato = async (req, res) => {
         from: { name: fromName, email: fromEmail }
       });
       if (result.success) {
+        try {
+          const messages = readContactMessages();
+          const id = `MSG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const newMessage = {
+            id,
+            type: 'received',
+            from: nome,
+            fromEmail: email,
+            phone: req.body?.telefone || null,
+            subject: `Fale Conosco (Guia Central) — ${nome}`,
+            preview: mensagem.substring(0, 100) + (mensagem.length > 100 ? '...' : ''),
+            content: mensagem,
+            read: false,
+            starred: false,
+            archived: false,
+            deleted: false,
+            hasAttachment: false,
+            createdAt: new Date().toISOString(),
+            replies: []
+          };
+          messages.push(newMessage);
+          saveContactMessages(messages);
+          logger.info('Mensagem Fale Conosco salva na tabela de email', { id, from: nome, email });
+        } catch (saveErr) {
+          console.error('[SYNC] Erro ao salvar mensagem na tabela de email (email já enviado):', saveErr.message);
+        }
         console.log('[SYNC] Email contato enviado via SendPulse para contato@guia-central.online');
         return res.json({ ok: true });
       }
@@ -2004,7 +2031,7 @@ app.post('/tickets/:id/plexi/retry', authenticateRequest, express.json(), (req, 
     });
   }
 
-  const registryKey = getRegistryKey(ticket.tipoCertidao);
+  const registryKey = getRegistryKey(ticket);
   if (!registryKey || !ServiceRegistry[registryKey]) {
     return res.status(400).json({
       error: `Esta certidão não possui API disponível na Plexi. Tipo: ${ticket.tipoCertidao}. A Plexi não oferece endpoint para este tipo de certidão.`,
@@ -2599,12 +2626,13 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
         const clickIdType = (ticket.dadosFormulario && ticket.dadosFormulario.clickIdType) ? String(ticket.dadosFormulario.clickIdType) : null;
         const status = (gclid && gclid.length > 0) ? 'PENDING' : 'PENDING_NO_CLICKID';
         const errorMsg = !gclid ? 'Sem Click ID (provável tráfego não-Google Ads)' : null;
+        const { getSafeConversionTime } = require('./utils/formatGoogleAdsDate');
         gclidSheetsDb.upsertConversion({
           ticket_id: ticket.id,
           gclid: gclid || null,
           click_id_type: clickIdType,
           conversion_name: conversionName,
-          conversion_time: new Date().toISOString(),
+          conversion_time: getSafeConversionTime(),
           conversion_value: conversionValue,
           conversion_currency: 'BRL',
           status,
@@ -3529,6 +3557,7 @@ function getClientEmailFromIntegration() {
 
 // GET /admin/sheets/config - Obter configuração (sem JSON sensível)
 app.get('/admin/sheets/config', authenticateRequest, (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
   try {
     const integration = gclidSheetsDb.getIntegration();
@@ -3580,7 +3609,7 @@ app.post('/admin/sheets/config', authenticateRequest, express.json(), (req, res)
     }
     gclidSheetsDb.saveIntegration({
       spreadsheet_id: body.spreadsheet_id || '',
-      worksheet_name: body.worksheet_name || 'Conversões',
+      worksheet_name: body.worksheet_name || 'Página1',
       conversion_name: body.conversion_name || 'COMPRA',
       default_conversion_value: body.default_conversion_value ?? null,
       currency: body.currency || 'BRL',
@@ -3631,7 +3660,7 @@ app.post('/admin/sheets/test', authenticateRequest, express.json(), async (req, 
       credentialsJson = sheetsEncryption.decrypt(payload);
     }
     const spreadsheetId = body.spreadsheet_id || integration?.spreadsheet_id;
-    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Conversões';
+    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Página1';
     const result = await sheetsExportService.fullDiagnostic(credentialsJson, spreadsheetId, worksheetName);
     if (integration) {
       gclidSheetsDb.updateIntegrationLastTest(result.lastTestAt, result.ok, result.message);
@@ -3644,35 +3673,67 @@ app.post('/admin/sheets/test', authenticateRequest, express.json(), async (req, 
 
 // POST /admin/sheets/test-write - Escrever linha de teste
 app.post('/admin/sheets/test-write', authenticateRequest, express.json(), async (req, res) => {
-  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ ok: false, message: 'Serviço desabilitado' });
   try {
     const body = req.body || {};
     const integration = gclidSheetsDb.getIntegration();
     let credentialsJson = body.service_account_json?.trim();
     if (!credentialsJson && integration?.service_account_json_encrypted && sheetsEncryption) {
-      const payload = JSON.parse(integration.service_account_json_encrypted);
-      credentialsJson = sheetsEncryption.decrypt(payload);
+      try {
+        const payload = JSON.parse(integration.service_account_json_encrypted);
+        credentialsJson = sheetsEncryption.decrypt(payload);
+      } catch (decErr) {
+        console.error('[Sheets] Erro ao decriptar credenciais:', decErr.message);
+        return res.json({ ok: false, message: `Erro ao decriptar credenciais. Verifique SHEETS_CREDENTIALS_ENCRYPTION_KEY no servidor. Detalhe: ${decErr.message}` });
+      }
     }
     const spreadsheetId = body.spreadsheet_id || integration?.spreadsheet_id;
-    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Conversões';
+    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Página1';
+    if (!credentialsJson || !spreadsheetId) {
+      return res.json({
+        ok: false,
+        message: 'Credenciais ou Spreadsheet ID ausentes. Salve a configuração (Spreadsheet ID + JSON da Service Account) e tente novamente.'
+      });
+    }
     const result = await sheetsExportService.testWrite(credentialsJson, spreadsheetId, worksheetName);
-    if (integration && result.lastWriteAt) {
+    if (integration && result.lastWriteAt && result.ok) {
       gclidSheetsDb.updateIntegrationLastWrite(result.lastWriteAt);
     }
     res.json(result);
   } catch (e) {
-    res.status(500).json({ ok: false, message: e.message });
+    console.error('[Sheets] Erro test-write:', e);
+    res.json({ ok: false, message: e.message || 'Erro ao escrever' });
   }
 });
 
-// POST /admin/sheets/export-now - Exportar agora
-app.post('/admin/sheets/export-now', authenticateRequest, async (req, res) => {
-  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ error: 'Serviço desabilitado' });
+// POST /admin/sheets/export-now - Exportar agora (manual, ignora is_enabled)
+app.post('/admin/sheets/export-now', authenticateRequest, express.json(), async (req, res) => {
+  if (!gclidSheetsDb || !sheetsExportService) return res.status(503).json({ success: false, error: 'Serviço desabilitado', exported: 0 });
   try {
-    const result = await sheetsExportService.exportPendingConversions();
+    const body = req.body || {};
+    const integration = gclidSheetsDb.getIntegration();
+    let credentialsJson = body.service_account_json?.trim();
+    if (!credentialsJson && integration?.service_account_json_encrypted && sheetsEncryption) {
+      try {
+        const payload = JSON.parse(integration.service_account_json_encrypted);
+        credentialsJson = sheetsEncryption.decrypt(payload);
+      } catch (decErr) {
+        console.error('[Sheets] Erro ao decriptar credenciais:', decErr.message);
+        return res.json({ success: false, error: `Credenciais não decriptam: ${decErr.message}`, reason: 'Credenciais inválidas', exported: 0 });
+      }
+    }
+    const spreadsheetId = body.spreadsheet_id || integration?.spreadsheet_id;
+    const worksheetName = body.worksheet_name || integration?.worksheet_name || 'Página1';
+    const result = await sheetsExportService.exportPendingConversions({
+      forceManual: true,
+      credentialsJson: credentialsJson || undefined,
+      spreadsheetId: spreadsheetId || undefined,
+      worksheetName,
+    });
     res.json(result);
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message, exported: 0 });
+    console.error('[Sheets] Erro export-now:', e);
+    res.json({ success: false, error: e.message, reason: e.message, exported: 0 });
   }
 });
 
@@ -3727,34 +3788,48 @@ app.get('/admin/sheets/diagnostic', authenticateRequest, (req, res) => {
       .slice(-50)
       .map(t => ({ id: t.id, codigo: t.codigo, gclid: t.dadosFormulario.gclid, dataCadastro: t.dataCadastro }));
     const integration = gclidSheetsDb.getIntegration();
+    let canDecrypt = false;
+    if (integration?.service_account_json_encrypted && sheetsEncryption) {
+      try {
+        const payload = JSON.parse(integration.service_account_json_encrypted);
+        sheetsEncryption.decrypt(payload);
+        canDecrypt = true;
+      } catch (_) { /* ignore */ }
+    }
     res.json({
       ...stats,
       recentTicketsWithGclid: recentWithGclid.length,
-      lastExportAt: integration?.last_export_at,
-      hasCredentials: !!(integration?.service_account_json_encrypted)
+      configOk: !!(integration?.spreadsheet_id && integration?.service_account_json_encrypted && canDecrypt),
+      hasSpreadsheetId: !!integration?.spreadsheet_id,
+      hasCredentials: !!(integration?.service_account_json_encrypted),
+      canDecryptCredentials: canDecrypt,
+      lastExportAt: integration?.last_export_at
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST /admin/sheets/test-conversion - Criar conversão de teste
+// POST /admin/sheets/test-conversion - Criar conversão de teste (sempre PENDING para poder exportar)
 app.post('/admin/sheets/test-conversion', authenticateRequest, express.json(), (req, res) => {
   if (!gclidSheetsDb) return res.status(503).json({ error: 'Serviço desabilitado' });
   if (process.env.NODE_ENV === 'production' && !req.body?.confirm) {
     return res.status(400).json({ error: 'Em produção, envie confirm: true para criar conversão de teste' });
   }
   try {
+    const { getSafeConversionTime } = require('./utils/formatGoogleAdsDate');
+    const variant = req.body?.variant || 'default';
+    const isWriteTest = variant === 'write-test';
     gclidSheetsDb.upsertConversion({
       ticket_id: 'test-' + Date.now(),
-      gclid: 'TESTE123',
-      conversion_name: gclidSheetsDb.getIntegration()?.conversion_name || 'COMPRA',
-      conversion_time: new Date().toISOString(),
-      conversion_value: 1,
+      gclid: isWriteTest ? 'TEST-CONN' : 'TESTE123',
+      conversion_name: isWriteTest ? 'TEST' : (gclidSheetsDb.getIntegration()?.conversion_name || 'COMPRA'),
+      conversion_time: getSafeConversionTime(),
+      conversion_value: isWriteTest ? 0.01 : 1,
       conversion_currency: 'BRL',
-      status: 'PENDING'
+      status: 'TEST'
     });
-    res.json({ success: true, message: 'Conversão de teste criada' });
+    res.json({ success: true, message: isWriteTest ? 'Conversão de teste criada (nunca será exportada). Use para validar a tabela na plataforma.' : 'Conversão de teste criada (nunca será exportada).' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -3776,7 +3851,7 @@ app.post('/admin/sheets/clear', authenticateRequest, express.json(), async (req,
     const result = await sheetsExportService.clearWorksheetData(
       credentialsJson,
       integration.spreadsheet_id,
-      integration.worksheet_name || 'Conversões'
+      integration.worksheet_name || 'Página1'
     );
     res.json(result);
   } catch (e) {

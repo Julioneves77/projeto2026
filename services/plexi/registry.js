@@ -133,6 +133,27 @@ const ServiceRegistry = {
       return { cpfCnpj, nome: ticket.nomeCompleto, tipo: 'criminal' };
     }
   },
+  TRF3_ELEITORAL: {
+    endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/trf3/certidao-distribuicao` : '',
+    requiredFields: ['nomeCompleto', 'cpfSolicitante', 'estadoEmissao', 'email', 'telefone'],
+    buildPayload: (ticket) => {
+      const df = ticket.dadosFormulario || {};
+      const cpfCnpj = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '') || (df.cnpj || '').replace(/\D/g, '');
+      if (cpfCnpj.length === 14) {
+        throw new Error('Eleitoral (TRF3) aceita apenas CPF.');
+      }
+      if (cpfCnpj.length !== 11) {
+        throw new Error('Eleitoral (TRF3) exige CPF com 11 dígitos.');
+      }
+      const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
+      if (!nome) throw new Error('Nome é obrigatório para Eleitoral (TRF3).');
+      const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
+      const abrangenciaMap = { SP: 'sjsp', MS: 'sjms' };
+      let abrangencia = abrangenciaMap[uf] || 'regional';
+      if (!ABRANGENCIA_VALIDAS.has(abrangencia)) abrangencia = 'regional';
+      return { cpfCnpj, nome, abrangencia, tipo: 'eleitoral' };
+    }
+  },
   CRIMINAL_ESTADUAL: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY
       ? (ticket) => {
@@ -384,12 +405,28 @@ function buildBasePayload(ticket) {
 
 const UF_CODES = new Set(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']);
 
-function getRegistryKey(tipoCertidao) {
+const ABRANGENCIA_VALIDAS = new Set(['regional', 'sjsp', 'sjms', 'trf']);
+
+function maskCpfCnpj(val) {
+  if (!val || typeof val !== 'string') return '***';
+  const digits = val.replace(/\D/g, '');
+  if (digits.length <= 4) return '****';
+  return `${digits.slice(0, 3)}***${digits.slice(-2)}`;
+}
+
+function getRegistryKey(ticketOrTipoCertidao) {
+  const ticket = typeof ticketOrTipoCertidao === 'object' && ticketOrTipoCertidao !== null ? ticketOrTipoCertidao : null;
+  const tipoCertidao = ticket ? ticket.tipoCertidao : ticketOrTipoCertidao;
   if (!tipoCertidao) return null;
   const str = String(tipoCertidao).trim();
   const normalized = str.toLowerCase();
-  // Eleitoral: match explícito para variantes com UF (ex: "Certidão Negativa Eleitoral (SE)")
-  if (/certidão\s*(negativa\s*)?eleitoral|certidao\s*(negativa\s*)?eleitoral|quitação\s*eleitoral|quitacao\s*eleitoral/i.test(str)) {
+  // Eleitoral: SP/MS usam TRF3 certidao-distribuicao com tipo=eleitoral (CPF only)
+  if (/\beleitoral\b|quitação\s*eleitoral|quitacao\s*eleitoral|certidão\s*(negativa\s*)?eleitoral|certidao\s*(negativa\s*)?eleitoral/i.test(str)) {
+    if (ticket) {
+      const df = ticket.dadosFormulario || {};
+      const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || '').toUpperCase().replace(/\s/g, '').slice(0, 2);
+      if (uf === 'SP' || uf === 'MS') return 'TRF3_ELEITORAL';
+    }
     return 'ELEITORAL_NEGATIVA';
   }
   // Tentar match exato primeiro
@@ -408,7 +445,7 @@ function getRegistryKey(tipoCertidao) {
       key = TIPO_CERTIDAO_TO_REGISTRY[base] || TIPO_CERTIDAO_TO_REGISTRY[base.toLowerCase()];
     }
   }
-  // Fallback final: match por palavra-chave (ex: "Certidão Negativa Eleitoral (SE)", "Certidão Eleitoral SC", "Certidão de Quitação Eleitoral (BA)")
+  // Fallback final: match por palavra-chave
   if (!key && /\beleitoral\b|quitação\s*eleitoral|quitacao\s*eleitoral|certidão\s*eleitoral|certidao\s*eleitoral/i.test(str)) {
     key = 'ELEITORAL_NEGATIVA';
   }
@@ -463,6 +500,7 @@ module.exports = {
   getTicketFieldValue,
   validateRequiredFields,
   formatMissingFieldsForUser,
+  maskCpfCnpj,
   FIELD_LABELS,
   PLEXI_API_URL,
   PLEXI_API_KEY

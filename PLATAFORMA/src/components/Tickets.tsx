@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
 import { useColumnResize } from '@/hooks/useColumnResize';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Ticket, TicketStatus, PrioridadeType } from '@/types';
 import { TicketDetailModal } from './TicketDetailModal';
 import { TicketEditModal } from './TicketEditModal';
@@ -27,11 +28,18 @@ import {
 type TabType = 'geral' | 'solicitadas' | 'em_operacao' | 'concluidos';
 
 export function Tickets() {
+  const isMobile = useIsMobile();
   const { currentUser, userRole } = useAuth();
   const { tickets, atribuirTicket, updateTicket, deleteTicket, refreshTickets } = useTickets();
   const { columnWidths, isResizing, resizingColumn, tableRef, handleResizeStart, handleDoubleClick } = useColumnResize();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('em_operacao');
+  // Ao carregar, exibir "Geral" primeiro (onde entram certidões do guia-central/portal)
+  React.useEffect(() => {
+    if (['admin', 'financeiro', 'atendente'].includes(userRole || '')) {
+      setActiveTab('geral');
+    }
+  }, [userRole]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
@@ -66,9 +74,11 @@ export function Tickets() {
   };
 
   // Definir abas visíveis por perfil
+  // IMPORTANTE: A aba "Geral" exibe tickets não pagos (status GERAL) vindos do GUIA_CENTRAL/PORTAL.
+  // Todos os perfis veem para garantir que certidões geradas entrem na visão da plataforma.
   // Solicitadas = tickets em processamento Plexi (automação)
   const tabs: { id: TabType; label: string; roles: string[] }[] = [
-    { id: 'geral', label: 'Geral', roles: ['admin', 'financeiro'] },
+    { id: 'geral', label: 'Geral', roles: ['admin', 'financeiro', 'atendente'] },
     { id: 'em_operacao', label: 'Em Operação', roles: ['admin', 'financeiro', 'atendente'] },
     { id: 'solicitadas', label: 'Solicitadas', roles: ['admin', 'financeiro', 'atendente'] },
     { id: 'concluidos', label: 'Concluídos', roles: ['admin', 'financeiro', 'atendente'] },
@@ -125,7 +135,7 @@ export function Tickets() {
     }
 
     if (userRole === 'atendente') {
-      if (tabId === 'geral') return false;
+      if (tabId === 'geral') return true; // Atendente vê todos os tickets não pagos (certidões geradas)
       if (tabId === 'solicitadas') return true;
       if (tabId === 'concluidos') return ticket.operador === currentUser?.nome && isToday(ticket.dataConclusao);
       return !ticket.operador || ticket.operador === currentUser?.nome;
@@ -390,7 +400,7 @@ export function Tickets() {
             <button
               onClick={handleRecoverPlexi}
               disabled={recoveringPlexi}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50 touch-manipulation"
             >
               <RefreshCw className={`w-4 h-4 ${recoveringPlexi ? 'animate-spin' : ''}`} />
               Recuperar {plexiPendingCount} Plexi pendente{plexiPendingCount > 1 ? 's' : ''}
@@ -403,19 +413,19 @@ export function Tickets() {
               placeholder="Buscar por código, nome, CPF..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              className="w-full pl-11 pr-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-base"
             />
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border">
+      <div className="flex gap-2 border-b border-border overflow-x-auto scrollbar-hide -mx-1 px-1">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px shrink-0 min-h-[44px] touch-manipulation ${
               activeTab === tab.id
                 ? 'text-primary border-primary'
                 : 'text-muted-foreground border-transparent hover:text-foreground'
@@ -435,9 +445,118 @@ export function Tickets() {
         ))}
       </div>
 
-      {/* Table */}
-      <div className="bg-card rounded-xl border border-border">
-        <div className="overflow-x-auto scrollbar-thin">
+      {/* Mobile: Cards */}
+      {isMobile && (
+        <div className="space-y-3">
+          {filteredTickets.map((ticket) => (
+            <div
+              key={ticket.id}
+              className={`rounded-xl border border-border p-4 ${getRowClass(ticket)}`}
+            >
+              <div className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-mono text-sm font-semibold text-foreground">{ticket.codigo}</p>
+                    <p className="text-sm text-muted-foreground">{ticket.nomeCompleto}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${getStatusBadgeClass(ticket.status)}`}>
+                      {getStatusLabel(ticket.status)}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-2 rounded-lg hover:bg-muted transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center touch-manipulation">
+                          <MoreVertical className="w-5 h-5 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        {canAtribuir(ticket) && (
+                          <DropdownMenuItem onClick={() => handleAtribuirAction(ticket)}>
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            {getAtribuirLabel(ticket)}
+                          </DropdownMenuItem>
+                        )}
+                        {canDetalhar(ticket) && (
+                          <DropdownMenuItem onClick={() => setSelectedTicket(ticket)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            Detalhar
+                          </DropdownMenuItem>
+                        )}
+                        {canAlterar(ticket) && (
+                          <DropdownMenuItem onClick={() => setEditingTicket(ticket)}>
+                            <Pencil className="w-4 h-4 mr-2" />
+                            Alterar
+                          </DropdownMenuItem>
+                        )}
+                        {canDeletar() && (
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(ticket.id)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Deletar
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">CPF:</span>{' '}
+                    <span className="text-foreground break-all">{ticket.cpfSolicitante}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span className="text-foreground break-all">{ticket.telefone}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Cadastro:</span>{' '}
+                    <span className="text-foreground">
+                      {new Date(ticket.dataCadastro).toLocaleDateString('pt-BR')} {new Date(ticket.dataCadastro).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Operador:</span>{' '}
+                    <span className="text-foreground">{ticket.operador || '-'}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${getPrioridadeBadge(ticket.prioridade).className}`}>
+                    {ticket.prioridade === 'premium' && <Star className="w-3 h-3 fill-current" />}
+                    {ticket.prioridade === 'prioridade' && <Star className="w-3 h-3" />}
+                    {getPrioridadeBadge(ticket.prioridade).label}
+                  </span>
+                  {['EM_OPERACAO', 'EM_ATENDIMENTO'].includes(ticket.status) && ticket.automationStatus && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
+                      ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+                      'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'
+                    }`}>
+                      Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          {filteredTickets.length === 0 && (
+            <div className="bg-card rounded-xl border border-border text-center py-12 px-4">
+              <p className="text-base font-medium text-muted-foreground">Nenhum registro encontrado</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {activeTab === 'geral' ? 'Não há tickets não pagos em aberto' :
+                 activeTab === 'em_operacao' ? 'Não há tickets em operação' :
+                 'Não há tickets concluídos'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Desktop: Table */}
+      {!isMobile && (
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto scrollbar-hide w-full">
           <table ref={tableRef} className="w-full" style={{ minWidth: '1200px' }}>
             <thead>
               <tr className="bg-[hsl(var(--table-header))]">
@@ -667,11 +786,11 @@ export function Tickets() {
                             ticket.automationStatus === 'PROCESSING' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
                             ticket.automationStatus === 'WAITING_DATA' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
                             ticket.automationStatus === 'BLOCKED' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
-                            ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
+                            ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'FAILED_FINAL' || ticket.automationStatus === 'ERRO_DADOS' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
                             ticket.automationStatus === 'DONE' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
                             'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'
                           }`}>
-                            Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'DONE' ? 'Concluído' : ticket.automationStatus || 'Pendente'}
+                            Plexi: {ticket.automationStatus === 'BLOCKED' ? 'Bloqueado' : ticket.automationStatus === 'PROCESSING' ? 'Em solicitação' : ticket.automationStatus === 'DONE' ? 'Concluído' : ticket.automationStatus === 'ERRO_DADOS' ? 'Erro de validação' : ticket.automationStatus || 'Pendente'}
                           </span>
                           {(ticket.automationLastError && ticket.automationStatus !== 'DONE') && (
                             <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={ticket.automationLastError}>
@@ -796,6 +915,7 @@ export function Tickets() {
           )}
         </div>
       </div>
+      )}
 
       {/* Modal de Detalhes */}
       {selectedTicket && (
