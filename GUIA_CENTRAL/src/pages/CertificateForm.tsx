@@ -17,17 +17,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Info, AlertCircle, Zap } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Volume2, VolumeX, Shield } from "lucide-react";
 import {
   validateCPF,
   validateCNPJ,
   validateEmail,
   validatePhone,
   validateDate,
+  validateCEP,
   formatCPF,
   formatCNPJ,
   formatPhone,
   formatDate,
+  formatCEP,
 } from "@/lib/validations";
 import {
   COMARCAS_RJ,
@@ -35,10 +37,13 @@ import {
   CIDADES_SE,
   ESTADOS_BRASIL,
   ESTADOS_CIVIS,
+  ESTADOS_CIVIS_PI,
   NACIONALIDADES,
   PAISES,
 } from "@/lib/constants";
 import { getFormConfig, FormConfig, getAvailableStates } from "@/lib/formConfigs";
+import { Progress } from "@/components/ui/progress";
+import { scrollToTop } from "@/lib/scrollUtils";
 
 // Constantes de preço - atualizado em 05/01/2026
 const BASE_PRICE = 39.90;
@@ -87,6 +92,87 @@ const CertificateForm = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formProgressTracked, setFormProgressTracked] = useState<Set<number>>(new Set());
   const [currentStep, setCurrentStep] = useState(0);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const playFormAudio = () => {
+    // Na etapa de Revisão e Pagamento, usar áudio PIX
+    const isPaymentStep = currentStep === totalSteps - 1;
+    if (isPaymentStep) {
+      const audioPath = "/audios/pix-1.mp3";
+      if (!audioRef.current) {
+        audioRef.current = new Audio(audioPath);
+      }
+      const audio = audioRef.current;
+      const fallbackMsg = "Finalize agora via Pix. Após a confirmação, sua solicitação entra em processamento.";
+      if (audioPlaying) {
+        audio.pause();
+        audio.currentTime = 0;
+        setAudioPlaying(false);
+        return;
+      }
+      audio.src = audioPath;
+      audio.onended = () => setAudioPlaying(false);
+      audio.onerror = () => {
+        setAudioPlaying(false);
+        toast({ title: "Dica", description: fallbackMsg });
+      };
+      audio.play().then(() => setAudioPlaying(true)).catch(() => {
+        setAudioPlaying(false);
+        toast({ title: "Dica", description: fallbackMsg });
+      });
+      return;
+    }
+    const isEleitoral = category === "federais" && (type === "eleitoral" || (formData.tipoCertidao as string)?.toLowerCase() === "eleitoral");
+    const isCivilFederal = category === "federais" && (type === "civel" || ["cível", "civel"].includes((formData.tipoCertidao as string)?.toLowerCase() || ""));
+    const isCivilEstadual = category === "estaduais" && type === "civel";
+    const isCriminalEstadual = category === "estaduais" && type !== "civel";
+    const audioPath = category === "policia-federal"
+      ? "/audios/antecedentes-pf.mp3"
+      : category === "cnd"
+      ? "/audios/cnd.mp3"
+      : category === "cpf-regular"
+      ? "/audios/cpf-regular.mp3"
+      : isEleitoral
+      ? "/audios/eleitoral.mp3"
+      : isCivilFederal
+      ? "/audios/civil-federal.mp3"
+      : isCivilEstadual
+      ? "/audios/civil-estadual.mp3"
+      : isCriminalEstadual
+      ? "/audios/criminal-estadual.mp3"
+      : "/audios/criminal-federal.mp3";
+    if (!audioRef.current) {
+      audioRef.current = new Audio(audioPath);
+    }
+    const audio = audioRef.current;
+    const fallbackMsg = "Fica tranquilo, o processo é rápido e leva menos de 2 minutos. Preencha seus dados corretamente para agilizar tudo pra você.";
+    if (audioPlaying) {
+      audio.pause();
+      audio.currentTime = 0;
+      setAudioPlaying(false);
+      return;
+    }
+    audio.src = audioPath;
+    audio.onended = () => setAudioPlaying(false);
+    audio.onerror = () => {
+      setAudioPlaying(false);
+      toast({ title: "Dica", description: fallbackMsg });
+    };
+    audio.play().then(() => setAudioPlaying(true)).catch(() => {
+      setAudioPlaying(false);
+      toast({ title: "Dica", description: fallbackMsg });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    };
+  }, []);
 
   // Get available states for estaduais category - DEVE VIR ANTES dos useEffect
   const availableStates = useMemo(() => {
@@ -145,47 +231,25 @@ const CertificateForm = () => {
     }
   };
 
-  // Garantir que a página sempre comece no topo ao carregar
+  // Garantir scroll ao topo ao carregar e ao trocar categoria/tipo/estado
   useEffect(() => {
-    // Evento: portal_view - ao carregar página inicial
-    trackEvent('portal_view', {
-      category: category || '',
-      type: type || ''
-    });
-
-    // Função para forçar scroll ao topo
-    const scrollToTop = () => {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      // Também tentar scroll no document.documentElement para compatibilidade
-      if (document.documentElement) {
-        document.documentElement.scrollTop = 0;
-      }
-      if (document.body) {
-        document.body.scrollTop = 0;
-      }
-    };
-    
-    // Scroll imediatamente ao montar
+    trackEvent('portal_view', { category: category || '', type: type || '' });
     scrollToTop();
-    
-    // Remover qualquer hash da URL que possa causar scroll automático
     if (window.location.hash) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
       scrollToTop();
     }
-    
-    // Garantir scroll no topo após delays progressivos (caso algum elemento cause scroll)
-    const timeouts = [
-      setTimeout(scrollToTop, 50),
-      setTimeout(scrollToTop, 100),
-      setTimeout(scrollToTop, 300),
-      setTimeout(scrollToTop, 500),
-    ];
-    
-    return () => {
-      timeouts.forEach(timeout => clearTimeout(timeout));
-    };
-  }, []); // Executar apenas uma vez ao montar
+  }, [category, type, selectedState]);
+
+  // Reset currentStep quando formConfig mudar (troca de certidão/tipo/estado)
+  useEffect(() => {
+    setCurrentStep(0);
+  }, [category, type, selectedState]);
+
+  // Scroll ao topo sempre que trocar de etapa (Step 1 → 2 → 3, etc.)
+  useEffect(() => {
+    scrollToTop();
+  }, [currentStep]);
 
   // Evento: form_start - quando usuário começa a preencher formulário
   useEffect(() => {
@@ -282,6 +346,13 @@ const CertificateForm = () => {
     }
   }, [formData, formConfig, formProgressTracked, category, type, selectedState]);
 
+  // Injetar GCLID nos formulários quando o form é renderizado (React renderiza após DOMContentLoaded)
+  useEffect(() => {
+    if (formConfig && typeof window !== 'undefined' && window.gclidUtils?.attachHiddenGclidToForms) {
+      window.gclidUtils.attachHiddenGclidToForms();
+    }
+  }, [formConfig]);
+
   // Show state selector for estaduais
   if (category === "estaduais" && !selectedState) {
     return (
@@ -354,14 +425,12 @@ const CertificateForm = () => {
         // Limpar campos de nascimento quando nacionalidade mudar
         delete newData.paisNascimento;
         delete newData.ufNascimento;
-        delete newData.municipioNascimento;
         delete newData.cidadeNascimento;
         // Limpar erros relacionados
         setErrors((err) => {
           const newErrors = { ...err };
           delete newErrors.paisNascimento;
           delete newErrors.ufNascimento;
-          delete newErrors.municipioNascimento;
           delete newErrors.cidadeNascimento;
           return newErrors;
         });
@@ -388,6 +457,8 @@ const CertificateForm = () => {
         return formatPhone(value);
       case "dataNascimento":
         return formatDate(value);
+      case "cep":
+        return formatCEP(value);
       default:
         return value;
     }
@@ -433,6 +504,9 @@ const CertificateForm = () => {
             break;
           case "dataNascimento":
             if (!validateDate(value)) stepErrors[field.name] = "Data inválida (DD/MM/AAAA)";
+            break;
+          case "cep":
+            if (!validateCEP(value)) stepErrors[field.name] = "CEP inválido (mínimo 8 dígitos)";
             break;
         }
       }
@@ -515,6 +589,12 @@ const CertificateForm = () => {
                 missingFields.push(`${field.label} (inválido)`);
               }
               break;
+            case "cep":
+              if (!validateCEP(value)) {
+                allErrors[field.name] = "CEP inválido (mínimo 8 dígitos)";
+                missingFields.push(`${field.label} (inválido)`);
+              }
+              break;
           }
         }
       }
@@ -580,6 +660,9 @@ const CertificateForm = () => {
       finalFormData.tipoCertidao = "Cível";
     } else if (category === "estaduais" && type !== "civel" && !finalFormData.tipoCertidao) {
       finalFormData.tipoCertidao = "Criminal";
+    } else if (category === "federais" && type && !finalFormData.tipoCertidao) {
+      const tipoMap: Record<string, string> = { criminal: "Criminal", civel: "Cível", cível: "Cível", eleitoral: "Eleitoral" };
+      finalFormData.tipoCertidao = tipoMap[type.toLowerCase()] || type;
     }
 
     // Calcular preço e plano selecionado
@@ -616,18 +699,26 @@ const CertificateForm = () => {
       state: selectedState || undefined,
     });
 
-    // Navigate direto para pagamento, preservando parâmetro source se existir
-    const pagamentoUrl = source ? `/pagamento?source=${source}` : "/pagamento";
-    navigate(pagamentoUrl, {
-      state: {
-        formData: finalFormData,
-        certificateType: getCertificateTitle(),
-        category: category || "", // Passar categoria original para facilitar navegação de volta
-        state: selectedState,
-        selectedPlan,
-        funnel_id: getFunnelId(), // Passar funnel_id para o Payment
-      },
-    });
+    // State para PrePayment e Payment (persistir para evitar perda em refresh/navegação)
+    const paymentState = {
+      formData: finalFormData,
+      certificateType: getCertificateTitle(),
+      category: category || "",
+      state: selectedState,
+      selectedPlan,
+      formConfig,
+      type,
+      source,
+      funnel_id: getFunnelId(),
+    };
+    try {
+      sessionStorage.setItem("guia_central_payment_state", JSON.stringify(paymentState));
+    } catch (e) {
+      console.warn("[CertificateForm] Falha ao persistir state:", e);
+    }
+
+    const confirmarUrl = source ? `/confirmar-pagamento?source=${source}` : "/confirmar-pagamento";
+    navigate(confirmarUrl, { state: paymentState });
   };
 
   const getSelectOptions = (optionsKey?: string): Array<{ value: string; label: string }> => {
@@ -644,6 +735,8 @@ const CertificateForm = () => {
         return ESTADOS_BRASIL.map((e) => ({ value: e.sigla, label: `${e.nome} (${e.sigla})` }));
       case "estadosCivis":
         return ESTADOS_CIVIS.map((e) => ({ value: e, label: e }));
+      case "estadosCivisPI":
+        return ESTADOS_CIVIS_PI.map((e) => ({ value: e, label: e }));
       case "nacionalidades":
         return NACIONALIDADES.map((n) => ({ value: n, label: n }));
       case "paises":
@@ -801,6 +894,9 @@ const CertificateForm = () => {
           case "dataNascimento":
             if (!validateDate(value)) return false;
             break;
+          case "cep":
+            if (!validateCEP(value)) return false;
+            break;
         }
       }
     }
@@ -850,7 +946,7 @@ const CertificateForm = () => {
         description={formConfig.description || "Preencha o formulário para solicitar sua certidão. Processo rápido, seguro e 100% online."}
       />
       {/* Hero */}
-      <section className="relative overflow-hidden py-16 lg:py-20 bg-background">
+      <section className="relative overflow-hidden py-6 lg:py-8 bg-background">
         <div className="container relative">
           <button
             onClick={() => {
@@ -866,70 +962,53 @@ const CertificateForm = () => {
             Voltar
           </button>
 
-          <div className="animate-slide-up">
-            <h1 className="font-orbitron text-2xl font-bold text-foreground sm:text-3xl tracking-wider">
-              {getCertificateTitle()}
-            </h1>
-            <p className="mt-1 text-muted-foreground font-mono text-sm">
-              {category === "federais" && formData.estadoEmissao
-                ? `Tribunal Regional Federal (${formData.estadoEmissao})`
-                : category === "federais"
-                ? "Tribunal Regional Federal"
-                : formConfig.description}
-            </p>
-          </div>
         </div>
       </section>
 
       {/* Form */}
-      <section className="py-10">
-        <div className="container max-w-2xl mx-auto">
-          {/* Explicação de Campos Obrigatórios */}
-          <Card className="mb-6 p-4 tech-card hex-corners rounded-xl bg-card border border-border/60 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 glow-blue">
-                <Info className="h-4 w-4 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-foreground mb-1 font-mono">
-                  Campos Obrigatórios
-                </h3>
-                <p className="text-xs text-muted-foreground font-mono">
-                  Os campos marcados com <span className="text-destructive font-semibold">*</span> são obrigatórios e devem ser preenchidos corretamente para prosseguir com a solicitação da certidão.
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Entrega Automática - texto explicativo para certidões via Plexi */}
-          {formConfig.entregaAutomatica && (
-            <Card className="mb-6 p-4 tech-card hex-corners rounded-xl bg-card border border-emerald-500/40 shadow-sm bg-emerald-500/5">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                  <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-foreground mb-1 font-mono">
-                    Entrega Automática
-                  </h3>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    Este documento possui entrega automática via processamento digital. Após a confirmação do pagamento, a certidão será gerada e enviada automaticamente para o e-mail informado, sem necessidade de retirada presencial.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          )}
-
+      <section className="pt-4 pb-10">
+        <div className="container max-w-2xl mx-auto px-4 sm:px-6">
           {/* Formulário Multi-Step */}
-          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="tech-card hex-corners rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-card animate-fade-in space-y-8">
-            {/* Abas de step (multi-step) */}
-            <div className={`grid gap-1 mb-6 ${totalSteps <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="tech-card hex-corners rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-4 sm:p-6 shadow-card animate-fade-in space-y-6 sm:space-y-8">
+            {/* Barra de progresso */}
+            <div className="-mt-2 mb-2">
+              <p className="text-xs font-mono text-muted-foreground mb-1">Etapa {currentStep + 1} de {totalSteps}</p>
+              <Progress value={((currentStep + 1) / totalSteps) * 100} className="h-1.5" />
+            </div>
+            {/* Card com Ouvir instruções - oculto na etapa 2 (Dados e Confirmação) */}
+            {currentStep !== 1 && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20 mb-6">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-orbitron font-semibold text-foreground text-sm sm:text-base">
+                    {getCertificateTitle()}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-mono">
+                    {formConfig.description || "Processamento Automático via IA"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={playFormAudio}
+                    className={`inline-flex items-center justify-center gap-2 mt-2 text-sm font-semibold transition-colors ${audioPlaying ? "text-muted-foreground hover:text-foreground" : "text-[#E05A4D] hover:text-[#c94d42] animate-pulse-red-discrete"}`}
+                    title={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                    aria-label={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                  >
+                    {audioPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                    {audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Abas de step (multi-step) - min 44px touch target mobile */}
+            <div className={`grid gap-2 sm:gap-1 mb-6 ${totalSteps <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
               {stepLabels.map((label, i) => (
                 <button
                   key={label}
                   type="button"
                   onClick={() => i < currentStep && setCurrentStep(i)}
-                  className={`py-3 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all ${
+                  className={`min-h-[44px] py-3 px-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all ${
                     i === currentStep
                       ? "bg-primary text-primary-foreground shadow-md glow-blue"
                       : i < currentStep
@@ -960,28 +1039,6 @@ const CertificateForm = () => {
                   </div>
                 )}
                 <div className="space-y-5">
-                  {/* Dica quando há campos obrigatórios condicionais (ex: tipoDocumento) ainda não exibidos */}
-                  {(() => {
-                    const stepFields = formConfig.steps[currentStep].fields;
-                    const hasConditionalRequired = stepFields.some(
-                      (f) => f.required && f.showWhen && formData[f.showWhen.field] !== f.showWhen.value
-                    );
-                    const conditionField = stepFields.find((f) =>
-                      stepFields.some((other) => other.showWhen?.field === f.name)
-                    );
-                    if (hasConditionalRequired && conditionField) {
-                      const condLabel = conditionField.label.toLowerCase();
-                      return (
-                        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 font-mono">
-                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-amber-800 dark:text-amber-200">
-                            Selecione <strong>{condLabel}</strong> para exibir todos os campos obrigatórios.
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
                   {formConfig.steps[currentStep].fields.map((field, fieldIndex) =>
                     renderField(field, currentStep, fieldIndex)
                   )}
@@ -998,10 +1055,6 @@ const CertificateForm = () => {
                 </Card>
                 {/* Bloco de total e PIX */}
                 <div className="tech-card hex-corners rounded-xl border border-border/60 bg-secondary/50 p-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total</span>
-                    <span className="font-semibold text-foreground">R$ 39,90</span>
-                  </div>
                   <p className="text-xs text-muted-foreground">
                     Pagamento via PIX. Você receberá o QR Code na próxima tela.
                   </p>

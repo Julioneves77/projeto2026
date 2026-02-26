@@ -68,6 +68,11 @@ export const validatePhone = (phone: string): boolean => {
   return cleanPhone.length >= 10 && cleanPhone.length <= 11;
 };
 
+export const validateCEP = (cep: string): boolean => {
+  const clean = cep.replace(/\D/g, "");
+  return clean.length >= 8 && /^\d+$/.test(clean);
+};
+
 export const validateDate = (date: string): boolean => {
   const regex = /^\d{2}\/\d{2}\/\d{4}$/;
   if (!regex.test(date)) return false;
@@ -110,6 +115,11 @@ export const formatPhone = (value: string): string => {
   return clean
     .replace(/(\d{2})(\d)/, "($1) $2")
     .replace(/(\d{5})(\d{1,4})$/, "$1-$2");
+};
+
+export const formatCEP = (value: string): string => {
+  const clean = value.replace(/\D/g, "").slice(0, 8);
+  return clean.length > 5 ? clean.replace(/(\d{5})(\d)/, "$1-$2") : clean;
 };
 
 export const formatDate = (value: string): string => {

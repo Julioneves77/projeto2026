@@ -195,6 +195,35 @@ const estaduaisConfigs: Record<string, FormConfig> = {
       ]},
     ],
   },
+  pi: {
+    title: "Certidão Negativa Criminal - Piauí",
+    description: "Tribunal de Justiça do Estado do Piauí",
+    steps: [
+      { title: "Tipo de Documento", fields: [
+        { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
+        { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "rg", label: "RG", type: "text", required: true, placeholder: "Digite seu RG", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "orgao_expedidor", label: "Órgão Expedidor", type: "text", required: true, placeholder: "Ex: SSP", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "estado_civil", label: "Estado Civil", type: "select", required: true, options: "estadosCivisPI", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+        { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+      ]},
+      { title: "Endereço", fields: [
+        { name: "endereco", label: "Endereço", type: "text", required: true, placeholder: "Rua/Av, número, complemento" },
+        { name: "bairro", label: "Bairro", type: "text", required: true, placeholder: "Digite seu bairro" },
+        { name: "cep", label: "CEP", type: "text", required: true, placeholder: "00000-000" },
+        { name: "estado_uf", label: "Estado (UF)", type: "select", required: true, options: "estados" },
+        { name: "municipio", label: "Município", type: "text", required: true, placeholder: "Digite seu município" },
+      ]},
+      { title: "Contato e Confirmação", fields: [
+        ...globalContactFields.slice(1),
+        ...termsFields,
+      ]},
+    ],
+  },
   rs: {
     title: "Certidão Negativa Criminal - Rio Grande do Sul",
     description: "Tribunal de Justiça do Estado do Rio Grande do Sul",
@@ -320,16 +349,13 @@ const policiaFederalConfig: FormConfig = {
         placeholder: "Digite o estado/província de nascimento",
         showWhen: { field: "nacionalidade", value: "Estrangeiro(a)" }
       },
-      // Município de Nascimento: sempre texto
-      { name: "municipioNascimento", label: "Município de Nascimento", type: "text", required: true },
-      // Cidade de Nascimento: apenas para brasileiros
+      // Cidade de Nascimento
       { 
         name: "cidadeNascimento", 
         label: "Cidade de Nascimento", 
         type: "text", 
         required: true,
         placeholder: "Digite a cidade de nascimento",
-        showWhen: { field: "nacionalidade", value: "Brasileiro(a)" }
       },
       { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true },
       ...globalContactFields.slice(1),
@@ -388,17 +414,28 @@ export function getFormConfig(category: string, type: string): FormConfig | null
     case "estaduais":
       const cfg = estaduaisConfigs[type];
       return cfg ? { ...cfg, entregaAutomatica: true } : null;
-    case "federais":
+    case "federais": {
       const tipoMap: Record<string, string> = {
         "criminal": "Certidão Negativa Criminal Federal",
         "eleitoral": "Certidão Negativa Eleitoral",
         "civel": "Certidão Negativa Cível Federal",
         "cível": "Certidão Negativa Cível Federal",
       };
-      return { 
-        ...federaisConfig, 
-        title: tipoMap[type.toLowerCase()] || `Certidão Negativa ${type.toUpperCase()} Federal`
+      const base = {
+        ...federaisConfig,
+        title: tipoMap[type?.toLowerCase()] || `Certidão Negativa ${type?.toUpperCase() || ""} Federal`,
       };
+      // Quando tipo já foi escolhido na home, ocultar campo "Tipo de Certidão"
+      const tipoFromUrl = (type || "").toLowerCase();
+      if (["criminal", "civel", "cível", "eleitoral"].includes(tipoFromUrl)) {
+        base.steps = base.steps.map((step) => {
+          const fields = step.fields.filter((f) => f.name !== "tipoCertidao");
+          const title = step.title === "Tipo de Certidão" ? "Estado e Documento" : step.title;
+          return { ...step, title, fields };
+        });
+      }
+      return base;
+    }
     case "policia-federal":
       return policiaFederalConfig;
     case "cnd":

@@ -191,6 +191,17 @@ export const ESTADOS_CIVIS = [
   "União Estável",
 ];
 
+/** Estado civil completo (Piauí e outros que exigem Separado/Outros) */
+export const ESTADOS_CIVIS_PI = [
+  "Solteiro(a)",
+  "Casado(a)",
+  "Divorciado(a)",
+  "Viúvo(a)",
+  "Separado(a)",
+  "União estável",
+  "Outros",
+];
+
 export const NACIONALIDADES = [
   "Brasileiro(a)",
   "Naturalizado(a)",
