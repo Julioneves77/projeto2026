@@ -7,12 +7,15 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      padding: "1rem",
       screens: {
         "2xl": "1400px",
       },
     },
     extend: {
+      screens: {
+        xs: "360px",
+      },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
@@ -103,6 +106,14 @@ export default {
           from: { transform: "translateY(100%)" },
           to: { transform: "translateY(0)" },
         },
+        "pulse-red-discrete": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.75" },
+        },
+        blink: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.3" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -112,6 +123,8 @@ export default {
         "scale-in": "scale-in 0.3s ease-out forwards",
         "fade-in": "fade-in 0.5s ease-out forwards",
         "slide-up": "slide-up 0.4s ease-out forwards",
+        "pulse-red-discrete": "pulse-red-discrete 2s ease-in-out infinite",
+        blink: "blink 1.5s ease-in-out infinite",
       },
     },
   },

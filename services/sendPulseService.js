@@ -786,12 +786,13 @@ ${domainInfo.name}
  * @param {string|string[]} options.to - Email(s) destinatário(s)
  * @param {string} options.subject - Assunto do email
  * @param {string} options.html - Conteúdo HTML do email
+ * @param {string} [options.text] - Conteúdo texto plano (recomendado pelo SendPulse)
  * @param {Object} options.from - Remetente { name, email }
  * @param {string|string[]} [options.cc] - Email(s) em cópia
  * @param {string|string[]} [options.bcc] - Email(s) em cópia oculta
  * @returns {Promise<Object>} Resultado do envio
  */
-async function sendEmail({ to, subject, html, from, cc, bcc }) {
+async function sendEmail({ to, subject, html, text, from, cc, bcc }) {
   await initializeSendPulse();
   
   // Normalizar destinatários para array
@@ -806,6 +807,7 @@ async function sendEmail({ to, subject, html, from, cc, bcc }) {
   const emailData = {
     subject: subject,
     html: html,
+    text: text || html?.replace(/<[^>]*>/g, '') || '',
     from: {
       name: fromName,
       email: fromEmail

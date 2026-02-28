@@ -15,7 +15,7 @@ const Terms = () => {
           <div className="text-center mb-8">
             <h1 className="font-orbitron text-4xl font-bold text-foreground mb-2">Termos de Uso</h1>
             <p className="text-lg text-muted-foreground mb-1">Condições Gerais de Uso dos Serviços</p>
-            <p className="text-sm text-muted-foreground">Última atualização: 07/02/2026</p>
+            <p className="text-sm text-muted-foreground">Última atualização: 20/02/2026</p>
           </div>
 
           {/* Caixa de Atenção */}
@@ -50,6 +50,7 @@ const Terms = () => {
                 <li>• Plataforma tecnológica privada com IA para automação documental</li>
                 <li>• Sistema que automatiza consultas e processamento digital</li>
                 <li>• Assistente de IA que orienta e indica documentos</li>
+                <li>• Serviço de intermediação e facilitação de acesso a documentos públicos</li>
               </ul>
             </div>
 
@@ -64,6 +65,7 @@ const Terms = () => {
                 <li>• <strong>NÃO</strong> emitimos certidões</li>
                 <li>• <strong>NÃO</strong> temos vínculo com fontes emissoras</li>
                 <li>• <strong>NÃO</strong> prestamos serviços jurídicos</li>
+                <li>• <strong>NÃO</strong> garantimos prazos de emissão ou a emissão em si, pois dependemos dos órgãos emissores</li>
               </ul>
             </div>
 
@@ -243,6 +245,24 @@ const Terms = () => {
                 </ul>
               </div>
             </div>
+
+            <div className="mt-6 space-y-4">
+              <h3 className="font-semibold text-foreground">4.1. Sobre o Processamento, Prazos e Disponibilidade</h3>
+              <p className="text-foreground text-sm">
+                A Guia Central emprega Inteligência Artificial e automação para otimizar o processo de solicitação e entrega de documentos. Contudo, o prazo final de emissão e a disponibilidade da certidão dependem exclusivamente dos órgãos emissores (cartórios, tribunais, etc.), sobre os quais não temos controle direto.
+              </p>
+              <p className="font-semibold text-foreground text-sm">Pelo que NÃO somos responsáveis (Adicionalmente):</p>
+              <ul className="space-y-2 text-muted-foreground text-sm ml-4">
+                <li><strong>Atrasos ou Impossibilidade de Emissão:</strong> Não nos responsabilizamos por atrasos, suspensões ou impossibilidade de emissão de certidões decorrentes de:
+                  <ul className="mt-2 ml-4 space-y-1">
+                    <li>• Instabilidade, manutenção, indisponibilidade ou lentidão dos sistemas dos órgãos emissores.</li>
+                    <li>• Exigência de processamento manual, presencial ou burocrático por parte do órgão emissor, em comarcas específicas ou para determinados tipos de certidão que não possuam integração digital ou automação.</li>
+                    <li>• A impossibilidade de obtenção da certidão por qualquer motivo alheio à atuação da plataforma, incluindo, mas não se limitando a: dados incorretos ou incompletos fornecidos pelo Cliente, pendências do solicitante junto ao órgão emissor, exigências adicionais do órgão, ou decisões administrativas/judiciais que impeçam a emissão.</li>
+                  </ul>
+                </li>
+                <li><strong>Taxa de Serviço:</strong> A taxa de serviço cobrada pela Guia Central refere-se à intermediação tecnológica, ao esforço de processamento da solicitação e à tentativa de obtenção da certidão, independentemente do prazo final ou da eventual impossibilidade de emissão da certidão por motivos alheios à nossa plataforma. Em casos de impossibilidade de emissão por falha do órgão emissor ou exigências adicionais que inviabilizem o processo, a taxa de serviço não será reembolsável, salvo se expressamente previsto em nossa Política de Reembolso.</li>
+              </ul>
+            </div>
           </section>
 
           {/* Seção 5 - Cadastro e Seus Dados */}
@@ -367,7 +387,7 @@ const Terms = () => {
                   <h3 className="font-semibold text-yellow-900 dark:text-yellow-100">Prazo</h3>
                 </div>
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  Depende do tipo de certidão. Trabalhamos para ser o mais rápido possível, mas não controlamos o prazo das fontes emissoras. Acompanhe o status no seu painel.
+                  O prazo para recebimento da certidão é uma estimativa e depende fundamentalmente do tipo de certidão e, principalmente, do tempo de resposta e processamento dos órgãos emissores. Trabalhamos com nossa tecnologia de IA para agilizar ao máximo cada etapa, mas não controlamos os prazos das fontes emissoras. Você pode acompanhar o status do seu pedido em tempo real no seu painel. A Guia Central não garante prazos específicos de entrega, pois estes estão sujeitos a fatores externos e à capacidade de resposta dos órgãos públicos.
                 </p>
               </div>
             </div>

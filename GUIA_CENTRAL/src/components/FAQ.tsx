@@ -1,11 +1,6 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { HelpCircle } from "lucide-react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { HelpCircle, ChevronDown } from "lucide-react";
 import HiddenDisclaimer from "./HiddenDisclaimer";
 
 const faqs = [
@@ -19,6 +14,12 @@ const faqs = [
 ];
 
 const FAQ = () => {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  const toggle = (i: number) => {
+    setOpenIndex((prev) => (prev === i ? null : i));
+  };
+
   return (
     <section className="container mx-auto px-6 py-24 relative">
       <div className="absolute inset-0 cyber-grid opacity-20 pointer-events-none" />
@@ -39,34 +40,45 @@ const FAQ = () => {
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
-        className="max-w-3xl mx-auto relative"
+        className="max-w-3xl mx-auto relative space-y-3"
       >
-        <Accordion type="single" collapsible className="space-y-3">
-          {faqs.map((faq, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08 }}
+        {faqs.map((faq, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, x: -20 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.08 }}
+            className={`border rounded-lg bg-card shadow-sm px-5 transition-all border-border/50 ${openIndex === i ? "shadow-md border-primary/20" : ""}`}
+          >
+            <button
+              type="button"
+              onClick={() => toggle(i)}
+              className="w-full flex items-center justify-between gap-3 py-4 text-left text-foreground text-sm font-medium hover:text-primary transition-colors"
+              aria-expanded={openIndex === i}
+              aria-controls={`faq-answer-${i}`}
+              id={`faq-question-${i}`}
             >
-              <AccordionItem
-                value={`item-${i}`}
-                className="border border-border/50 rounded-lg bg-card shadow-sm px-5 data-[state=open]:shadow-md data-[state=open]:border-primary/20 transition-all tech-card"
-              >
-                <AccordionTrigger className="text-foreground text-left text-sm font-medium hover:no-underline hover:text-primary transition-colors gap-3">
-                  <div className="flex items-center gap-3">
-                    <HelpCircle className="w-4 h-4 text-primary/50 shrink-0" />
-                    {faq.q}
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground text-sm leading-relaxed pl-7 font-mono">
-                  {faq.a}
-                </AccordionContent>
-              </AccordionItem>
-            </motion.div>
-          ))}
-        </Accordion>
+              <div className="flex items-center gap-3">
+                <HelpCircle className="w-4 h-4 text-primary/50 shrink-0" />
+                {faq.q}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition-transform duration-200 ${openIndex === i ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div
+              id={`faq-answer-${i}`}
+              role="region"
+              aria-labelledby={`faq-question-${i}`}
+              className={`overflow-hidden transition-all duration-200 ease-out ${openIndex === i ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}
+            >
+              <p className="text-muted-foreground text-sm leading-relaxed pl-7 pb-4 font-mono">
+                {faq.a}
+              </p>
+            </div>
+          </motion.div>
+        ))}
       </motion.div>
     </section>
   );

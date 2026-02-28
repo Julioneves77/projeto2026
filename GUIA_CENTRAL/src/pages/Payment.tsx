@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { QRCodeSVG } from "qrcode.react";
 import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Copy, Check, QrCode, Clock, Shield, Zap } from "lucide-react";
+import { ArrowLeft, Copy, Check, Clock, Shield, Volume2, VolumeX } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
 import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
@@ -19,6 +18,7 @@ import {
 } from "@/lib/pagarmeService";
 import { validateEmail } from "@/lib/validations";
 import { getFormConfig } from "@/lib/formConfigs";
+import { scrollToTop } from "@/lib/scrollUtils";
 
 // Mock data for testing
 const mockPlan = {
@@ -96,11 +96,28 @@ const formatServiceDescription = (selectedPlan: any): string => {
   return 'no email + certidão em Pdf';
 };
 
+const PAYMENT_STATE_KEY = "guia_central_payment_state";
+
 const Payment = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const locationState = location.state || {};
   const [searchParams] = useSearchParams();
+
+  // Restaurar state do sessionStorage quando location.state estiver vazio (evita perda ao navegar)
+  const effectiveState = (() => {
+    if (locationState.formData && locationState.selectedPlan) return locationState;
+    try {
+      const stored = sessionStorage.getItem(PAYMENT_STATE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.formData && parsed?.selectedPlan) return parsed;
+      }
+    } catch (e) {
+      console.warn("[Payment] Falha ao restaurar state do sessionStorage:", e);
+    }
+    return locationState;
+  })();
   
   // Detectar origem: parâmetro URL, hostname ou referrer
   const detectOrigin = (): 'portalcacesso' | 'solicite' | 'guia-central' => {
@@ -139,11 +156,11 @@ const Payment = () => {
   }, [origem]);
   
   // Use mock data if real data is not available (for testing)
-  const formData = locationState.formData || mockFormData;
-  const certificateType = locationState.certificateType || "criminal-estadual";
-  const originalCategory = locationState.category || ""; // Categoria original do formulário
-  const state = locationState.state || "SP";
-  const selectedPlan = locationState.selectedPlan || mockPlan;
+  const formData = effectiveState.formData || mockFormData;
+  const certificateType = effectiveState.certificateType || "criminal-estadual";
+  const originalCategory = effectiveState.category || ""; // Categoria original do formulário
+  const state = effectiveState.state || "SP";
+  const selectedPlan = effectiveState.selectedPlan || mockPlan;
   
   // Verificar se a certidão tem entrega automática via Plexi
   const entregaAutomatica = (() => {
@@ -159,6 +176,8 @@ const Payment = () => {
   })();
 
   const [copied, setCopied] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [pixExpired, setPixExpired] = useState(false);
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null);
   const [pixTransaction, setPixTransaction] = useState<PagarmeTransaction | null>(null);
   const [pixQrCode, setPixQrCode] = useState<string | null>(null);
@@ -166,7 +185,78 @@ const Payment = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const certificateTitleRef = useRef<HTMLHeadingElement>(null);
-  const isTestMode = !locationState.formData;
+  const isTestMode = !effectiveState.formData;
+
+  // Timer regressivo: 5 minutos (sempre que houver PIX)
+  const PIX_TIMER_SECONDS = 300; // 5 min
+  useEffect(() => {
+    if (!pixQrCode) return;
+
+    const startCountdown = (initialSeconds: number) => {
+      setTimeLeft(initialSeconds);
+      const interval = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev === null || prev <= 1) {
+            setPixExpired(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    };
+
+    if (pixTransaction?.pix_expiration_date) {
+      const exp = new Date(pixTransaction.pix_expiration_date).getTime();
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((exp - now) / 1000));
+      const validDiff = Number.isFinite(diff) && diff > 0 && diff <= PIX_TIMER_SECONDS;
+      return startCountdown(validDiff ? diff : PIX_TIMER_SECONDS);
+    }
+    return startCountdown(PIX_TIMER_SECONDS);
+  }, [pixQrCode, pixTransaction?.pix_expiration_date]);
+
+  useEffect(() => {
+    if (timeLeft !== null && timeLeft <= 0) setPixExpired(true);
+  }, [timeLeft]);
+
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useLayoutEffect(() => {
+    scrollToTop();
+  }, []);
+
+  const playPaymentAudio = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio("/audios/pix-1.mp3");
+    }
+    const audio = audioRef.current;
+    if (audioPlaying) {
+      audio.pause();
+      audio.currentTime = 0;
+      setAudioPlaying(false);
+      return;
+    }
+    audio.onended = () => setAudioPlaying(false);
+    audio.onerror = () => setAudioPlaying(false);
+    audio.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    };
+  }, []);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
 
   // Garantir que a página sempre comece no topo ao carregar (mobile/desktop)
   useEffect(() => {
@@ -266,13 +356,8 @@ const Payment = () => {
     scrollToTop();
   }, [pixQrCode]);
 
-  // Redirect if no formData or selectedPlan (unless in test mode which uses mock data)
-  useEffect(() => {
-    // Only redirect if we're not in test mode and missing required data
-    if (!isTestMode && (!locationState.formData || !locationState.selectedPlan)) {
-      navigate("/", { replace: true });
-    }
-  }, [locationState.formData, locationState.selectedPlan, isTestMode, navigate]);
+  // Dados válidos para exibir a página de pagamento (evita tela em branco)
+  const hasPaymentData = !!(effectiveState.formData && effectiveState.selectedPlan);
 
   // Ajustar tamanho da fonte do nome da certidão para caber em uma linha
   useEffect(() => {
@@ -355,19 +440,28 @@ const Payment = () => {
         // Criar novo ticket se não existir
         if (!ticketId) {
           console.log('🔵 [PORTAL Payment] Criando ticket ao gerar PIX...');
-          // Obter funnel_id do locationState ou gerar novo
-          const funnelId = locationState.funnel_id || getFunnelId();
-          const ticket = await createTicket(formData, certificateType, state, selectedPlan, origem, funnelId);
+          // Obter funnel_id do effectiveState ou gerar novo
+          const funnelId = effectiveState.funnel_id || getFunnelId();
+          const result = await createTicket(formData, certificateType, state, selectedPlan, origem, funnelId);
           
-          if (ticket) {
+          if (result) {
+            const { ticket, serverSyncFailed } = result;
             console.log('✅ [PORTAL Payment] Ticket criado ao gerar PIX:', ticket.codigo);
             setCurrentTicketId(ticket.id);
             sessionStorage.setItem(sessionKey, ticket.id);
             ticketId = ticket.id;
-            toast({
-              title: "PIX sendo gerado!",
-              description: `Ticket ${ticket.codigo} criado. Aguarde...`,
-            });
+            if (serverSyncFailed) {
+              toast({
+                title: "Aviso: sincronização",
+                description: "O ticket foi criado, mas não chegou à plataforma. Verifique sua conexão ou entre em contato.",
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: "PIX sendo gerado!",
+                description: `Ticket ${ticket.codigo} criado. Aguarde...`,
+              });
+            }
           } else {
             console.error('❌ [PORTAL Payment] Falha ao criar ticket ao gerar PIX');
             return;
@@ -662,6 +756,10 @@ const Payment = () => {
 
   // Função para redirecionar para página de obrigado
   const redirectToThankYou = async (ticket: any) => {
+    try {
+      sessionStorage.removeItem(PAYMENT_STATE_KEY);
+    } catch {}
+
     const currentOrigin = origem || localStorage.getItem('payment_origin') || 'guia-central';
     const SOLICITE_LINK_URL = import.meta.env.VITE_SOLICITE_LINK_URL || 'http://localhost:8080';
     const PORTAL_ACESSO_URL = import.meta.env.VITE_PORTAL_ACESSO_URL || 'https://portalcacesso.online';
@@ -680,6 +778,11 @@ const Payment = () => {
 
     // Para guia-central: redirecionar diretamente para /obrigado (SPA, sem /event)
     if (currentOrigin === 'guia-central') {
+      try {
+        sessionStorage.setItem(THANKYOU_STATE_KEY, JSON.stringify({ formData, selectedPlan, certificateType }));
+      } catch {
+        // ignore
+      }
       console.log('🚀 [guia-central Payment] Redirecionando para /obrigado');
       navigate('/obrigado', {
         state: { formData, selectedPlan, certificateType },
@@ -711,13 +814,6 @@ const Payment = () => {
     window.location.href = eventUrl.toString();
   };
 
-  const formatPrice = (price: number) => {
-    return price.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  };
-
   const handleCopyPix = async () => {
     const pixKeyToCopy = pixQrCode || pixTransaction?.pix_qr_code || '';
     
@@ -744,6 +840,32 @@ const Payment = () => {
         description: "Tente copiar manualmente.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleCheckPaymentStatus = async () => {
+    if (!pixTransaction?.id || !currentTicketId || pixExpired || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const status = await getTransactionStatus(pixTransaction.id);
+      if (status.status === "paid") {
+        await handlePaymentConfirmed(currentTicketId);
+      } else {
+        toast({
+          title: "Pagamento ainda não confirmado",
+          description: "Aguarde alguns instantes e tente novamente. A confirmação pode levar até 1 minuto.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao verificar pagamento:", error);
+      toast({
+        title: "Erro ao verificar",
+        description: "Não foi possível verificar o pagamento. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -783,6 +905,31 @@ const Payment = () => {
     });
   };
 
+  // Fallback: sessão expirada ou dados não encontrados (evita tela em branco)
+  if (!hasPaymentData && !isTestMode) {
+    return (
+      <Layout>
+        <SEOHead title="Pagamento - Guia Central" description="Complete o pagamento para finalizar sua solicitação." />
+        <section className="py-16">
+          <div className="container max-w-md mx-auto px-4 text-center">
+            <Card className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+              <h2 className="font-heading text-xl font-bold text-foreground mb-3">
+                Sessão expirada
+              </h2>
+              <p className="text-muted-foreground mb-6">
+                Os dados do pagamento não foram encontrados. Por favor, inicie o processo novamente.
+              </p>
+              <Button onClick={() => navigate("/", { replace: true })} size="lg" className="w-full">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Voltar ao início
+              </Button>
+            </Card>
+          </div>
+        </section>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <SEOHead
@@ -806,333 +953,134 @@ const Payment = () => {
           }
         `
       }} />
-      {/* Hero */}
-      <section className="relative overflow-hidden gradient-hero py-8">
+      {/* Header: Voltar + Etapa 3 de 3 + barra progresso */}
+      <section className="relative overflow-hidden min-h-[120px] py-6 bg-primary">
         <div className="container relative">
           <button
             onClick={handleChangePlan}
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80 hover:text-primary-foreground mb-3 transition-colors"
+            className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80 hover:text-primary-foreground mb-4 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Alterar Tipo de Serviço
+            Voltar
           </button>
-
-          <div className="animate-slide-up text-center">
-            {isTestMode && (
-              <div className="mb-3 inline-block bg-yellow-500/20 text-yellow-200 text-xs font-medium px-3 py-1 rounded-full">
-                🧪 Modo de Teste
-              </div>
-            )}
-            <h2 
-              ref={certificateTitleRef}
-              className="font-heading text-2xl font-bold text-primary-foreground whitespace-nowrap"
-            >
-              {certificateType}
-            </h2>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-primary-foreground">Etapa 3 de 3</span>
+            <div className="flex-1 h-2 bg-white/30 rounded-full overflow-hidden">
+              <div className="h-full w-full bg-white rounded-full" />
+            </div>
+            <span className="text-sm font-medium text-primary-foreground w-10 text-right">100%</span>
           </div>
         </div>
       </section>
 
-      {/* Payment Content */}
+      {/* Card único central */}
       <section className="py-8">
-        <div className="container max-w-5xl">
-          {/* Resumo Curto Mobile - Aparece antes do QR no mobile */}
-          <div className="md:hidden mb-4">
-            <Card className="tech-card hex-corners p-4 border-border/60">
-              <h2 className="font-heading text-lg font-bold text-foreground mb-3">
-                Resumo
-              </h2>
-              <div className="mb-2 pb-2 border-b border-border/50">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-foreground text-sm">
-                    {formatCertificateName(certificateType)} ({formatServiceType(selectedPlan.name)})
-                  </span>
-                  <span className="font-heading font-bold text-primary text-base">
-                    {formatPrice(selectedPlan.price)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formatServiceDescription(selectedPlan)}
+        <div className="container max-w-lg mx-auto px-4">
+          {isTestMode && (
+            <div className="mb-4 inline-block bg-yellow-500/20 text-yellow-700 dark:text-yellow-200 text-xs font-medium px-3 py-1 rounded-full">
+              🧪 Modo de Teste
+            </div>
+          )}
+
+          <Card className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+            {/* Detalhes do Serviço */}
+            <div className="flex items-start gap-3 mb-5">
+              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Shield className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 ref={certificateTitleRef} className="text-lg font-bold text-foreground">
+                  {formatCertificateName(certificateType)}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {entregaAutomatica ? "no seu Email em Minutos" : "Processamento via IA"}
                 </p>
+                <p className="text-base font-bold text-primary mt-2">
+                  R$ {(selectedPlan?.price ?? 47.97).toFixed(2).replace('.', ',')}
+                </p>
+                <button
+                  type="button"
+                  onClick={playPaymentAudio}
+                  className={`inline-flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] mt-2 px-3 py-2 text-sm font-semibold transition-colors ${audioPlaying ? "text-muted-foreground hover:text-foreground" : "text-[#E05A4D] hover:text-[#c94d42] animate-pulse-red-discrete"}`}
+                  title={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                  aria-label={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                >
+                  {audioPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  {audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                </button>
               </div>
-              <div className="flex items-center justify-between pt-2">
-                <span className="font-heading font-bold text-foreground">
-                  Total
-                </span>
-                <span className="font-heading font-bold text-primary text-lg">
-                  {formatPrice(selectedPlan.price)}
-                </span>
-              </div>
-              {entregaAutomatica && (
-                <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                  <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-semibold text-foreground mb-0.5">Entrega Automática</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Após a confirmação do pagamento, a certidão será enviada automaticamente para o e-mail informado.
-                    </p>
-                  </div>
+            </div>
+
+            {/* Timer */}
+            <div className="mb-5 pb-5 border-b border-border/50">
+              {(timeLeft !== null || pixQrCode) && (
+                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  {pixExpired ? (
+                    <span className="font-medium text-destructive">Este código expirou</span>
+                  ) : (
+                    <span>Expira em <span className="font-semibold text-foreground">{formatTime(timeLeft ?? 300)}</span></span>
+                  )}
                 </div>
               )}
-            </Card>
-          </div>
+            </div>
 
-          {/* Seção Pagamento Mobile - Título e Botão PIX */}
-          <div className="md:hidden mb-4">
-            <Card className="tech-card hex-corners p-4 border-border/60">
-              <h2 className="font-heading text-lg font-bold text-foreground mb-4">
-                Pagamento
-              </h2>
-              <Button
-                variant="default"
-                size="lg"
-                className="w-full bg-primary text-primary-foreground font-bold text-base py-3"
-                disabled
-              >
-                PIX
-              </Button>
-            </Card>
-          </div>
+            {/* COMO PAGAR */}
+            <div className="mb-5">
+              <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">Como pagar</p>
+              <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
+                <li>Abra seu app do banco</li>
+                <li>Escolha PIX copia e cola</li>
+                <li>Cole o código abaixo</li>
+                <li>Confirme o pagamento</li>
+              </ol>
+            </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Order Summary - Desktop */}
-            <Card className="tech-card hex-corners hidden md:block p-5 order-2 md:order-2 border-border/60">
-              <h2 className="font-heading text-xl font-bold text-foreground mb-4">
-                Resumo
-              </h2>
-
-              <div className="space-y-3">
-                {/* Plan Info */}
-                <div className="pb-3 border-b border-border/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-foreground text-sm">
-                      {selectedPlan.name}
-                    </span>
-                    <span className="font-heading font-bold text-primary text-base">
-                      {formatPrice(selectedPlan.price)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatServiceDescription(selectedPlan)}
-                  </p>
-                </div>
-                
-                {/* Total */}
-                <div className="flex items-center justify-between pt-2">
-                  <span className="font-heading font-bold text-foreground">
-                    Total
-                  </span>
-                  <span className="font-heading font-bold text-primary text-lg">
-                    {formatPrice(selectedPlan.price)}
-                  </span>
-                </div>
-
-                {/* Features */}
-                <div className="space-y-1">
-                  {selectedPlan.features.map((feature: string, idx: number) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs">
-                      <Check className="h-3 w-3 text-primary flex-shrink-0" />
-                      <span className="text-foreground">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Timer Notice */}
-                {pixTransaction?.pix_expiration_date ? (
-                  <div className="flex items-start gap-2 text-xs text-foreground bg-accent/50 rounded-lg p-3 border border-border/50">
-                    <Clock className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium mb-1">
-                        ⏳ Este PIX expira automaticamente.
-                      </p>
-                      <p className="text-muted-foreground">
-                        O processamento só inicia após a confirmação do pagamento.
-                      </p>
-                      <p className="text-muted-foreground mt-1.5 text-[10px]">
-                        Expira em: {new Date(pixTransaction.pix_expiration_date).toLocaleString('pt-BR')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2 text-xs text-foreground bg-accent/50 rounded-lg p-3 border border-border/50">
-                    <Clock className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium mb-1">
-                        ⏳ Este PIX expira automaticamente.
-                      </p>
-                      <p className="text-muted-foreground">
-                        O processamento só inicia após a confirmação do pagamento.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {entregaAutomatica && (
-                  <div className="flex items-start gap-2 text-xs text-foreground bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/30">
-                    <Zap className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium mb-1 text-foreground">Entrega Automática</p>
-                      <p className="text-muted-foreground">
-                        Após a confirmação do pagamento, a certidão será enviada automaticamente para o e-mail informado.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Security Notice */}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Shield className="h-3 w-3 flex-shrink-0" />
-                  <span>Pagamento seguro e criptografado</span>
-                </div>
+            {/* Campo código PIX + botões */}
+            {isLoadingPix ? (
+              <div className="rounded-lg bg-muted p-4 flex items-center justify-center gap-2">
+                <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm text-muted-foreground">Gerando código PIX...</span>
               </div>
-            </Card>
-
-            {/* QR Code Section */}
-            <Card className="tech-card hex-corners p-4 sm:p-5 overflow-hidden order-1 md:order-1 border-border/60">
-              <div className="text-center overflow-hidden">
-                <h2 className="font-heading text-xl font-bold text-foreground mb-4 hidden md:block">
-                  Pagamento
-                </h2>
-                
-                {/* Botão PIX Destacado - Desktop */}
-                <div className="mb-4 hidden md:block">
-                  <Button
-                    variant="default"
-                    size="lg"
-                    className="w-full bg-primary text-primary-foreground font-bold text-base py-3"
-                    disabled
-                  >
-                    PIX
-                  </Button>
+            ) : (
+              <>
+                <div className="rounded-lg bg-muted p-3 mb-3">
+                  <code className="block font-mono text-xs text-foreground truncate">
+                    {pixQrCode || "Aguardando geração..."}
+                  </code>
                 </div>
-                
-                {/* QR Code PIX */}
-                {isLoadingPix ? (
-                  <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
-                    <div className="w-40 h-40 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
-                      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  </div>
-                ) : pixQrCode ? (
-                  <>
-                    <div className="bg-white border-2 border-border rounded-xl p-4 inline-block mb-3 max-w-full overflow-hidden">
-                      <QRCodeSVG 
-                        value={pixQrCode}
-                        size={220}
-                        level="M"
-                        includeMargin={false}
-                        className="mx-auto w-40 h-40 sm:w-56 sm:h-56"
-                        style={{ maxWidth: '100%', height: 'auto' }}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Aponte a câmera do seu celular para o QR Code
-                    </p>
-                    
-                    {/* Bloco de Confiança - Desktop */}
-                    <div className="hidden md:block mt-4 mb-3 bg-accent/40 border border-border/50 rounded-lg p-3 text-left">
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        🔒 Pagamento seguro via PIX
-                      </p>
-                      <div className="space-y-1.5 text-xs text-foreground/90">
-                        <p className="flex items-start gap-1.5">
-                          <span className="flex-shrink-0">✔️</span>
-                          <span>Solicitação monitorada automaticamente</span>
-                        </p>
-                        <p className="flex items-start gap-1.5">
-                          <span className="flex-shrink-0">❗</span>
-                          <span>Em caso de qualquer problema, o pagamento é verificado e reembolsado</span>
-                        </p>
-                        <p className="flex items-start gap-1.5 pt-1 border-t border-border/30">
-                          <span className="flex-shrink-0">✔️</span>
-                          <span>Solicitações processadas diariamente</span>
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="bg-card border-2 border-border rounded-xl p-4 inline-block mb-3">
-                      <div className="w-40 h-40 sm:w-56 sm:h-56 bg-foreground/5 rounded-lg flex items-center justify-center">
-                        <QrCode className="h-32 w-32 sm:h-36 sm:w-36 text-foreground/40" />
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      {isTestMode ? 'Modo de teste - Use o botão abaixo para simular pagamento' : 'Aguarde o QR Code ser gerado...'}
-                    </p>
-                    
-                    {/* Bloco de Confiança - Desktop (quando não há QR Code ainda) */}
-                    {isTestMode && (
-                      <div className="hidden md:block mt-4 mb-3 bg-accent/40 border border-border/50 rounded-lg p-3 text-left">
-                        <p className="text-sm font-medium text-foreground mb-2">
-                          🔒 Pagamento seguro via PIX
-                        </p>
-                        <div className="space-y-1.5 text-xs text-foreground/90">
-                          <p className="flex items-start gap-1.5">
-                            <span className="flex-shrink-0">✔️</span>
-                            <span>Solicitação monitorada automaticamente</span>
-                          </p>
-                          <p className="flex items-start gap-1.5">
-                            <span className="flex-shrink-0">❗</span>
-                            <span>Em caso de qualquer problema, o pagamento é verificado e reembolsado</span>
-                          </p>
-                          <p className="flex items-start gap-1.5 pt-1 border-t border-border/30">
-                            <span className="flex-shrink-0">✔️</span>
-                            <span>Solicitações processadas diariamente</span>
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* PIX Key */}
-                {(pixQrCode || isTestMode) && (
-                  <div className="bg-muted rounded-lg p-3 md:p-3">
-                    <p className="text-xs text-muted-foreground mb-2">Ou copie a chave PIX:</p>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <code className={`flex-1 bg-background rounded px-3 py-2 font-mono truncate text-xs sm:text-sm ${
-                        pixQrCode 
-                          ? '' 
-                          : 'font-semibold text-primary border-2 border-primary/30'
-                      }`}>
-                        {pixQrCode || 'Aguardando geração...'}
-                      </code>
-                      <Button
-                        variant="default"
-                        size="default"
-                        onClick={handleCopyPix}
-                        className="w-full sm:w-auto sm:flex-shrink-0 font-medium"
-                        disabled={!pixQrCode}
-                      >
-                        {copied ? (
-                          <>
-                            <Check className="h-4 w-4 mr-2" />
-                            Copiado!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4 mr-2" />
-                            Copiar código PIX
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    {copied && (
-                      <p className="text-xs text-primary mt-2 font-medium">
-                        Código PIX copiado. Abra o app do seu banco e cole na área PIX.
-                      </p>
-                    )}
-                    
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
+                <Button
+                  variant="default"
+                  size="lg"
+                  onClick={handleCopyPix}
+                  className="w-full font-bold mb-3"
+                  disabled={!pixQrCode || pixExpired}
+                >
+                  {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                  {copied ? "Copiado!" : "Copiar código PIX"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleCheckPaymentStatus}
+                  className="w-full border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30"
+                  disabled={!pixQrCode || pixExpired || isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="h-4 w-4 mr-2 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                      Verificando...
+                    </>
+                  ) : (
+                    "Já realizei o pagamento"
+                  )}
+                </Button>
+              </>
+            )}
+          </Card>
         </div>
-        
-        {/* Espaçamento adicional no mobile para garantir que o rodapé seja visível */}
-        <div className="md:hidden pb-8"></div>
+
+        <div className="md:hidden pb-8" />
       </section>
     </Layout>
   );

@@ -161,9 +161,52 @@ body.resizing {
     @apply border-border;
   }
 
+  html {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    -webkit-text-size-adjust: 100%;
+    /* iOS Safari: corrige 100vh que ignora barra de endereço */
+    height: -webkit-fill-available;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+    -webkit-overflow-scrolling: touch;
+    /* iOS Safari: altura correta no viewport */
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    /* Remove delay de 300ms no touch (iPhone) */
+    touch-action: manipulation;
+  }
+
+  #root {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* iOS: remove tap highlight padrão */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -225,7 +268,7 @@ body.resizing {
   }
 
   .card-stat {
-    @apply bg-card rounded-xl p-6 shadow-sm border border-border transition-all duration-200 hover:shadow-md;
+    @apply bg-card rounded-xl p-4 sm:p-6 shadow-sm border border-border transition-all duration-200 hover:shadow-md min-w-0;
   }
 
   .modal-overlay {
@@ -233,7 +276,7 @@ body.resizing {
   }
 
   .modal-content {
-    @apply bg-card rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col;
+    @apply bg-card rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col w-[95vw] max-w-lg sm:max-w-xl md:max-w-2xl;
   }
 
   .copy-btn {

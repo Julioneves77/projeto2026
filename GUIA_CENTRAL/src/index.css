@@ -15,7 +15,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 25% 15%;
 
-    --primary: 215 90% 50%;
+    --primary: 220 70% 45%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 15% 93%;
@@ -86,6 +86,13 @@
     overflow-x: hidden;
     max-width: 100vw;
     overscroll-behavior-x: none;
+    font-size: 16px; /* Base 16px evita zoom em inputs no iOS */
+  }
+
+  @media (min-width: 768px) {
+    html {
+      font-size: 16px;
+    }
   }
 
   body {
@@ -282,6 +289,18 @@
     56% { opacity: 1; }
   }
 
+  @keyframes shortCircuit {
+    0%, 95%, 100% { color: hsl(215 90% 55%); opacity: 1; text-shadow: 0 0 20px hsl(215 90% 55% / 0.8); }
+    96% { color: hsl(215 100% 80%); opacity: 0.2; text-shadow: 0 0 70px hsl(215 100% 80% / 1); }
+    97% { color: hsl(215 90% 55%); opacity: 1; text-shadow: 0 0 20px hsl(215 90% 55% / 0.8); }
+    98% { color: hsl(215 100% 75%); opacity: 0.25; text-shadow: 0 0 60px hsl(215 100% 75% / 1); }
+    99% { color: hsl(215 90% 55%); opacity: 1; text-shadow: 0 0 20px hsl(215 90% 55% / 0.8); }
+  }
+
+  .animate-short-circuit {
+    animation: shortCircuit 6s ease-in-out infinite;
+  }
+
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -318,6 +337,7 @@
     background: linear-gradient(135deg, hsl(215 90% 50% / 0), hsl(215 90% 50% / 0.03));
     opacity: 0;
     transition: opacity 0.4s;
+    pointer-events: none;
   }
 
   .tech-card:hover::before {
@@ -335,6 +355,7 @@
     animation: hexRotate 4s linear infinite;
     opacity: 0;
     transition: opacity 0.4s;
+    pointer-events: none;
   }
 
   .tech-card:hover::after {

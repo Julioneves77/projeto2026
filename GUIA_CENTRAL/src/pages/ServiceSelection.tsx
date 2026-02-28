@@ -20,7 +20,7 @@ const servicePlans: ServicePlan[] = [
   {
     id: "padrao",
     name: "Certidão Atendimento Padrão",
-    price: 39.97,
+    price: 47.97,
     deliveryTime: "até 3 dias úteis",
     features: [
       "Atendimento Fila Normal",
@@ -88,13 +88,6 @@ const ServiceSelection = () => {
     });
   };
 
-  const formatPrice = (price: number) => {
-    return price.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  };
-
   return (
     <Layout>
       {/* Hero */}
@@ -152,23 +145,18 @@ const ServiceSelection = () => {
                 </div>
 
                 <div className="mb-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-heading text-3xl font-bold text-foreground">
-                        {plan.id === "premium" ? "R$ 69,97" : formatPrice(plan.price)}
-                      </span>
-                      {plan.id === "premium" && (
-                        <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded uppercase">
+                  <span className="text-sm text-muted-foreground">
+                    {plan.id === "padrao" && "Baixe no seu Email"}
+                    {plan.id === "prioridade" && "Baixe no Email e WhatsApp"}
+                    {plan.id === "premium" && (
+                      <>
+                        Baixe no Email e WhatsApp
+                        <span className="ml-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded uppercase">
                           URGENTE
                         </span>
-                      )}
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {plan.id === "padrao" && "Baixe no seu Email"}
-                      {plan.id === "prioridade" && "Baixe no Email e WhatsApp"}
-                      {plan.id === "premium" && "Baixe no Email e WhatsApp"}
-                    </span>
-                  </div>
+                      </>
+                    )}
+                  </span>
                 </div>
 
                 <ul className="space-y-3 mb-6 flex-1">

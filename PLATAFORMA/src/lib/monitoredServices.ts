@@ -1,9 +1,11 @@
 /**
  * Biblioteca para gerenciar serviços monitorados
  * Persiste configuração em localStorage com fallback para serviços padrão
+ * Usa safeStorage para compatibilidade com Safari modo privado (iPhone)
  */
 
 import { MonitoredService, ServiceStatus, ServiceStatusResult } from '@/types/monitoring';
+import { safeStorage } from './safeStorage';
 
 const STORAGE_KEY = 'av_monitored_services';
 const DEFAULT_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
@@ -77,7 +79,7 @@ const DEFAULT_SERVICES: MonitoredService[] = [
  */
 export function loadServices(): MonitoredService[] {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = safeStorage.getItem(STORAGE_KEY);
     if (!stored) {
       // Primeira vez: salvar serviços padrão
       saveServices(DEFAULT_SERVICES);
@@ -112,7 +114,7 @@ export function saveServices(services: MonitoredService[]): void {
       ...service,
       updatedAt: new Date().toISOString(),
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    safeStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch (error) {
     console.error('Erro ao salvar serviços:', error);
   }
@@ -191,7 +193,7 @@ export function getEnabledServices(): MonitoredService[] {
  * Reseta para serviços padrão
  */
 export function resetToDefaults(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  safeStorage.removeItem(STORAGE_KEY);
   saveServices(DEFAULT_SERVICES);
 }
 

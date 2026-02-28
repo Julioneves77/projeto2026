@@ -134,7 +134,7 @@ export function Users() {
             resetForm();
             setShowForm(!showForm);
           }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors touch-manipulation"
         >
           <UserPlus className="w-5 h-5" />
           Novo Usuário
@@ -161,7 +161,7 @@ export function Users() {
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Nome completo"
                 required
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               />
             </div>
 
@@ -173,7 +173,7 @@ export function Users() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@exemplo.com"
                 required
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               />
             </div>
 
@@ -187,7 +187,7 @@ export function Users() {
                 onChange={(e) => setSenha(e.target.value)}
                 placeholder="••••••••"
                 required={!editingUser}
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               />
             </div>
 
@@ -196,7 +196,7 @@ export function Users() {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as UserRole)}
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               >
                 <option value="admin">Admin</option>
                 <option value="financeiro">Financeiro</option>
@@ -209,7 +209,7 @@ export function Users() {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as 'ativo' | 'inativo')}
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               >
                 <option value="ativo">Ativo</option>
                 <option value="inativo">Inativo</option>
@@ -223,7 +223,7 @@ export function Users() {
                 value={metaDiariaCertidoes}
                 onChange={(e) => setMetaDiariaCertidoes(Number(e.target.value))}
                 min="0"
-                className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
               />
             </div>
 
@@ -240,7 +240,7 @@ export function Users() {
                       onChange={(e) => setValorPadrao(Number(e.target.value))}
                       min="0"
                       step="0.01"
-                      className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
                     />
                   </div>
                   <div>
@@ -251,7 +251,7 @@ export function Users() {
                       onChange={(e) => setValorPrioridade(Number(e.target.value))}
                       min="0"
                       step="0.01"
-                      className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
                     />
                   </div>
                   <div>
@@ -262,7 +262,7 @@ export function Users() {
                       onChange={(e) => setValorPremium(Number(e.target.value))}
                       min="0"
                       step="0.01"
-                      className="w-full px-4 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      className="w-full px-4 py-2.5 min-h-[44px] rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-base"
                     />
                   </div>
                 </div>
@@ -290,8 +290,8 @@ export function Users() {
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="overflow-x-auto scrollbar-hide w-full">
+          <table className="w-full min-w-[640px]">
             <thead>
               <tr className="bg-[hsl(var(--table-header))]">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Nome</th>

@@ -54,8 +54,11 @@ function validateTicket(ticket) {
   }
   
   if (ticket.telefone) {
-    const phoneRegex = /^\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/;
-    const cleanPhone = ticket.telefone.replace(/\D/g, '');
+    let cleanPhone = ticket.telefone.replace(/\D/g, '');
+    // Aceitar +55 (DDI Brasil): 12-13 dígitos -> normalizar para 10-11
+    if (cleanPhone.length >= 12 && cleanPhone.startsWith('55')) {
+      cleanPhone = cleanPhone.slice(2);
+    }
     if (cleanPhone.length < 8 || cleanPhone.length > 11) {
       errors.push('telefone inválido');
     }

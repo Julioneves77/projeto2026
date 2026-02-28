@@ -90,7 +90,7 @@ export function TicketEditModal({ ticket, onClose }: TicketEditModalProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div 
-        className="modal-content w-full max-w-4xl animate-slide-up"
+        className="modal-content w-[95vw] sm:w-full max-w-[95vw] sm:max-w-4xl animate-slide-up overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -44,6 +44,8 @@
     <link rel="apple-touch-icon" href="/favicon.ico" sizes="180x180" />
     
     
+    <!-- GCLID capture - carrega antes do React para capturar gclid da URL -->
+    <script src="/gclid.js"></script>
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
         (function(c,l,a,r,i,t,y){
@@ -67,6 +69,7 @@
     <!-- End Google Tag Manager (noscript) -->
 
     <div id="root"></div>
+    <!-- reCAPTCHA v3 - carregado dinamicamente apenas no formulário de contato (não bloqueia PIX/pagamento) -->
     <script type="module" src="/src/main.tsx" defer></script>
     <!-- Chat desabilitado em produção -->
   </body>

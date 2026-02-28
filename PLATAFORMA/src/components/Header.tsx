@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
 import { useSystemStatus } from '@/components/SystemStability';
-import { useUnreadEmailsCount } from '@/components/EmailSupport';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   LayoutDashboard, 
   Ticket, 
@@ -12,10 +12,10 @@ import {
   Users, 
   LogOut,
   Headset,
-  Mail,
   Activity,
-  Target,
-  Heart
+  Sheet,
+  Menu,
+  X
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -24,10 +24,11 @@ interface HeaderProps {
 }
 
 export function Header({ activeTab, onTabChange }: HeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
   const { currentUser, userRole, logout } = useAuth();
   const { tickets } = useTickets();
   const systemStatus = useSystemStatus();
-  const unreadEmails = useUnreadEmailsCount();
 
   // Contar apenas tickets em operação (aba "Em Operação") que estão sem operador atribuído
   // Status: EM_OPERACAO, EM_ATENDIMENTO, AGUARDANDO_INFO, FINANCEIRO
@@ -42,12 +43,8 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3, roles: ['admin'] },
     { id: 'estatisticas', label: 'Estatísticas', icon: TrendingUp, roles: ['admin'] },
     { id: 'usuarios', label: 'Usuários', icon: Users, roles: ['admin'] },
-    { id: 'suporte-email', label: 'Suporte Email', icon: Mail, roles: ['admin', 'financeiro'], badge: unreadEmails },
-    { id: 'ads', label: 'Ads', icon: Target, roles: ['admin'] },
     { id: 'estabilidade', label: 'Estabilidade', icon: Activity, roles: ['admin', 'financeiro'], showStatus: true },
-    ...(import.meta.env.VITE_FUNNEL_HEART_ENABLED !== 'false' ? [
-      { id: 'coracao', label: 'Coração', icon: Heart, roles: ['admin'] }
-    ] : []),
+    { id: 'conversoes-sheets', label: 'Conversões (GCLID)', icon: Sheet, roles: ['admin'] },
   ];
 
   const visibleItems = menuItems.filter(item => item.roles.includes(userRole || ''));
@@ -77,67 +74,123 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
   const statusInfo = getStatusInfo();
   const badge = getRoleBadge(userRole || '');
 
+  const handleTabSelect = (id: string) => {
+    onTabChange(id);
+    setMenuOpen(false);
+  };
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [menuOpen]);
+
+  const navButtonClass = (isActive: boolean) =>
+    `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors relative min-h-[44px] touch-manipulation ${
+      isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+    }`;
+
+  const renderNavItem = (item: (typeof visibleItems)[0]) => {
+    const Icon = item.icon;
+    const isActive = activeTab === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => (isMobile ? handleTabSelect(item.id) : onTabChange(item.id))}
+        className={navButtonClass(isActive)}
+      >
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className={item.showStatus ? statusInfo.textColor : ''}>
+          {item.showStatus ? (
+            <span className={isActive ? 'text-primary-foreground' : statusInfo.textColor}>{item.label}</span>
+          ) : (
+            item.label
+          )}
+        </span>
+        {item.badge && item.badge > 0 && (
+          <span
+            className={`min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-xs font-bold ${
+              isActive ? 'bg-primary-foreground text-primary' : 'bg-destructive text-destructive-foreground'
+            }`}
+          >
+            {item.badge}
+          </span>
+        )}
+        {item.showStatus && <span className={`w-2 h-2 rounded-full shrink-0 ${statusInfo.color}`} />}
+      </button>
+    );
+  };
+
   return (
-    <header className="bg-card border-b border-border shadow-soft">
-      <div className="flex items-center justify-between px-6 h-16">
+    <header className="bg-card border-b border-border shadow-soft sticky top-0 z-40">
+      <div className="flex items-center justify-between px-4 sm:px-6 h-14 sm:h-16 min-w-0">
         {/* Logo */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
-            <Headset className="w-5 h-5 text-primary-foreground" />
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-primary rounded-xl flex items-center justify-center shrink-0">
+            <Headset className="w-4 h-4 sm:w-5 sm:h-5 text-primary-foreground" />
           </div>
-          <div>
-            <h1 className="font-bold text-foreground text-base leading-tight">Atendimento Virtual</h1>
+          <div className="min-w-0">
+            <h1 className="font-bold text-foreground text-sm sm:text-base leading-tight truncate">
+              Atendimento Virtual
+            </h1>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1">
-          {visibleItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onTabChange(item.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors relative ${
-                  isActive 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className={item.showStatus ? statusInfo.textColor : ''}>
-                  {item.showStatus ? (
-                    <span className={isActive ? 'text-primary-foreground' : statusInfo.textColor}>
-                      {item.label}
-                    </span>
-                  ) : (
-                    item.label
-                  )}
-                </span>
-                
-                {/* Badge de quantidade */}
-                {item.badge && item.badge > 0 && (
-                  <span className={`min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-xs font-bold ${
-                    isActive 
-                      ? 'bg-primary-foreground text-primary' 
-                      : 'bg-destructive text-destructive-foreground'
-                  }`}>
-                    {item.badge}
-                  </span>
-                )}
-                
-                {/* Indicador de status com cor */}
-                {item.showStatus && (
-                  <span className={`w-2 h-2 rounded-full ${statusInfo.color}`} />
-                )}
-              </button>
-            );
-          })}
-        </nav>
+        {/* Navigation: Desktop */}
+        {!isMobile && (
+          <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide max-w-[min(100vw,calc(100%-280px))]">
+            {visibleItems.map(renderNavItem)}
+          </nav>
+        )}
+
+        {/* Mobile: Menu lateral customizado (sem Radix - evita erros Dialog no Safari iOS) */}
+        {isMobile && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="flex items-center justify-center w-10 h-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted min-h-[44px] min-w-[44px] touch-manipulation"
+              aria-label="Abrir menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            {menuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/60"
+                  onClick={() => setMenuOpen(false)}
+                  aria-hidden="true"
+                />
+                <div
+                  className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[320px] bg-card border-r border-border shadow-lg flex flex-col p-4 overflow-y-auto animate-in slide-in-from-left duration-200"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Menu de navegação"
+                >
+                  <div className="flex justify-end mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center justify-center w-10 h-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted touch-manipulation"
+                      aria-label="Fechar menu"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <nav className="flex flex-col gap-1">
+                    {visibleItems.map(renderNavItem)}
+                  </nav>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* User Info & Logout */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Theme Toggle */}
           <ThemeToggle />
           

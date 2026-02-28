@@ -45,8 +45,8 @@ import { getFormConfig, FormConfig, getAvailableStates } from "@/lib/formConfigs
 import { Progress } from "@/components/ui/progress";
 import { scrollToTop } from "@/lib/scrollUtils";
 
-// Constantes de preço - atualizado em 05/01/2026
-const BASE_PRICE = 39.90;
+// Constantes de preço - atualizado em 28/02/2026
+const BASE_PRICE = 47.97;
 // Forçar novo build
 const BUILD_VERSION = "2026.01.05.2123";
 
@@ -361,16 +361,16 @@ const CertificateForm = () => {
           <div className="container relative">
             <Link
               to="/"
-              className="inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-primary mb-4 transition-colors"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary mb-4 transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               Voltar
             </Link>
             <div className="animate-slide-up">
-              <h1 className="font-orbitron text-2xl font-bold text-foreground sm:text-3xl tracking-wider">
+              <h1 className="text-2xl font-bold text-foreground sm:text-3xl">
                 {getCertificateTitle()}
               </h1>
-              <p className="mt-1 text-muted-foreground font-mono text-sm">
+              <p className="mt-1 text-muted-foreground text-sm">
                 Selecione o estado para continuar
               </p>
             </div>
@@ -379,7 +379,7 @@ const CertificateForm = () => {
 
         <section className="py-10">
           <div className="container max-w-lg">
-            <div className="tech-card hex-corners bg-card rounded-xl border border-border/60 p-6 shadow-card backdrop-blur-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <FormField label="Estado" required>
                 <Select value={selectedState} onValueChange={setSelectedState}>
                   <SelectTrigger>
@@ -405,10 +405,10 @@ const CertificateForm = () => {
     return (
       <Layout>
         <div className="container py-20 text-center">
-          <h1 className="font-orbitron text-2xl font-bold text-foreground tracking-wider">
+          <h1 className="text-2xl font-bold text-foreground">
             Formulário não encontrado
           </h1>
-          <Button asChild className="mt-6 font-mono glow-blue" variant="hero">
+          <Button asChild className="mt-6" size="lg">
             <Link to="/">Voltar ao Início</Link>
           </Button>
         </div>
@@ -699,7 +699,7 @@ const CertificateForm = () => {
       state: selectedState || undefined,
     });
 
-    // State para PrePayment e Payment (persistir para evitar perda em refresh/navegação)
+    // State para Payment (persistir para evitar perda em refresh/navegação)
     const paymentState = {
       formData: finalFormData,
       certificateType: getCertificateTitle(),
@@ -717,8 +717,8 @@ const CertificateForm = () => {
       console.warn("[CertificateForm] Falha ao persistir state:", e);
     }
 
-    const confirmarUrl = source ? `/confirmar-pagamento?source=${source}` : "/confirmar-pagamento";
-    navigate(confirmarUrl, { state: paymentState });
+    const pagamentoUrl = source ? `/pagamento?source=${source}` : "/pagamento";
+    navigate(pagamentoUrl, { state: paymentState });
   };
 
   const getSelectOptions = (optionsKey?: string): Array<{ value: string; label: string }> => {
@@ -905,7 +905,7 @@ const CertificateForm = () => {
 
   // Componente ReviewRow para o step de revisão
   const ReviewRow = ({ label, value }: { label: string; value: string }) => (
-    <div className="flex justify-between text-sm font-mono">
+    <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-foreground font-medium text-right">{value}</span>
     </div>
@@ -956,7 +956,7 @@ const CertificateForm = () => {
                 navigate(-1);
               }
             }}
-            className="inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-primary mb-4 transition-colors"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary mb-4 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Voltar
@@ -969,10 +969,10 @@ const CertificateForm = () => {
       <section className="pt-4 pb-10">
         <div className="container max-w-2xl mx-auto px-4 sm:px-6">
           {/* Formulário Multi-Step */}
-          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="tech-card hex-corners rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-4 sm:p-6 shadow-card animate-fade-in space-y-6 sm:space-y-8">
+          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm animate-fade-in space-y-6 sm:space-y-8">
             {/* Barra de progresso */}
             <div className="-mt-2 mb-2">
-              <p className="text-xs font-mono text-muted-foreground mb-1">Etapa {currentStep + 1} de {totalSteps}</p>
+              <p className="text-xs text-muted-foreground mb-1">Etapa {currentStep + 1} de {totalSteps}</p>
               <Progress value={((currentStep + 1) / totalSteps) * 100} className="h-1.5" />
             </div>
             {/* Card com Ouvir instruções - oculto na etapa 2 (Dados e Confirmação) */}
@@ -982,11 +982,11 @@ const CertificateForm = () => {
                   <Shield className="h-5 w-5 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-orbitron font-semibold text-foreground text-sm sm:text-base">
+                  <h3 className="font-semibold text-foreground text-sm sm:text-base">
                     {getCertificateTitle()}
                   </h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-mono">
-                    {formConfig.description || "Processamento Automático via IA"}
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                    {formConfig.description || "Processamento Automático"}
                   </p>
                   <button
                     type="button"
@@ -1008,12 +1008,12 @@ const CertificateForm = () => {
                   key={label}
                   type="button"
                   onClick={() => i < currentStep && setCurrentStep(i)}
-                  className={`min-h-[44px] py-3 px-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all ${
+                  className={`min-h-[44px] py-3 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                     i === currentStep
-                      ? "bg-primary text-primary-foreground shadow-md glow-blue"
+                      ? "bg-primary text-primary-foreground shadow-sm"
                       : i < currentStep
                       ? "bg-primary/10 text-primary border border-primary/20"
-                      : "bg-secondary text-muted-foreground border border-border/60"
+                      : "bg-slate-100 text-muted-foreground border border-slate-200"
                   }`}
                 >
                   {label}
@@ -1026,13 +1026,13 @@ const CertificateForm = () => {
               <div className="space-y-5">
                 {formConfig.steps[currentStep].title && (
                   <div className="border-b border-border pb-2 mb-4">
-                    <h3 className="font-orbitron font-semibold text-foreground text-sm tracking-wider">
+                    <h3 className="font-semibold text-foreground text-sm">
                       {currentStep === 0
                         ? `Formulário ${getCertificateTitle()}`
                         : formConfig.steps[currentStep].title}
                     </h3>
                     {formConfig.steps[currentStep].description && (
-                      <p className="text-sm text-muted-foreground mt-1 font-mono">
+                      <p className="text-sm text-muted-foreground mt-1">
                         {formConfig.steps[currentStep].description}
                       </p>
                     )}
@@ -1047,14 +1047,14 @@ const CertificateForm = () => {
             ) : (
               /* Step N: Revisão e Pagamento */
               <div className="space-y-6">
-                <h3 className="font-orbitron font-semibold text-foreground text-sm tracking-wider">Revisão e Pagamento</h3>
-                <Card className="tech-card hex-corners border border-border/60 bg-card shadow-sm">
+                <h3 className="font-semibold text-foreground text-sm">Revisão e Pagamento</h3>
+                <Card className="rounded-xl border border-slate-200 bg-white shadow-sm">
                   <CardContent className="pt-6">
                     <div className="space-y-3">{renderReviewRows()}</div>
                   </CardContent>
                 </Card>
                 {/* Bloco de total e PIX */}
-                <div className="tech-card hex-corners rounded-xl border border-border/60 bg-secondary/50 p-4 space-y-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
                   <p className="text-xs text-muted-foreground">
                     Pagamento via PIX. Você receberá o QR Code na próxima tela.
                   </p>
@@ -1069,13 +1069,13 @@ const CertificateForm = () => {
                 variant="outline"
                 onClick={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : navigate(-1))}
                 size="lg"
-                className="gap-2 w-full sm:flex-1 font-mono border-border/60 hover:border-primary/30"
+                className="gap-2 w-full sm:flex-1 border-slate-200 hover:border-primary/30"
               >
                 <ChevronLeft className="size-4" />
                 Voltar
               </Button>
               {isReviewStep ? (
-                <Button type="submit" variant="hero" size="lg" className="gap-2 w-full sm:flex-1 shadow-hero glow-blue font-mono">
+                <Button type="submit" size="lg" className="gap-2 w-full sm:flex-1">
                   Confirmar e Pagar via PIX
                   <ChevronRight className="size-4" />
                 </Button>
@@ -1109,7 +1109,7 @@ const CertificateForm = () => {
                       }
                     }
                   }}
-                  className="gap-2 w-full sm:flex-1 shadow-hero glow-blue font-mono"
+                  className="gap-2 w-full sm:flex-1"
                 >
                   Próximo
                   <ChevronRight className="size-4" />

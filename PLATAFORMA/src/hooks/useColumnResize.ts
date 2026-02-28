@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { safeStorage } from '@/lib/safeStorage';
 
 export interface ColumnWidths {
   codigo: number;
@@ -40,10 +41,10 @@ export function useColumnResize() {
   const startWidthRef = useRef<number>(0);
   const tableRef = useRef<HTMLTableElement | null>(null);
 
-  // Carregar larguras salvas do localStorage
+  // Carregar larguras salvas do localStorage (safeStorage para Safari modo privado)
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = safeStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         // Validar que todas as chaves existem
@@ -60,10 +61,10 @@ export function useColumnResize() {
     }
   }, []);
 
-  // Salvar larguras no localStorage
+  // Salvar larguras no localStorage (safeStorage para Safari modo privado)
   const saveWidths = useCallback((widths: ColumnWidths) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
     } catch (error) {
       console.warn('Erro ao salvar larguras de colunas:', error);
     }

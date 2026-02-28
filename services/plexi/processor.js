@@ -104,6 +104,45 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Salva alterações do ticket re-lendo o arquivo antes, para não sobrescrever
+ * atualizações concorrentes (ex: usuário alterou para CONCLUIDO manualmente).
+ */
+function mergeAndSaveTicket(ticketId, ourTicket, options) {
+  const { readTickets, saveTickets } = options;
+  const fresh = readTickets();
+  const idx = fresh.findIndex(t => t.id === ticketId || t.codigo === ticketId);
+  if (idx < 0) return;
+  const freshTicket = fresh[idx];
+  let merged;
+  if (freshTicket.status === 'CONCLUIDO' && ourTicket.status !== 'CONCLUIDO') {
+    // Usuário concluiu manualmente: aplicar apenas campos de automação, preservar status/historico
+    console.log(`[Plexi] Ticket ${freshTicket.codigo} já concluído manualmente, preservando status`);
+    const automationFields = {
+      automationStatus: ourTicket.automationStatus,
+      automationLastError: ourTicket.automationLastError,
+      automationLockAt: ourTicket.automationLockAt,
+      automationLockOwner: ourTicket.automationLockOwner,
+      automationAttempts: ourTicket.automationAttempts,
+      plexiStatus: ourTicket.plexiStatus,
+      plexiLastCheckAt: ourTicket.plexiLastCheckAt,
+      plexiRequestId: ourTicket.plexiRequestId,
+      plexiBlockedEmailSentAt: ourTicket.plexiBlockedEmailSentAt
+    };
+    merged = { ...freshTicket, ...automationFields };
+  } else {
+    merged = { ...freshTicket, ...ourTicket };
+    // Preservar historico: manter itens do usuário e adicionar apenas os novos do Plexi
+    const freshHistIds = new Set((freshTicket.historico || []).map(h => h.id).filter(Boolean));
+    const ourNewHist = (ourTicket.historico || []).filter(h => h.id && !freshHistIds.has(h.id));
+    if (ourNewHist.length > 0) {
+      merged.historico = [...(freshTicket.historico || []), ...ourNewHist];
+    }
+  }
+  fresh[idx] = merged;
+  saveTickets(fresh);
+}
+
 async function processTicket(ticketId, options) {
   const {
     readTickets,
@@ -123,8 +162,8 @@ async function processTicket(ticketId, options) {
   const now = new Date().toISOString();
   const lockOwner = `worker-${process.pid}`;
 
-  // 1. Idempotência
-  if (ticket.status === 'CONCLUIDO' && (ticket.pdfLocalPath || ticket.completedEmailSentAt)) {
+  // 1. Idempotência - não processar ticket já concluído (manual ou automático)
+  if (ticket.status === 'CONCLUIDO') {
     console.log(`[Plexi] Ticket ${ticket.codigo} já concluído, ignorando`);
     return;
   }
@@ -143,9 +182,9 @@ async function processTicket(ticketId, options) {
     automationLockOwner: lockOwner,
     automationStatus: 'PROCESSING'
   };
-  saveTickets(tickets);
+  mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
   addHistoricoItem(tickets, ticketIndex, 'Plexi iniciado');
-  saveTickets(tickets);
+  mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
 
   try {
     // 3. Obter config do registry
@@ -160,7 +199,7 @@ async function processTicket(ticketId, options) {
         automationLockOwner: null
       };
       addHistoricoItem(tickets, ticketIndex, `Erro Plexi: ${errMsg}`);
-      saveTickets(tickets);
+      mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
       return;
     }
 
@@ -179,7 +218,7 @@ async function processTicket(ticketId, options) {
         automationLockOwner: null
       };
       addHistoricoItem(tickets, ticketIndex, `Plexi aguardando dados: ${missing.join(', ')}`);
-      saveTickets(tickets);
+      mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
       return;
     }
 
@@ -197,7 +236,7 @@ async function processTicket(ticketId, options) {
           automationLockOwner: null
         };
         addHistoricoItem(tickets, ticketIndex, `Plexi: ${errMsg}`);
-        saveTickets(tickets);
+        mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
         return;
       }
       try {
@@ -216,7 +255,7 @@ async function processTicket(ticketId, options) {
           plexiRequestId,
           plexiStatus: 'started'
         };
-        saveTickets(tickets);
+        mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
       } catch (err) {
         const is422 = err.plexiStatus === 422;
         const is5xx = err.response && err.response.status >= 500;
@@ -238,7 +277,7 @@ async function processTicket(ticketId, options) {
             automationLockOwner: null
           };
           addHistoricoItem(tickets, ticketIndex, `Erro Plexi (tentativa ${attempts}): ${errMsg}`);
-          saveTickets(tickets);
+          mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
           return;
         }
         const automationStatus = is422 ? 'ERRO_DADOS' : (is5xx || isTimeout ? 'FAILED_TRANSIENT' : 'FAILED_FINAL');
@@ -252,7 +291,7 @@ async function processTicket(ticketId, options) {
           automationLockOwner: null
         };
         addHistoricoItem(tickets, ticketIndex, `Erro Plexi: ${errMsg}`);
-        saveTickets(tickets);
+        mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
         return;
       }
     }
@@ -268,7 +307,7 @@ async function processTicket(ticketId, options) {
         automationLockOwner: null
       };
       addHistoricoItem(tickets, ticketIndex, `Plexi: ${errMsg}`);
-      saveTickets(tickets);
+      mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
       return;
     }
 
@@ -285,7 +324,7 @@ async function processTicket(ticketId, options) {
           plexiStatus: resultRes.status || resultRes.state,
           plexiLastCheckAt: new Date().toISOString()
         };
-        saveTickets(tickets);
+        mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
 
         if (resultRes.done) {
           const rawPdf = resultRes.pdf || resultRes.base64;
@@ -311,7 +350,7 @@ async function processTicket(ticketId, options) {
             automationLockOwner: null
           };
           addHistoricoItem(tickets, ticketIndex, `Erro polling Plexi: ${err.message}`);
-          saveTickets(tickets);
+          mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
           return;
         }
         throw err;
@@ -364,7 +403,7 @@ async function processTicket(ticketId, options) {
       automationLockOwner: null
     };
     addHistoricoItem(tickets, ticketIndex, 'Plexi concluído - email enviado', 'CONCLUIDO');
-    saveTickets(tickets);
+    mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
 
     console.log(`[Plexi] Ticket ${ticket.codigo} concluído automaticamente`);
   } catch (err) {
@@ -400,7 +439,7 @@ async function processTicket(ticketId, options) {
       automationLockOwner: null
     };
     addHistoricoItem(tickets, ticketIndex, `Erro Plexi: ${errMsg}`);
-    saveTickets(tickets);
+    mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
   }
 }
 

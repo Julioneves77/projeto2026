@@ -1,23 +1,17 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { scrollToTop } from "@/lib/scrollUtils";
 
 /**
- * Scrolla para o topo da página sempre que a rota mudar.
+ * Scrolla para o topo da página sempre que a rota ou query params mudarem.
+ * Cobre: troca de página, troca de tipo de certidão (?type=), etc.
  */
 const ScrollToTop = () => {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    if (document.documentElement) {
-      document.documentElement.scrollTop = 0;
-      document.documentElement.scrollLeft = 0;
-    }
-    if (document.body) {
-      document.body.scrollTop = 0;
-      document.body.scrollLeft = 0;
-    }
-  }, [pathname]);
+    scrollToTop();
+  }, [pathname, search]);
 
   return null;
 };

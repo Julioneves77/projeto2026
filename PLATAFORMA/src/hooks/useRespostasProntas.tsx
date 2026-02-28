@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { RespostaPronta } from '@/types';
 import { respostasProntasBase } from '@/data/mockData';
+import { safeStorage } from '@/lib/safeStorage';
 
 const RESPOSTAS_KEY = 'plataforma_respostas_prontas';
 
@@ -8,18 +9,18 @@ export function useRespostasProntas() {
   const [respostas, setRespostas] = useState<RespostaPronta[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(RESPOSTAS_KEY);
+    const stored = safeStorage.getItem(RESPOSTAS_KEY);
     if (stored) {
       setRespostas(JSON.parse(stored));
     } else {
       setRespostas(respostasProntasBase);
-      localStorage.setItem(RESPOSTAS_KEY, JSON.stringify(respostasProntasBase));
+      safeStorage.setItem(RESPOSTAS_KEY, JSON.stringify(respostasProntasBase));
     }
   }, []);
 
   const saveRespostas = (newRespostas: RespostaPronta[]) => {
     setRespostas(newRespostas);
-    localStorage.setItem(RESPOSTAS_KEY, JSON.stringify(newRespostas));
+    safeStorage.setItem(RESPOSTAS_KEY, JSON.stringify(newRespostas));
   };
 
   const addResposta = (texto: string) => {

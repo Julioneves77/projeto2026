@@ -24,11 +24,11 @@ import {
   XCircle,
   AlertCircle,
   Download,
-  ExternalLink,
   Copy,
   Beaker,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { safeStorage } from '@/lib/safeStorage';
 
 const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
 const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
@@ -37,6 +37,18 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   const headers = new Headers(options.headers);
   if (SYNC_SERVER_API_KEY) headers.set('X-API-Key', SYNC_SERVER_API_KEY);
   return fetch(url, { ...options, headers });
+}
+
+async function safeJson<T = unknown>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (text.trim().startsWith('<')) {
+    throw new Error(res.ok ? 'Resposta inválida' : `Erro ${res.status}: API indisponível`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Resposta inválida do servidor');
+  }
 }
 
 interface IntegrationConfig {
@@ -64,6 +76,7 @@ interface TestResult {
     canWrite: boolean;
     hasPermission: boolean;
     sheetExists: boolean;
+    paramsOk?: boolean;
     headerOk: boolean;
   };
   lastTestAt: string;
@@ -90,6 +103,9 @@ interface Diagnostic {
   recentTicketsWithGclid: number;
   lastExportAt: string | null;
   hasCredentials: boolean;
+  configOk?: boolean;
+  hasSpreadsheetId?: boolean;
+  canDecryptCredentials?: boolean;
 }
 
 const SCHEDULE_OPTIONS = ['00:00', '06:00', '12:00', '18:00'];
@@ -110,6 +126,13 @@ function extractClientEmailFromJson(jsonStr: string | undefined): string | null 
   }
 }
 
+/** Extrai o Spreadsheet ID de uma URL do Google Sheets */
+function extractSpreadsheetIdFromUrl(urlOrId: string): string {
+  const trimmed = (urlOrId || '').trim();
+  const match = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : trimmed;
+}
+
 export function ConversoesSheets() {
   const [config, setConfig] = useState<IntegrationConfig | null>(null);
   const [form, setForm] = useState<Partial<IntegrationConfig> & { service_account_json?: string }>({});
@@ -119,40 +142,54 @@ export function ConversoesSheets() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [filters, setFilters] = useState({ status: '', hasGclid: '' });
+  const [filters, setFilters] = useState({ status: 'PENDING', hasGclid: '' });
   const [clearing, setClearing] = useState(false);
+  const [creatingTest, setCreatingTest] = useState(false);
+  const [apiOffline, setApiOffline] = useState(false);
 
   const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
   const [serviceAccountJsonValid, setServiceAccountJsonValid] = useState<boolean | null>(null);
   const [testStatus, setTestStatus] = useState<TestResult | null>(null);
   const [testingWrite, setTestingWrite] = useState(false);
+  const [lastActionResult, setLastActionResult] = useState<{
+    action: 'test' | 'test-write' | 'export' | 'save';
+    ok: boolean;
+    message: string;
+    at: string;
+    sheetUrl?: string;
+    allTabNames?: string[];
+    updatedRange?: string;
+    spreadsheetId?: string;
+    writtenRow?: { gclid: string; conversion_name: string; conversion_time: string; conversion_value: string; conversion_currency: string };
+  } | null>(null);
 
   const loadConfig = useCallback(async () => {
     try {
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/config`);
+      setApiOffline(res.status === 502 || res.status === 503);
+      if (res.ok) setApiOffline(false);
       if (res.ok) {
-        const data = await res.json();
+        const data = await safeJson<IntegrationConfig | null>(res);
         setConfig(data);
         if (data) {
+          const scheduleTimes = Array.isArray(data.schedule_times)
+            ? data.schedule_times
+            : (data.schedule_times ? [data.schedule_times] : ['06:00', '12:00', '18:00']);
           setForm((prev) => ({
             ...prev,
             spreadsheet_id: data.spreadsheet_id ?? prev.spreadsheet_id ?? '',
-            worksheet_name: data.worksheet_name ?? prev.worksheet_name ?? 'Conversões',
+            worksheet_name: data.worksheet_name ?? prev.worksheet_name ?? 'Página1',
             conversion_name: data.conversion_name ?? prev.conversion_name ?? 'COMPRA',
             default_conversion_value: data.default_conversion_value ?? prev.default_conversion_value ?? null,
             currency: data.currency ?? prev.currency ?? 'BRL',
-            is_enabled: data.is_enabled ?? prev.is_enabled ?? false,
-            schedule_times: data.schedule_times ?? prev.schedule_times ?? ['06:00', '12:00', '18:00'],
+            is_enabled: Boolean(data.is_enabled),
+            schedule_times: scheduleTimes,
           }));
           const email = data.client_email || (data.has_credentials ? DEFAULT_SERVICE_ACCOUNT_EMAIL : null);
           if (email) {
             setServiceAccountEmail(email);
             setServiceAccountJsonValid(true);
-            try {
-              localStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, email);
-            } catch {
-              /* ignore */
-            }
+            safeStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, email);
           }
         }
       } else setConfig(null);
@@ -162,16 +199,21 @@ export function ConversoesSheets() {
     }
   }, []);
 
-  const loadConversions = useCallback(async () => {
+  const loadConversions = useCallback(async (overrideFilters?: { status?: string; hasGclid?: string }, cacheBust?: boolean) => {
     try {
       const params = new URLSearchParams();
-      if (filters.status) params.set('status', filters.status);
-      if (filters.hasGclid) params.set('hasGclid', filters.hasGclid);
+      const status = overrideFilters?.status ?? filters.status;
+      const hasGclid = overrideFilters?.hasGclid ?? filters.hasGclid;
+      if (status) params.set('status', status);
+      if (hasGclid) params.set('hasGclid', hasGclid);
       params.set('limit', '200');
+      if (cacheBust) params.set('_t', String(Date.now()));
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/conversions?${params}`);
+      if (res.status === 502 || res.status === 503) setApiOffline(true);
+      else if (res.ok) setApiOffline(false);
       if (res.ok) {
-        const data = await res.json();
-        setConversions(data);
+        const data = await safeJson<Conversion[]>(res);
+        setConversions(Array.isArray(data) ? data : []);
       }
     } catch (e) {
       toast.error('Erro ao carregar conversões');
@@ -181,8 +223,10 @@ export function ConversoesSheets() {
   const loadDiagnostic = useCallback(async () => {
     try {
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/diagnostic`);
+      if (res.status === 502 || res.status === 503) setApiOffline(true);
+      else if (res.ok) setApiOffline(false);
       if (res.ok) {
-        const data = await res.json();
+        const data = await safeJson<Diagnostic | null>(res);
         setDiagnostic(data);
       }
     } catch (e) {
@@ -202,8 +246,14 @@ export function ConversoesSheets() {
           service_account_json: form.service_account_json?.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await safeJson<TestResult>(res);
       setTestStatus(data);
+      setLastActionResult({
+        action: 'test',
+        ok: !!data.ok,
+        message: data.ok ? 'Conexão OK' : (data.message || 'Falha no teste'),
+        at: new Date().toISOString(),
+      });
       if (data.ok) {
         toast.success('Google Sheets: CONECTADO');
         await loadConfig();
@@ -211,6 +261,8 @@ export function ConversoesSheets() {
         toast.error(data.message || 'Falha no teste');
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao testar';
+      setLastActionResult({ action: 'test', ok: false, message: msg, at: new Date().toISOString() });
       toast.error('Erro ao testar');
     } finally {
       setTesting(false);
@@ -220,47 +272,55 @@ export function ConversoesSheets() {
   const runTestWrite = useCallback(async () => {
     setTestingWrite(true);
     try {
-      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test-write`, {
+      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test-conversion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spreadsheet_id: form.spreadsheet_id || config?.spreadsheet_id,
-          worksheet_name: form.worksheet_name || config?.worksheet_name,
-          service_account_json: form.service_account_json?.trim() || undefined,
-        }),
+        body: JSON.stringify({ confirm: true, variant: 'write-test' }),
       });
-      const data = await res.json();
-      if (data.ok) {
-        toast.success('Linha de teste escrita');
-        await loadConfig();
-        if (testStatus) setTestStatus((s) => (s ? { ...s, checks: { ...s.checks, canWrite: true }, ok: s.checks.canRead && s.checks.hasPermission && s.checks.headerOk } : s));
+      const data = await safeJson<{ success?: boolean; message?: string; error?: string }>(res);
+      const ok = !!data?.success;
+      setLastActionResult({
+        action: 'test-write',
+        ok,
+        message: ok ? (data.message || 'Linha de teste adicionada') : (data.error || data.message || 'Falha'),
+        at: new Date().toISOString(),
+      });
+      if (ok) {
+        toast.success(data.message, { duration: 5000 });
+        setFilters((f) => ({ ...f, status: 'PENDING' }));
+        await loadConversions({ status: 'PENDING', hasGclid: '' }, true);
+        await loadDiagnostic();
+        document.getElementById('tabela-conversoes')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
-        toast.error(data.message || 'Falha ao escrever');
+        toast.error(data.error || data.message || 'Falha');
       }
     } catch (e) {
-      toast.error('Erro ao escrever');
+      const msg = e instanceof Error ? e.message : 'Erro';
+      setLastActionResult({ action: 'test-write', ok: false, message: msg, at: new Date().toISOString() });
+      toast.error('Erro ao adicionar linha de teste');
     } finally {
       setTestingWrite(false);
     }
-  }, [form.spreadsheet_id, form.worksheet_name, form.service_account_json, config, testStatus, loadConfig]);
+  }, [loadConversions, loadDiagnostic]);
 
   useEffect(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEY_CLIENT_EMAIL);
-      if (cached && typeof cached === 'string' && cached.length > 0) {
-        setServiceAccountEmail(cached);
-        setServiceAccountJsonValid(true);
-      }
-    } catch {
-      /* ignore */
+    const cached = safeStorage.getItem(STORAGE_KEY_CLIENT_EMAIL);
+    if (cached && typeof cached === 'string' && cached.length > 0) {
+      setServiceAccountEmail(cached);
+      setServiceAccountJsonValid(true);
     }
   }, []);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      await Promise.all([loadConfig(), loadConversions(), loadDiagnostic()]);
-      setLoading(false);
+      try {
+        await Promise.all([loadConfig(), loadConversions(), loadDiagnostic()]);
+      } catch (e) {
+        toast.error('Erro ao carregar. Verifique se a API está online.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [loadConfig, loadDiagnostic]);
@@ -279,7 +339,7 @@ export function ConversoesSheets() {
           service_account_json: form.service_account_json?.trim() || undefined,
         }),
       })
-        .then((r) => r.json())
+        .then((r) => safeJson<TestResult>(r))
         .then((data) => setTestStatus(data))
         .catch(() => setTestStatus(null));
     } else {
@@ -295,13 +355,7 @@ export function ConversoesSheets() {
     const json = form.service_account_json;
     if (!json?.trim()) {
       const fromConfig = config?.client_email;
-      const fromStorage = (() => {
-        try {
-          return localStorage.getItem(STORAGE_KEY_CLIENT_EMAIL);
-        } catch {
-          return null;
-        }
-      })();
+      const fromStorage = safeStorage.getItem(STORAGE_KEY_CLIENT_EMAIL);
       const fromDefault = config?.has_credentials ? DEFAULT_SERVICE_ACCOUNT_EMAIL : null;
       const fallback = fromConfig || fromStorage || fromDefault;
       if (fallback) {
@@ -317,11 +371,7 @@ export function ConversoesSheets() {
     if (email) {
       setServiceAccountEmail(email);
       setServiceAccountJsonValid(true);
-      try {
-        localStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, email);
-      } catch {
-        /* ignore */
-      }
+      safeStorage.setItem(STORAGE_KEY_CLIENT_EMAIL, email);
     } else {
       setServiceAccountEmail(null);
       setServiceAccountJsonValid(false);
@@ -337,7 +387,7 @@ export function ConversoesSheets() {
         body: JSON.stringify({
           ...form,
           spreadsheet_id: form.spreadsheet_id || '',
-          worksheet_name: form.worksheet_name || 'Conversões',
+          worksheet_name: form.worksheet_name || 'Página1',
           conversion_name: form.conversion_name || 'COMPRA',
           default_conversion_value: form.default_conversion_value ?? null,
           currency: form.currency || 'BRL',
@@ -351,8 +401,8 @@ export function ConversoesSheets() {
         await loadConfig();
         await loadDiagnostic();
       } else {
-        const err = await res.json();
-        toast.error(err.error || 'Erro ao salvar');
+        const err = await safeJson<{ error?: string }>(res);
+        toast.error(err?.error || 'Erro ao salvar');
       }
     } catch (e) {
       toast.error('Erro ao salvar');
@@ -365,16 +415,32 @@ export function ConversoesSheets() {
   const handleExportNow = async () => {
     setExporting(true);
     try {
-      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/export-now`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(`Exportadas ${data.exported || 0} conversões`);
+      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/export-now`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_id: form.spreadsheet_id || config?.spreadsheet_id,
+          worksheet_name: form.worksheet_name || config?.worksheet_name,
+          service_account_json: form.service_account_json?.trim() || undefined,
+        }),
+      });
+      const data = await safeJson<{ success?: boolean; exported?: number; reason?: string; error?: string }>(res);
+      const ok = !!data.success;
+      const msg = ok
+        ? (data.exported > 0 ? `Exportadas ${data.exported} conversões` : 'Nenhuma conversão pendente')
+        : (data.reason || data.error || 'Erro na exportação');
+      setLastActionResult({ action: 'export', ok, message: msg, at: new Date().toISOString() });
+      if (ok) {
+        toast.success(msg);
+        setFilters((f) => ({ ...f, status: 'PENDING' }));
+        await loadConversions({ status: 'PENDING', hasGclid: filters.hasGclid }, true);
       } else {
-        toast.error(data.reason || data.error || 'Erro na exportação');
+        toast.error(msg);
       }
-      await loadConversions();
       await loadDiagnostic();
     } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao exportar';
+      setLastActionResult({ action: 'export', ok: false, message: msg, at: new Date().toISOString() });
       toast.error('Erro ao exportar');
     } finally {
       setExporting(false);
@@ -386,19 +452,7 @@ export function ConversoesSheets() {
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/conversions/${id}/reexport`, { method: 'POST' });
       if (res.ok) {
         toast.success('Marcado para reexportar');
-        await loadConversions();
-      }
-    } catch (e) {
-      toast.error('Erro');
-    }
-  };
-
-  const handleSkip = async (id: number) => {
-    try {
-      const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/conversions/${id}/skip`, { method: 'POST' });
-      if (res.ok) {
-        toast.success('Marcado como ignorado');
-        await loadConversions();
+        await loadConversions(undefined, true);
       }
     } catch (e) {
       toast.error('Erro');
@@ -406,27 +460,35 @@ export function ConversoesSheets() {
   };
 
   const handleCreateTest = async () => {
+    if (creatingTest) return;
+    setCreatingTest(true);
     try {
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/test-conversion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: true }),
       });
-      const data = await res.json();
-      if (data.success) {
-        toast.success('Conversão de teste criada');
-        await loadConversions();
+      const data = await safeJson<{ success?: boolean; error?: string }>(res);
+      if (data?.success) {
+        toast.success('Conversão de teste criada. Verifique a tabela abaixo.', { duration: 5000 });
+        setFilters({ status: 'PENDING', hasGclid: '' });
+        await loadConversions({ status: 'PENDING', hasGclid: '' }, true);
         await loadDiagnostic();
+        await new Promise((r) => setTimeout(r, 500));
+        await loadConversions({ status: 'PENDING', hasGclid: '' }, true);
+        document.getElementById('tabela-conversoes')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
         toast.error(data.error || 'Erro');
       }
     } catch (e) {
-      toast.error('Erro');
+      toast.error('Erro ao criar conversão de teste');
+    } finally {
+      setCreatingTest(false);
     }
   };
 
   const handleClearWorksheet = async () => {
-    if (!window.confirm('Tem certeza? Isso apagará todos os dados da planilha (exceto o header).')) return;
+    if (!window.confirm('Tem certeza? Isso apagará todos os dados da aba configurada (exceto o header).')) return;
     setClearing(true);
     try {
       const res = await fetchWithAuth(`${SYNC_SERVER_URL}/admin/sheets/clear`, {
@@ -434,14 +496,15 @@ export function ConversoesSheets() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: true }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson<{ success?: boolean; message?: string; error?: string }>(res);
+      if (data?.success) {
         toast.success(data.message || 'Planilha limpa');
+        await loadDiagnostic();
       } else {
-        toast.error(data.message || 'Erro ao limpar');
+        toast.error(data?.message || data?.error || 'Erro ao limpar');
       }
     } catch (e) {
-      toast.error('Erro ao limpar');
+      toast.error(e instanceof Error ? e.message : 'Erro ao limpar');
     } finally {
       setClearing(false);
     }
@@ -457,6 +520,21 @@ export function ConversoesSheets() {
 
   return (
     <div className="space-y-6">
+      {apiOffline && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-destructive shrink-0" />
+              <div>
+                <p className="font-semibold text-destructive">API indisponível (502 Bad Gateway)</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  O sync-server não está respondendo. A tabela e os dados não carregam. Verifique no servidor: <code className="bg-muted px-1 rounded">pm2 status</code> e <code className="bg-muted px-1 rounded">pm2 logs sync-server</code>. Reinicie com <code className="bg-muted px-1 rounded">pm2 restart sync-server</code>.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <div className="flex items-center gap-3">
         <Sheet className="w-8 h-8 text-primary" />
         <div>
@@ -496,6 +574,9 @@ export function ConversoesSheets() {
               <span className={testStatus.checks?.sheetExists ? 'text-green-600' : 'text-muted-foreground'}>
                 {testStatus.checks?.sheetExists ? '✓' : '○'} Aba
               </span>
+              <span className={testStatus.checks?.paramsOk !== false ? 'text-green-600' : 'text-muted-foreground'}>
+                {testStatus.checks?.paramsOk !== false ? '✓' : '○'} A1
+              </span>
               <span className={testStatus.checks?.headerOk ? 'text-green-600' : 'text-muted-foreground'}>
                 {testStatus.checks?.headerOk ? '✓' : '○'} Header
               </span>
@@ -504,22 +585,97 @@ export function ConversoesSheets() {
               </span>
             </div>
           )}
+          <p className="text-xs text-muted-foreground">
+            Cria conversão de teste no banco (nunca será exportada). Use para validar a tabela na plataforma.
+          </p>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {config?.last_test_at && <span>Último teste: {new Date(config.last_test_at).toLocaleString('pt-BR')}</span>}
             {config?.last_write_at && <span>• Última escrita OK: {new Date(config.last_write_at).toLocaleString('pt-BR')}</span>}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={runTest} disabled={testing}>
               {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Re-testar conexão
             </Button>
             <Button variant="outline" size="sm" onClick={runTestWrite} disabled={testingWrite}>
               {testingWrite ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
-              Escrever linha teste
+              Criar conversão teste (nunca exportada)
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Último resultado - tabela de preview da linha escrita */}
+      {lastActionResult && (
+        <Card className={lastActionResult.ok ? 'border-green-500/60' : 'border-destructive'}>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              {lastActionResult.ok ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <XCircle className="w-5 h-5 text-destructive" />}
+              Último resultado
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            <p className={`text-sm font-medium ${lastActionResult.ok ? 'text-green-700 dark:text-green-400' : 'text-destructive'}`}>
+              {lastActionResult.message}
+            </p>
+            {lastActionResult.action === 'test-write' && lastActionResult.ok && (
+              <div className="rounded-md border overflow-hidden">
+                <p className="text-xs font-medium p-2 bg-muted/50">
+                  Conversão de teste criada no banco. Nunca será exportada para a planilha.
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Google Click ID</TableHead>
+                      <TableHead>Conversion Name</TableHead>
+                      <TableHead>Conversion Time</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Currency</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-mono">TEST-CONN</TableCell>
+                      <TableCell>TEST</TableCell>
+                      <TableCell>{new Date().toLocaleString('pt-BR')}</TableCell>
+                      <TableCell>0.01</TableCell>
+                      <TableCell>BRL</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {lastActionResult.action === 'test-write' && lastActionResult.sheetUrl && (
+              <div className="space-y-2">
+                <a
+                  href={lastActionResult.sheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Abrir planilha no Google Sheets
+                </a>
+                <p className="text-xs text-muted-foreground">
+                  {lastActionResult.spreadsheetId && (
+                    <>Planilha ID: <code className="bg-muted px-1 rounded">{lastActionResult.spreadsheetId}</code></>
+                  )}
+                  {lastActionResult.allTabNames && lastActionResult.allTabNames.length > 0 && (
+                    <> • Abas: {lastActionResult.allTabNames.join(', ')}</>
+                  )}
+                  {lastActionResult.updatedRange && ` • Célula: ${lastActionResult.updatedRange}`}
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Se não vê os dados: (1) Confira se a URL é da sua planilha final. (2) Verifique se está na aba correta.
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Ação: {lastActionResult.action === 'test' ? 'Teste de conexão' : lastActionResult.action === 'test-write' ? 'Escrever linha teste' : lastActionResult.action === 'export' ? 'Exportar agora' : 'Salvar'} • {new Date(lastActionResult.at).toLocaleString('pt-BR')}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Diagnóstico */}
       <Card>
@@ -528,6 +684,15 @@ export function ConversoesSheets() {
           <CardDescription>Status rápido do sistema</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
+          {diagnostic && diagnostic.configOk === false && (
+            <div className="w-full p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm">
+              <strong>Configuração incompleta:</strong>
+              {!diagnostic.hasSpreadsheetId && ' Spreadsheet ID não salvo. '}
+              {!diagnostic.hasCredentials && ' JSON da Service Account não salvo. '}
+              {diagnostic.hasCredentials && !diagnostic.canDecryptCredentials && ' Credenciais não decriptam (verifique SHEETS_CREDENTIALS_ENCRYPTION_KEY no servidor). '}
+              Salve a configuração com todos os campos e tente novamente.
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">GCLID recente (últimos 50 pedidos):</span>
             <span className="font-medium">{diagnostic?.recentTicketsWithGclid ?? 0}</span>
@@ -550,8 +715,8 @@ export function ConversoesSheets() {
               <span className="text-sm">{diagnostic.lastError}</span>
             </div>
           )}
-          <Button variant="outline" size="sm" onClick={handleCreateTest}>
-            <Beaker className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" onClick={handleCreateTest} disabled={creatingTest}>
+            {creatingTest ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Beaker className="w-4 h-4 mr-2" />}
             Criar conversão teste
           </Button>
         </CardContent>
@@ -615,6 +780,30 @@ export function ConversoesSheets() {
         </CardContent>
       </Card>
 
+      {/* Planilha de destino - link direto */}
+      {(form.spreadsheet_id || config?.spreadsheet_id) && (
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="text-base">Planilha de destino</CardTitle>
+            <CardDescription>Os dados são escritos nesta planilha. Confira se é a planilha correta.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${form.spreadsheet_id || config?.spreadsheet_id}/edit`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Abrir planilha no Google Sheets
+            </a>
+            <p className="text-xs text-muted-foreground mt-2">
+              Aba configurada: <strong>{form.worksheet_name || config?.worksheet_name || 'Página1'}</strong>. Os dados entram nesta aba (a primeira aba ao abrir = Página1).
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Configuração */}
       <Card>
         <CardHeader>
@@ -624,20 +813,30 @@ export function ConversoesSheets() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label>Spreadsheet ID</Label>
+              <Label>Spreadsheet ID ou URL</Label>
               <Input
                 value={form.spreadsheet_id || ''}
-                onChange={(e) => setForm((f) => ({ ...f, spreadsheet_id: e.target.value }))}
-                placeholder="ID da planilha (da URL)"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const id = v.includes('docs.google.com') || v.includes('/d/') ? extractSpreadsheetIdFromUrl(v) : v;
+                  setForm((f) => ({ ...f, spreadsheet_id: id || v }));
+                }}
+                placeholder="ID ou cole a URL: docs.google.com/spreadsheets/d/..."
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Cole a URL completa ou só o ID. Ex: 1rQmKtrNNME73DhR279in9oSrK-nkSR3oT0RffvmB-p4
+              </p>
             </div>
             <div>
               <Label>Worksheet/Tab</Label>
               <Input
-                value={form.worksheet_name || 'Conversões'}
+                value={form.worksheet_name || 'Página1'}
                 onChange={(e) => setForm((f) => ({ ...f, worksheet_name: e.target.value }))}
-                placeholder="Conversões"
+                placeholder="Conversões ou Página1"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Nome exato da aba na planilha. Ex: &quot;Conversões&quot;, &quot;Conversoes Ads&quot;, &quot;Página1&quot;. Deve bater com o nome real da aba.
+              </p>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -749,24 +948,25 @@ export function ConversoesSheets() {
       </Card>
 
       {/* Tabela de conversões */}
-      <Card>
+      <Card id="tabela-conversoes">
         <CardHeader>
           <CardTitle className="text-lg">Conversões</CardTitle>
-          <CardDescription>Listagem interna com filtros</CardDescription>
+          <CardDescription>Por padrão: pendentes. Use o filtro para ver exportados ou todos.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2 mb-4">
             <select
               className="border rounded px-2 py-1 text-sm"
               value={filters.status}
-              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFilters((f) => ({ ...f, status: v }));
+                loadConversions({ ...filters, status: v }, true);
+              }}
             >
-              <option value="">Todos os status</option>
-              <option value="PENDING">PENDING</option>
-              <option value="PENDING_NO_CLICKID">PENDING_NO_CLICKID</option>
-              <option value="EXPORTED">EXPORTED</option>
-              <option value="ERROR">ERROR</option>
-              <option value="SKIPPED">SKIPPED</option>
+              <option value="PENDING">Pendentes</option>
+              <option value="EXPORTED">Exportados</option>
+              <option value="">Todos</option>
             </select>
             <select
               className="border rounded px-2 py-1 text-sm"
@@ -846,11 +1046,6 @@ export function ConversoesSheets() {
                       {c.status === 'EXPORTED' && (
                         <Button variant="ghost" size="sm" onClick={() => handleReexport(c.id)}>
                           Reexportar
-                        </Button>
-                      )}
-                      {(c.status === 'PENDING' || c.status === 'ERROR') && (
-                        <Button variant="ghost" size="sm" onClick={() => handleSkip(c.id)}>
-                          Ignorar
                         </Button>
                       )}
                     </TableCell>

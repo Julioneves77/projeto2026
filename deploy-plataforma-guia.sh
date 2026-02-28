@@ -39,6 +39,27 @@ echo "📤 Upload GUIA_CENTRAL → /var/www/guia-central/dist/"
 rsync -avz --delete GUIA_CENTRAL/dist/ ${SERVER_USER}@${SERVER_IP}:/var/www/guia-central/dist/
 echo "✅ GUIA_CENTRAL em produção (guia-central.online)"
 
+# 5. Garantir proxy /api no Nginx da plataforma (para sync-server)
+echo ""
+echo "⚙️  Verificando Nginx (proxy /api para sync-server)..."
+if [ -f "atualizar-nginx-plataforma-api.sh" ]; then
+  bash atualizar-nginx-plataforma-api.sh ${SERVER_USER}
+  echo "✅ Nginx da plataforma verificado"
+else
+  echo "⚠️  Script atualizar-nginx-plataforma-api.sh não encontrado - verifique manualmente"
+fi
+
+# 6. Atualizar sync-server (GCLID/Sheets + utils)
+echo ""
+echo "📤 Atualizando sync-server..."
+SERVER_PATH="/root/projeto-2026-estrutura"
+rsync -avz sync-server.js ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/ 2>/dev/null || true
+rsync -avz services/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/services/ 2>/dev/null || true
+rsync -avz utils/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/utils/ 2>/dev/null || true
+rsync -avz package.json ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/ 2>/dev/null || true
+ssh ${SERVER_USER}@${SERVER_IP} "cd ${SERVER_PATH} && npm install --production 2>/dev/null && pm2 restart sync-server 2>/dev/null" && \
+  echo "✅ Sync-server atualizado e reiniciado" || echo "⚠️  Sync-server não atualizado (verifique caminho)"
+
 echo ""
 echo "===================================="
 echo "✅ Deploy concluído!"

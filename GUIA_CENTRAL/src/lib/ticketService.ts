@@ -15,8 +15,8 @@ const TICKET_SERVICE_VERSION = '2.0.1-dadosFormulario';
 // URL do servidor de sincronização - configurável via variável de ambiente
 const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
 
-// Log versão ao carregar módulo
-console.log(`📋 [PORTAL] TicketService v${TICKET_SERVICE_VERSION} carregado`);
+// Log versão e URL ao carregar módulo (para diagnóstico de tickets não entrando no Geral)
+console.log(`📋 [PORTAL] TicketService v${TICKET_SERVICE_VERSION} carregado | API: ${SYNC_SERVER_URL}/tickets`);
 
 // API Key para autenticação (opcional)
 const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
@@ -248,11 +248,18 @@ async function mapFormDataToTicket(
     ''
   ).toString().trim();
   
-  const telefone = (
+  // Normalizar telefone: remover +55 (país) se presente para evitar rejeição na validação do sync-server
+  let telefone = (
     formData.telefone || 
     formData.telefoneSolicitante ||
     ''
   ).toString().trim();
+  const cleanTel = telefone.replace(/\D/g, '');
+  if (cleanTel.length === 12 || cleanTel.length === 13) {
+    if (cleanTel.startsWith('55')) {
+      telefone = cleanTel.slice(2); // Remove 55 (DDI Brasil)
+    }
+  }
   
   const email = (
     formData.email || 
@@ -294,7 +301,14 @@ async function mapFormDataToTicket(
   if (funnelId) {
     dadosFormulario['funnel_id'] = funnelId;
   }
-  
+  // Adicionar Click ID (gclid/wbraid/gbraid) para atribuição de conversões (Google Ads)
+  const { getStoredClickId } = await import('./gclid');
+  const clickId = formData.gclid ? { value: String(formData.gclid), type: (formData.clickIdType as string) || 'GCLID' } : getStoredClickId();
+  if (clickId && clickId.value && clickId.value.length <= 256) {
+    dadosFormulario['gclid'] = clickId.value.trim();
+    dadosFormulario['clickIdType'] = clickId.type;
+  }
+
   console.log('🔵 [PORTAL] Dados do formulário preservados:', Object.keys(dadosFormulario));
   
   const ticket: TicketData = {
@@ -337,8 +351,15 @@ async function mapFormDataToTicket(
   return ticket;
 }
 
+/** Resultado da criação de ticket - inclui flag se falhou sincronização com servidor */
+export interface CreateTicketResult {
+  ticket: TicketData;
+  serverSyncFailed?: boolean;
+}
+
 /**
  * Cria um novo ticket no localStorage compartilhado com a PLATAFORMA
+ * Retorna { ticket, serverSyncFailed } - serverSyncFailed=true quando POST ao sync-server falhar
  */
 export async function createTicket(
   formData: PortalFormData,
@@ -347,7 +368,7 @@ export async function createTicket(
   selectedPlan: SelectedPlan,
   origem?: 'portalcacesso' | 'solicite',
   funnelId?: string
-): Promise<TicketData | null> {
+): Promise<CreateTicketResult | null> {
   try {
     const TICKETS_KEY = 'av_tickets';
     
@@ -455,7 +476,7 @@ export async function createTicket(
         console.error('❌ [PORTAL] Ticket não foi criado no servidor, mas foi salvo localmente');
         console.error('❌ [PORTAL] URL tentada:', `${SYNC_SERVER_URL}/tickets`);
         console.error('❌ [PORTAL] Dados enviados:', JSON.stringify(newTicket, null, 2));
-        // Não bloquear, mas avisar claramente
+        return { ticket: newTicket, serverSyncFailed: true };
       }
     } catch (error) {
       console.error('❌ [PORTAL] Erro ao conectar com servidor de sincronização:', error);
@@ -464,12 +485,12 @@ export async function createTicket(
         stack: error instanceof Error ? error.stack : undefined
       });
       console.error('❌ [PORTAL] Ticket não foi criado no servidor, mas foi salvo localmente');
-      // Continuar mesmo se servidor não estiver disponível
+      return { ticket: newTicket, serverSyncFailed: true };
     }
     
     console.log('✅ [PORTAL] Ticket salvo no localStorage com sucesso!');
 
-    return newTicket;
+    return { ticket: newTicket };
   } catch (error) {
     console.error('❌ [PORTAL] Erro ao criar ticket:', error);
     return null;

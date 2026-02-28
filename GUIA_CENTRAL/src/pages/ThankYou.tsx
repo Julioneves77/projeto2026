@@ -1,13 +1,112 @@
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CheckCircle, Mail, MessageCircle, Clock, ArrowRight, Home } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { CheckCircle, Mail, MessageCircle, Clock, Home, Volume2, VolumeX } from "lucide-react";
+import { scrollToTop } from "@/lib/scrollUtils";
+
+const THANKYOU_STATE_KEY = "guia_central_thankyou_state";
+
+const formatCertificateName = (certificateType: string): string => {
+  const typeMap: Record<string, string> = {
+    "criminal-federal": "Certidão Negativa Criminal Federal",
+    "criminal-estadual": "Certidão Negativa Criminal Estadual",
+    "civel-federal": "Certidão Negativa Cível Federal",
+    "civel-estadual": "Certidão Negativa Cível Estadual",
+    "policia-federal": "Antecedentes Criminais de Polícia Federal",
+    "eleitoral": "Certidão de Quitação Eleitoral",
+    "cnd": "Certidão Negativa de Débito (CND)",
+    "cpf-regular": "Certidão CPF Regular",
+  };
+  return typeMap[certificateType] || certificateType;
+};
+
+const MOCK_PREVIEW = {
+  formData: { nome: "João Silva", email: "joao@exemplo.com", cpf: "123.456.789-00" },
+  selectedPlan: { id: "prioridade", name: "Certidão Atendimento Prioritário", description: "Processamento prioritário com especialista dedicado.", price: 54.87 },
+  certificateType: "criminal-federal",
+};
 
 const ThankYou = () => {
   const location = useLocation();
-  const { formData, selectedPlan, certificateType } = location.state || {};
+  const [stateFromStorage, setStateFromStorage] = useState<{ formData?: any; selectedPlan?: any; certificateType?: string } | null>(null);
+  const { formData: stateFormData, selectedPlan: stateSelectedPlan, certificateType: stateCertificateType } = location.state || {};
+  const [progress, setProgress] = useState(30);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Persistir state no sessionStorage quando vindo de location.state (para suportar refresh)
+  useEffect(() => {
+    if (stateFormData && stateSelectedPlan) {
+      try {
+        sessionStorage.setItem(THANKYOU_STATE_KEY, JSON.stringify({
+          formData: stateFormData,
+          selectedPlan: stateSelectedPlan,
+          certificateType: stateCertificateType,
+        }));
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    try {
+      const stored = sessionStorage.getItem(THANKYOU_STATE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setStateFromStorage(parsed);
+        sessionStorage.removeItem(THANKYOU_STATE_KEY);
+      } else {
+        setStateFromStorage({});
+      }
+    } catch {
+      setStateFromStorage({});
+    }
+  }, [stateFormData, stateSelectedPlan, stateCertificateType]);
+
+  // Em localhost/dev: usar mock para verificação (com ou sem ?preview=1)
+  const isPreview = import.meta.env.DEV && typeof window !== "undefined";
+  const formData = stateFormData || stateFromStorage?.formData || (isPreview ? MOCK_PREVIEW.formData : undefined);
+  const selectedPlan = stateSelectedPlan || stateFromStorage?.selectedPlan || (isPreview ? MOCK_PREVIEW.selectedPlan : undefined);
+  const certificateType = stateCertificateType || stateFromStorage?.certificateType || (isPreview ? MOCK_PREVIEW.certificateType : undefined);
+
+  useLayoutEffect(() => {
+    scrollToTop();
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setProgress((p) => Math.min(p + Math.random() * 8 + 2, 95));
+    }, 1500);
+    return () => clearInterval(t);
+  }, []);
+
+  const playThankYouAudio = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio("/audios/obrigado-1.mp3");
+    }
+    const audio = audioRef.current;
+    if (audioPlaying) {
+      audio.pause();
+      audio.currentTime = 0;
+      setAudioPlaying(false);
+      return;
+    }
+    audio.onended = () => setAudioPlaying(false);
+    audio.onerror = () => setAudioPlaying(false);
+    audio.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   if (!formData || !selectedPlan) {
     return (
@@ -24,29 +123,31 @@ const ThankYou = () => {
     );
   }
 
+  const PRAZO_VARIAVEL = "O prazo pode variar conforme o tipo de certidão e a região. Em muitos casos, a entrega ocorre rapidamente, mas pode levar mais tempo em situações específicas.";
+
   const getDeliveryInfo = () => {
     switch (selectedPlan.id) {
       case "padrao":
         return {
-          time: "até 3 dias úteis",
+          time: PRAZO_VARIAVEL,
           method: "E-mail",
           icon: <Mail className="h-6 w-6" />,
         };
       case "prioridade":
         return {
-          time: "até 24 horas",
+          time: PRAZO_VARIAVEL,
           method: "E-mail",
           icon: <Mail className="h-6 w-6" />,
         };
       case "premium":
         return {
-          time: "até 4 horas",
+          time: PRAZO_VARIAVEL,
           method: "E-mail e WhatsApp",
           icon: <MessageCircle className="h-6 w-6" />,
         };
       default:
         return {
-          time: "em breve",
+          time: PRAZO_VARIAVEL,
           method: "E-mail",
           icon: <Mail className="h-6 w-6" />,
         };
@@ -62,53 +163,70 @@ const ThankYou = () => {
         description="Sua solicitação foi recebida com sucesso. Você receberá sua certidão em breve."
       />
       {/* Hero */}
-      <section className="relative overflow-hidden gradient-hero py-16 lg:py-20">
+      <section className="relative overflow-hidden bg-primary py-12 lg:py-16">
         <div className="container relative">
           <div className="animate-slide-up text-center max-w-2xl mx-auto">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary-foreground/20 rounded-full mb-6 glow-green">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 rounded-full mb-6">
               <CheckCircle className="h-10 w-10 text-primary-foreground" />
             </div>
-            <h1 className="font-heading text-3xl font-bold text-primary-foreground sm:text-4xl">
+            <h1 className="text-3xl font-bold text-primary-foreground sm:text-4xl">
               Pagamento Confirmado!
             </h1>
-            <p className="mt-4 text-lg text-primary-foreground/80">
+            <p className="mt-4 text-lg text-primary-foreground/90">
               Sua solicitação foi recebida com sucesso
             </p>
+            <div className="mt-6 inline-block px-4 py-2 rounded-lg bg-white/20">
+              <span className="text-sm font-semibold text-primary-foreground">Em processamento</span>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Content */}
-      <section className="py-12">
-        <div className="container max-w-2xl">
-          <Card className="tech-card hex-corners p-8 border-border/60">
+      <section className="py-8 sm:py-12">
+        <div className="container max-w-2xl px-4 sm:px-6">
+          <Card className="rounded-xl border border-slate-200 bg-white p-4 sm:p-8 shadow-sm">
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-2">Status da solicitação</p>
+              <Progress value={progress} className="h-2" />
+            </div>
+            <p className="text-center text-muted-foreground mb-6 font-medium">
+              Você receberá as informações no seu e-mail
+            </p>
             <div className="text-center mb-8">
-              <h2 className="font-heading text-xl font-bold text-foreground mb-2">
-                {selectedPlan.name}
+              <h2 className="text-xl font-bold text-foreground mb-2">
+                {certificateType ? formatCertificateName(certificateType) : selectedPlan.name}
               </h2>
-              <p className="text-muted-foreground">
-                {selectedPlan.description}
-              </p>
+              <button
+                type="button"
+                onClick={playThankYouAudio}
+                className={`inline-flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] mt-2 px-3 py-2 text-sm font-semibold transition-colors ${audioPlaying ? "text-muted-foreground hover:text-foreground" : "text-[#E05A4D] hover:text-[#c94d42] animate-pulse-red-discrete"}`}
+                title={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+                aria-label={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+              >
+                {audioPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                {audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
+              </button>
             </div>
 
             {/* Delivery Info */}
-            <div className="bg-muted rounded-xl p-6 mb-8">
-              <h3 className="font-heading font-semibold text-foreground mb-4 text-center">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mb-8">
+              <h3 className="font-semibold text-foreground mb-4 text-center">
                 Informações de Entrega
               </h3>
               
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex items-center gap-3 bg-background rounded-lg p-4">
-                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 bg-white rounded-lg p-4 border border-slate-200">
+                  <div className="p-2 bg-primary/10 rounded-lg text-primary flex-shrink-0">
                     <Clock className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Prazo de Entrega</p>
-                    <p className="font-medium text-foreground">{deliveryInfo.time}</p>
+                    <p className="text-sm text-muted-foreground mb-1">Prazo de Entrega</p>
+                    <p className="text-sm font-medium text-foreground">{deliveryInfo.time}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-background rounded-lg p-4">
+                <div className="flex items-center gap-3 bg-white rounded-lg p-4 border border-slate-200">
                   <div className="p-2 bg-primary/10 rounded-lg text-primary">
                     {deliveryInfo.icon}
                   </div>
@@ -118,13 +236,10 @@ const ThankYou = () => {
                   </div>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground text-center mt-4">
-                Os prazos podem variar dependendo da certidão ou comarca, podendo chegar até 24 horas em alguns casos.
-              </p>
             </div>
 
             {/* Email Info */}
-            <div className="text-center mb-8 p-4 bg-accent/50 rounded-lg">
+            <div className="text-center mb-8 p-4 bg-primary/5 border border-slate-200 rounded-xl">
               <p className="text-sm text-muted-foreground mb-1">
                 A certidão será enviada para:
               </p>
@@ -133,57 +248,18 @@ const ThankYou = () => {
               </p>
             </div>
 
-            {/* Orientação - Próximos Passos */}
-            <div className="space-y-4 mb-8">
-              <h3 className="font-heading font-semibold text-foreground">
-                Orientação — O que fazer a seguir
-              </h3>
-              <ul className="space-y-3">
-                <li className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-xs font-bold text-primary">
-                    1
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Você receberá um e-mail de confirmação com os detalhes do pedido. Verifique sua caixa de entrada e a pasta de spam.
-                  </p>
-                </li>
-                <li className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-xs font-bold text-primary">
-                    2
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Nossa equipe iniciará o processamento da sua certidão. O prazo de entrega é {deliveryInfo.time} conforme o plano escolhido.
-                  </p>
-                </li>
-                <li className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-xs font-bold text-primary">
-                    3
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Assim que pronta, a certidão será enviada {deliveryInfo.method.toLowerCase() === "e-mail" ? "para seu e-mail" : "por e-mail e WhatsApp"} em formato PDF.
-                  </p>
-                </li>
-              </ul>
-              <p className="text-sm text-muted-foreground mt-4">
-                Dúvidas? Entre em contato: <a href="mailto:contato@guia-central.online" className="text-primary hover:underline font-medium">contato@guia-central.online</a>
-              </p>
-            </div>
-
             {/* CTA */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button asChild size="lg">
+              <Button asChild size="lg" className="font-bold">
                 <Link to="/">
-                  Voltar ao Início
+                  Voltar ao início
                   <Home className="h-4 w-4 ml-2" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link to="/contato">
-                  Precisa de Ajuda?
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Link>
-              </Button>
             </div>
+            <p className="text-sm text-muted-foreground text-center mt-4">
+              Dúvidas? <Link to="/contato" className="text-primary hover:underline font-medium">Fale Conosco</Link>
+            </p>
           </Card>
         </div>
       </section>

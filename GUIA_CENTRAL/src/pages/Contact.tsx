@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import Layout from "@/components/layout/Layout";
+import { getRecaptchaToken } from "@/lib/recaptcha";
+import { RECAPTCHA_CONFIG } from "@/config/recaptcha";
 import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,21 +25,6 @@ interface FormErrors {
   mensagem?: string;
 }
 
-const getRecaptchaToken = async (
-  executeRecaptcha: (action: string) => Promise<string>
-): Promise<string> => {
-  try {
-    return await executeRecaptcha("contact_submit");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "";
-    if (msg.includes("not loaded") || msg.includes("api.js")) {
-      await new Promise((r) => setTimeout(r, 1500));
-      return executeRecaptcha("contact_submit");
-    }
-    throw err;
-  }
-};
-
 const Contact = () => {
   const [form, setForm] = useState<ContactForm>({
     nome: "",
@@ -48,7 +34,6 @@ const Contact = () => {
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { executeRecaptcha } = useGoogleReCaptcha();
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -69,10 +54,10 @@ const Contact = () => {
     e.preventDefault();
     if (!validateForm()) return;
 
-    if (!executeRecaptcha) {
+    if (!RECAPTCHA_CONFIG.siteKey) {
       toast({
-        title: "Erro de verificação",
-        description: "reCAPTCHA não está pronto. Recarregue a página e tente novamente.",
+        title: "Erro de configuração",
+        description: "reCAPTCHA não configurado. Entre em contato com o suporte.",
         variant: "destructive",
       });
       return;
@@ -81,7 +66,7 @@ const Contact = () => {
     setIsSubmitting(true);
 
     try {
-      const recaptchaToken = await getRecaptchaToken(executeRecaptcha);
+      const recaptchaToken = await getRecaptchaToken(RECAPTCHA_CONFIG.siteKey);
       const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || "http://localhost:3001";
       const mensagemCompleta = form.telefone
         ? `Telefone: ${form.telefone}\n\n${form.mensagem}`
@@ -137,11 +122,11 @@ const Contact = () => {
         title="Contato - Guia Central"
         description="Entre em contato conosco. Estamos prontos para ajudar com suas dúvidas sobre certidões."
       />
-      <section className="relative overflow-hidden gradient-hero py-16 lg:py-24">
+      <section className="relative overflow-hidden bg-primary py-12 lg:py-16">
         <div className="container relative">
           <div className="mx-auto max-w-2xl text-center animate-slide-up">
-            <h1 className="font-heading text-4xl font-bold text-primary-foreground sm:text-5xl">Fale Conosco</h1>
-            <p className="mt-4 text-lg text-primary-foreground/80">Estamos aqui para ajudar você</p>
+            <h1 className="text-3xl font-bold text-primary-foreground sm:text-4xl">Fale Conosco</h1>
+            <p className="mt-4 text-lg text-primary-foreground/90">Estamos aqui para ajudar você</p>
           </div>
         </div>
       </section>
@@ -151,13 +136,13 @@ const Contact = () => {
           <div className="mx-auto max-w-5xl">
             <div className="grid gap-12 lg:grid-cols-3">
               <div className="space-y-6">
-                <div className="tech-card hex-corners rounded-2xl border border-border/60 bg-card p-6 card-shadow">
+                <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
                       <Clock className="h-6 w-6" />
                     </div>
                     <div>
-                      <h3 className="font-heading font-semibold text-foreground">Horário</h3>
+                      <h3 className="font-semibold text-foreground">Horário</h3>
                       <p className="mt-1 text-sm text-muted-foreground">
                         Segundas às sexta-feiras
                         <br />
@@ -171,9 +156,9 @@ const Contact = () => {
               <div className="lg:col-span-2">
                 <form
                   onSubmit={handleSubmit}
-                  className="tech-card hex-corners rounded-2xl border border-border/60 bg-card p-8 card-shadow"
+                  className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm"
                 >
-                  <h2 className="font-heading text-2xl font-bold text-foreground mb-6">Envie sua mensagem</h2>
+                  <h2 className="text-xl font-bold text-foreground mb-6">Envie sua mensagem</h2>
                   <div className="grid gap-6 sm:grid-cols-2">
                     <FormField label="Nome" required error={errors.nome}>
                       <Input

@@ -110,7 +110,7 @@ export function Dashboard() {
               type="date"
               value={dataInicio}
               onChange={(e) => setDataInicio(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-input bg-background text-foreground"
+              className="px-3 py-2 min-h-[44px] text-sm rounded-lg border border-input bg-background text-foreground"
               placeholder="Início"
             />
             <span className="text-muted-foreground">-</span>
@@ -118,7 +118,7 @@ export function Dashboard() {
               type="date"
               value={dataFim}
               onChange={(e) => setDataFim(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-input bg-background text-foreground"
+              className="px-3 py-2 min-h-[44px] text-sm rounded-lg border border-input bg-background text-foreground"
               placeholder="Fim"
             />
           </div>
@@ -217,12 +217,12 @@ export function Dashboard() {
               .sort((a, b) => new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime())
               .slice(0, 5)
               .map((ticket) => (
-                <div key={ticket.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
+                <div key={ticket.id} className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">{ticket.codigo}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-[180px]">{ticket.nomeCompleto}</p>
+                    <p className="text-xs text-muted-foreground truncate">{ticket.nomeCompleto}</p>
                   </div>
-                  <span className={`status-badge ${
+                  <span className={`status-badge shrink-0 ${
                     ticket.status === 'CONCLUIDO' ? 'status-complete' :
                     ticket.status === 'AGUARDANDO_INFO' ? 'status-waiting' :
                     ticket.status === 'FINANCEIRO' ? 'status-financial' :
@@ -254,12 +254,12 @@ export function Dashboard() {
               .sort((a, b) => new Date(b.dataConclusao || 0).getTime() - new Date(a.dataConclusao || 0).getTime())
               .slice(0, 5)
               .map((ticket) => (
-                <div key={ticket.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
+                <div key={ticket.id} className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">{ticket.codigo}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-[180px]">{ticket.nomeCompleto}</p>
+                    <p className="text-xs text-muted-foreground truncate">{ticket.nomeCompleto}</p>
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground shrink-0">
                     {ticket.dataConclusao && new Date(ticket.dataConclusao).toLocaleDateString('pt-BR')}
                   </span>
                 </div>

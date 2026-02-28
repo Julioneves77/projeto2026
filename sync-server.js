@@ -2031,7 +2031,7 @@ app.post('/tickets/:id/plexi/retry', authenticateRequest, express.json(), (req, 
     });
   }
 
-  const registryKey = getRegistryKey(ticket);
+  const registryKey = getRegistryKey(ticket.tipoCertidao);
   if (!registryKey || !ServiceRegistry[registryKey]) {
     return res.status(400).json({
       error: `Esta certidão não possui API disponível na Plexi. Tipo: ${ticket.tipoCertidao}. A Plexi não oferece endpoint para este tipo de certidão.`,

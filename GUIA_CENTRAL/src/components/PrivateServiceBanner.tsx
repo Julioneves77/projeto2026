@@ -8,21 +8,21 @@ const PrivateServiceBanner = () => {
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
-        className="relative rounded-xl border border-yellow-500/20 bg-card shadow-sm overflow-hidden"
+        className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
       >
         {/* Top accent line */}
-        <div className="h-[2px] bg-gradient-to-r from-transparent via-yellow-500/60 to-transparent" />
+        <div className="h-1 bg-primary/20" />
 
         <div className="p-8 md:p-10">
           <div className="flex items-start gap-4 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5 text-yellow-500" />
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
             </div>
             <div>
-              <h3 className="text-lg md:text-xl font-orbitron font-bold text-foreground tracking-wider">
-                AVISO: PLATAFORMA PRIVADA
+              <h3 className="text-lg md:text-xl font-bold text-foreground">
+                Aviso: Plataforma Privada
               </h3>
-              <p className="text-xs font-mono text-muted-foreground mt-1">Serviço independente de automação</p>
+              <p className="text-sm text-muted-foreground mt-1">Serviço independente de automação</p>
             </div>
           </div>
 
@@ -49,10 +49,10 @@ const PrivateServiceBanner = () => {
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
               transition={{ delay: 0.3 }}
-              className="flex items-start gap-3 mt-5 p-4 rounded-lg bg-muted/50 border border-border/50"
+              className="flex items-start gap-3 mt-5 p-4 rounded-lg bg-slate-50 border border-slate-200"
             >
               <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-              <p className="text-xs font-mono leading-relaxed">
+              <p className="text-xs leading-relaxed">
                 <strong className="text-foreground">DISCLAIMER:</strong> Não somos site do governo. Os documentos são
                 processados pelas fontes oficiais; nossa plataforma apenas automatiza a solicitação e o
                 acompanhamento. Você pode solicitar diretamente nos órgãos públicos, mas oferecemos tecnologia,

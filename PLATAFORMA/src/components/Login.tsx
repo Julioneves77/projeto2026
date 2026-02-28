@@ -43,7 +43,7 @@ export function Login() {
         </div>
 
         {/* Login Card */}
-        <div className="bg-card rounded-2xl shadow-strong border border-border p-8">
+        <div className="bg-card rounded-2xl shadow-strong border border-border p-5 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div className="space-y-2">
@@ -59,7 +59,7 @@ export function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu@email.com"
                   required
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                  className="w-full pl-11 pr-4 py-3 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-base"
                 />
               </div>
             </div>
@@ -78,7 +78,7 @@ export function Login() {
                   onChange={(e) => setSenha(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                  className="w-full pl-11 pr-4 py-3 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-base"
                 />
               </div>
             </div>
@@ -95,7 +95,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-70"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 min-h-[44px] bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-70 touch-manipulation"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -119,7 +119,7 @@ export function Login() {
                   setSenha('admin123');
                   login('admin@empresasvirtuais.com', 'admin123');
                 }}
-                className="flex items-center justify-between px-3 py-2.5 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group"
+                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
               >
                 <span className="text-sm font-medium text-foreground">Administrador</span>
                 <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -131,7 +131,7 @@ export function Login() {
                   setSenha('financeiro123');
                   login('financeiro@empresasvirtuais.com', 'financeiro123');
                 }}
-                className="flex items-center justify-between px-3 py-2.5 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group"
+                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
               >
                 <span className="text-sm font-medium text-foreground">Financeiro</span>
                 <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -143,7 +143,7 @@ export function Login() {
                   setSenha('atendente123');
                   login('atendente@empresasvirtuais.com', 'atendente123');
                 }}
-                className="flex items-center justify-between px-3 py-2.5 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group"
+                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
               >
                 <span className="text-sm font-medium text-foreground">Atendente</span>
                 <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />

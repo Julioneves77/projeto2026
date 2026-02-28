@@ -93,6 +93,18 @@ function initDatabase() {
       }
     } catch (e) { /* ignore */ }
 
+    // Migration: marcar conversões de teste existentes como status=TEST (nunca exportar)
+    try {
+      const updated = db.prepare(`
+        UPDATE offline_conversions SET status='TEST' WHERE status IN ('PENDING','PENDING_NO_CLICKID')
+        AND (ticket_id LIKE 'test-%' OR ticket_id = '_test_write_' OR UPPER(gclid) IN ('TEST-CONN','TESTE123','TESTE')
+          OR UPPER(conversion_name) LIKE '%TEST%' OR UPPER(conversion_name) LIKE '%TEST-CONN%' OR conversion_value <= 0.01)
+      `).run();
+      if (updated.changes > 0) {
+        console.log(`✅ [GclidSheets] ${updated.changes} conversões de teste marcadas como status=TEST`);
+      }
+    } catch (e) { /* ignore */ }
+
     console.log('✅ [GclidSheets] Banco inicializado');
     return db;
   } catch (e) {
@@ -118,7 +130,7 @@ function saveIntegration(config) {
   const now = new Date().toISOString();
   const data = {
     spreadsheet_id: config.spreadsheet_id || '',
-    worksheet_name: config.worksheet_name || 'Conversões',
+    worksheet_name: config.worksheet_name || 'Página1',
     conversion_name: config.conversion_name || '',
     default_conversion_value: config.default_conversion_value ?? null,
     currency: config.currency || 'BRL',
@@ -255,7 +267,12 @@ function upsertConversion(conv) {
 function getPendingConversions(limit = 500) {
   return getDb().prepare(`
     SELECT * FROM offline_conversions
-    WHERE status = 'PENDING' AND gclid IS NOT NULL AND gclid != ''
+    WHERE status IN ('PENDING', 'PENDING_NO_CLICKID')
+    AND ticket_id NOT LIKE 'test-%' AND ticket_id != '_test_write_'
+    AND gclid IS NOT NULL AND gclid != '' AND LENGTH(gclid) >= 10
+    AND UPPER(gclid) NOT IN ('TEST-CONN', 'TESTE123', 'TESTE')
+    AND UPPER(conversion_name) NOT LIKE '%TEST%' AND UPPER(conversion_name) NOT LIKE '%TEST-CONN%' AND UPPER(conversion_name) NOT LIKE '%TESTE%'
+    AND (conversion_value IS NULL OR conversion_value > 0.01)
     ORDER BY id ASC LIMIT ?
   `).all(limit);
 }
@@ -296,11 +313,15 @@ function setPending(id) {
 }
 
 function listConversions(filters = {}) {
-  let sql = 'SELECT * FROM offline_conversions WHERE 1=1';
+  let sql = "SELECT * FROM offline_conversions WHERE ticket_id != '_test_write_'";
   const params = [];
   if (filters.status) {
-    sql += ' AND status = ?';
-    params.push(filters.status);
+    if (filters.status === 'PENDING') {
+      sql += " AND status IN ('PENDING', 'PENDING_NO_CLICKID')";
+    } else {
+      sql += ' AND status = ?';
+      params.push(filters.status);
+    }
   }
   if (filters.hasGclid === true) {
     sql += " AND gclid IS NOT NULL AND gclid != ''";
@@ -323,10 +344,11 @@ function listConversions(filters = {}) {
 
 function getConversionStats() {
   const d = getDb();
-  const pending = d.prepare("SELECT COUNT(*) as c FROM offline_conversions WHERE status='PENDING'").get();
+  const pending = d.prepare("SELECT COUNT(*) as c FROM offline_conversions WHERE status IN ('PENDING', 'PENDING_NO_CLICKID')").get();
   const exportedToday = d.prepare(`
     SELECT COUNT(*) as c FROM offline_conversions
     WHERE status='EXPORTED' AND date(exported_at) = date('now', 'localtime')
+    AND ticket_id != '_test_write_'
   `).get();
   const lastError = d.prepare(`
     SELECT error_message FROM offline_conversions WHERE status='ERROR' ORDER BY id DESC LIMIT 1

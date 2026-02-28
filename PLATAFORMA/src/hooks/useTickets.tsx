@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { Ticket, HistoricoItem, TicketStatus } from '@/types';
 import { ticketsMock } from '@/data/mockData';
+import { safeStorage } from '@/lib/safeStorage';
 
 interface TicketsContextType {
   tickets: Ticket[];
@@ -124,21 +125,12 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
               status: t.status,
               dataCadastro: t.dataCadastro
             }));
-            localStorage.setItem(TICKETS_KEY, JSON.stringify(compactData));
-            localStorage.setItem('av_tickets_version', '3');
+            safeStorage.setItem(TICKETS_KEY, JSON.stringify(compactData));
+            safeStorage.setItem('av_tickets_version', '3');
           } catch (error: any) {
-            if (error.name === 'QuotaExceededError') {
-              console.warn('⚠️ [PLATAFORMA] Quota do localStorage excedida, limpando dados antigos...');
-              // Limpar localStorage e tentar novamente com menos dados
-              try {
-                localStorage.removeItem(TICKETS_KEY);
-                localStorage.removeItem('av_tickets_version');
-              } catch (cleanError) {
-                console.warn('⚠️ [PLATAFORMA] Não foi possível salvar no localStorage, usando apenas servidor');
-                // Não salvar nada - servidor está disponível mesmo
-              }
-            } else {
-              console.warn('⚠️ [PLATAFORMA] Erro ao salvar no localStorage:', error);
+            if (error?.name === 'QuotaExceededError') {
+              safeStorage.removeItem(TICKETS_KEY);
+              safeStorage.removeItem('av_tickets_version');
             }
           }
           return;
@@ -148,9 +140,9 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
       console.warn('⚠️ [PLATAFORMA] Servidor de sincronização não disponível, usando localStorage:', error);
     }
     
-    // Fallback para localStorage
-    const stored = localStorage.getItem(TICKETS_KEY);
-    const storedVersion = localStorage.getItem('av_tickets_version');
+    // Fallback para localStorage (safeStorage para Safari modo privado)
+    const stored = safeStorage.getItem(TICKETS_KEY);
+    const storedVersion = safeStorage.getItem('av_tickets_version');
     const currentVersion = '3';
     
     if (stored) {
@@ -283,24 +275,16 @@ export function TicketsProvider({ children }: { children: ReactNode }) {
         }))
       }));
       
-      localStorage.setItem(TICKETS_KEY, JSON.stringify(compactTickets));
+      safeStorage.setItem(TICKETS_KEY, JSON.stringify(compactTickets));
     } catch (error: any) {
-      if (error.name === 'QuotaExceededError') {
-        console.warn('⚠️ [PLATAFORMA] Quota excedida em saveTickets, limpando...');
-        try {
-          localStorage.removeItem(TICKETS_KEY);
-          // Salvar apenas dados essenciais
-          const minimalData = newTickets.slice(-20).map(t => ({
-            id: t.id,
-            codigo: t.codigo,
-            status: t.status
-          }));
-          localStorage.setItem(TICKETS_KEY, JSON.stringify(minimalData));
-        } catch (cleanError) {
-          console.warn('⚠️ [PLATAFORMA] Não foi possível salvar no localStorage');
-        }
-      } else {
-        console.warn('⚠️ [PLATAFORMA] Erro ao salvar no localStorage:', error);
+      if (error?.name === 'QuotaExceededError') {
+        safeStorage.removeItem(TICKETS_KEY);
+        const minimalData = newTickets.slice(-20).map(t => ({
+          id: t.id,
+          codigo: t.codigo,
+          status: t.status
+        }));
+        safeStorage.setItem(TICKETS_KEY, JSON.stringify(minimalData));
       }
     }
     
