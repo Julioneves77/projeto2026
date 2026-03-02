@@ -304,8 +304,12 @@ const ServiceRegistry = {
       const df = ticket.dadosFormulario || {};
       const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
       const cpf = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
-      const nomeMae = (df.nomeMae || '').trim();
+      const nomeMae = (df.nomeMae || ticket.nomeMae || '').toString().trim();
       const dataNascimento = formatDataPlexi(ticket.dataNascimento || df.dataNascimento);
+      if (!nome) throw new Error('Antecedentes PF: nome é obrigatório.');
+      if (!cpf || cpf.length !== 11) throw new Error('Antecedentes PF: CPF inválido (11 dígitos).');
+      if (!nomeMae) throw new Error('Antecedentes PF: nome da mãe é obrigatório (API Plexi exige).');
+      if (!dataNascimento) throw new Error('Antecedentes PF: data de nascimento é obrigatória.');
       return { nome, cpf, nomeMae, dataNascimento };
     }
   },
@@ -441,13 +445,13 @@ function getRegistryKey(tipoCertidao) {
 function getTicketFieldValue(ticket, fieldName) {
   const df = ticket.dadosFormulario || {};
   const rootMap = {
-    nomeCompleto: ticket.nomeCompleto,
-    cpfSolicitante: ticket.cpfSolicitante,
-    dataNascimento: ticket.dataNascimento,
-    estadoEmissao: ticket.estadoEmissao || df.estadoSelecionado,
-    email: ticket.email,
-    telefone: ticket.telefone,
-    nomeMae: df.nomeMae
+    nomeCompleto: ticket.nomeCompleto || df.nomeCompleto || df.nome,
+    cpfSolicitante: ticket.cpfSolicitante || df.cpf,
+    dataNascimento: ticket.dataNascimento || df.dataNascimento,
+    estadoEmissao: ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao,
+    email: ticket.email || df.email,
+    telefone: ticket.telefone || df.telefone,
+    nomeMae: df.nomeMae || ticket.nomeMae
   };
   return rootMap[fieldName] ?? df[fieldName] ?? ticket[fieldName] ?? '';
 }

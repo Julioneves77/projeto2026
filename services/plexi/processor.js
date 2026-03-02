@@ -245,6 +245,10 @@ async function processTicket(ticketId, options) {
           const masked = payload.cpfCnpj ? { ...payload, cpfCnpj: maskCpfCnpj(payload.cpfCnpj) } : payload;
           console.log('[Plexi] TRF3 Eleitoral request', { endpoint, payload: masked, ticketId: ticket.codigo });
         }
+        if (registryKey === 'ANTECEDENTES_PF') {
+          const masked = { ...payload, cpf: payload.cpf ? maskCpfCnpj(payload.cpf) : payload.cpf };
+          console.log('[Plexi] Antecedentes PF request', { endpoint, payload: masked, ticketId: ticket.codigo });
+        }
         const result = await callPlexiStart(endpoint, payload, ticketId);
         plexiRequestId = result.requestId || result.id || result.plexiRequestId;
         if (!plexiRequestId) {
@@ -265,6 +269,9 @@ async function processTicket(ticketId, options) {
 
         if (registryKey === 'ELEITORAL_NEGATIVA' && (is422 || err.plexiErrors)) {
           console.log('[Plexi] TRF3 Eleitoral erro', { status: err.plexiStatus, errors: err.plexiErrors, ticketId: ticket.codigo });
+        }
+        if (registryKey === 'ANTECEDENTES_PF' && (is422 || err.plexiErrors)) {
+          console.log('[Plexi] Antecedentes PF erro', { status: err.plexiStatus, errors: err.plexiErrors, ticketId: ticket.codigo });
         }
 
         if ((is5xx || isTimeout) && attempts < MAX_AUTO_RETRIES) {
