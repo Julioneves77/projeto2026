@@ -13,6 +13,7 @@ import Terms from "./pages/Terms";
 import Contact from "./pages/Contact";
 import Sobre from "./pages/Sobre";
 import CertificateForm from "./pages/CertificateForm";
+import Processamento from "./pages/Processamento";
 import Payment from "./pages/Payment";
 import ThankYou from "./pages/ThankYou";
 import CookieBanner from "./components/CookieBanner";
@@ -40,6 +41,7 @@ const App = () => (
           <Route path="/sobre" element={<Sobre />} />
           <Route path="/certidao/:category" element={<CertificateForm />} />
           <Route path="/confirmar-pagamento" element={<Navigate to={`/pagamento${window.location.search}`} replace />} />
+          <Route path="/processamento" element={<Processamento />} />
           <Route path="/pagamento" element={<Payment />} />
           <Route path="/obrigado" element={<ThankYou />} />
           <Route path="*" element={<NotFound />} />

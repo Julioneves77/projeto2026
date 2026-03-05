@@ -66,7 +66,7 @@ export function Users() {
     setShowForm(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!nome.trim() || !email.trim()) {
@@ -93,9 +93,9 @@ export function Users() {
       if (senha.trim()) {
         updates.senha = senha.trim();
       }
-      updateUser(editingUser.id, updates);
+      await updateUser(editingUser.id, updates);
     } else {
-      addUser({
+      await addUser({
         nome: nome.trim(),
         email: email.trim(),
         senha: senha.trim(),

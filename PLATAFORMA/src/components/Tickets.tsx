@@ -96,6 +96,17 @@ export function Tickets() {
            d.getFullYear() === today.getFullYear();
   };
 
+  // REGRA GERAL: aba Geral exibe apenas tickets dos últimos 3 dias (dataCadastro)
+  const GERAL_MAX_DIAS = 3;
+  const isDentroDosUltimos3Dias = (date: Date | string | null): boolean => {
+    if (!date) return false;
+    const d = new Date(date);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= GERAL_MAX_DIAS;
+  };
+
   // Tickets "em solicitação" = PROCESSING ou bloqueado (já solicitado) - ficam em Solicitadas, não em Em Operação
   const isEmSolicitadas = (t: Ticket) => {
     if (!['EM_OPERACAO', 'EM_ATENDIMENTO'].includes(t.status)) return false;
@@ -106,10 +117,11 @@ export function Tickets() {
   };
 
   // Filtrar tickets por aba
+  // REGRA GERAL: só exibe tickets dos últimos 3 dias (tickets mais antigos são arquivados automaticamente pelo sistema)
   const filterByTab = (ticket: Ticket): boolean => {
     switch (activeTab) {
       case 'geral':
-        return ticket.status === 'GERAL';
+        return ticket.status === 'GERAL' && isDentroDosUltimos3Dias(ticket.dataCadastro);
       case 'solicitadas':
         return isEmSolicitadas(ticket);
       case 'em_operacao':
@@ -346,8 +358,9 @@ export function Tickets() {
   // Verifica se pode detalhar
   const canDetalhar = (ticket: Ticket): boolean => {
     if (userRole === 'admin') return true;
-    // Financeiro: só pode detalhar se já atribuiu a si (em_operacao) ou em concluídos
+    // Financeiro: pode detalhar em solicitadas (ver status Plexi), em_operacao (se atribuiu), concluídos
     if (userRole === 'financeiro') {
+      if (activeTab === 'solicitadas') return true;
       if (activeTab === 'concluidos') return true;
       if (activeTab === 'em_operacao') return ticket.operador === currentUser?.nome;
     }
@@ -459,7 +472,7 @@ export function Tickets() {
                     <p className="font-mono text-sm font-semibold text-foreground">{ticket.codigo}</p>
                     <p className="text-sm text-muted-foreground">{ticket.nomeCompleto}</p>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 relative z-10">
                     <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${getStatusBadgeClass(ticket.status)}`}>
                       {getStatusLabel(ticket.status)}
                     </span>
@@ -469,7 +482,7 @@ export function Tickets() {
                           <MoreVertical className="w-5 h-5 text-muted-foreground" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuContent align="end" side="top" className="w-48 z-[9999]" sideOffset={4}>
                         {canAtribuir(ticket) && (
                           <DropdownMenuItem onClick={() => handleAtribuirAction(ticket)}>
                             <UserPlus className="w-4 h-4 mr-2" />
@@ -860,14 +873,14 @@ export function Tickets() {
                       })()}
                     </td>
                   )}
-                  <td className="px-3 py-3 text-center" style={{ width: columnWidths.acoes }}>
+                  <td className="px-3 py-3 text-center relative z-10" style={{ width: columnWidths.acoes }}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className="p-2 rounded-lg hover:bg-muted transition-colors">
                           <MoreVertical className="w-5 h-5 text-muted-foreground" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuContent align="end" side="top" className="w-48 z-[9999]" sideOffset={4}>
                         {canAtribuir(ticket) && (
                           <DropdownMenuItem onClick={() => handleAtribuirAction(ticket)}>
                             <UserPlus className="w-4 h-4 mr-2" />

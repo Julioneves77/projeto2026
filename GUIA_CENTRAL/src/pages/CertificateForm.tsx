@@ -33,6 +33,8 @@ import {
 } from "@/lib/validations";
 import {
   COMARCAS_RJ,
+  COMARCAS_MS,
+  COMARCAS_MG,
   FINALIDADES_RJ,
   CIDADES_SE,
   ESTADOS_BRASIL,
@@ -717,8 +719,8 @@ const CertificateForm = () => {
       console.warn("[CertificateForm] Falha ao persistir state:", e);
     }
 
-    const pagamentoUrl = source ? `/pagamento?source=${source}` : "/pagamento";
-    navigate(pagamentoUrl, { state: paymentState });
+    const processamentoUrl = source ? `/processamento?source=${source}` : "/processamento";
+    navigate(processamentoUrl, { state: paymentState });
   };
 
   const getSelectOptions = (optionsKey?: string): Array<{ value: string; label: string }> => {
@@ -727,6 +729,10 @@ const CertificateForm = () => {
     switch (optionsKey) {
       case "comarcasRJ":
         return COMARCAS_RJ.map((c) => ({ value: c, label: c }));
+      case "comarcasMS":
+        return COMARCAS_MS.map((c) => ({ value: c, label: c }));
+      case "comarcasMG":
+        return COMARCAS_MG.map((c) => ({ value: c.value, label: c.label }));
       case "finalidadesRJ":
         return FINALIDADES_RJ.map((f) => ({ value: f, label: f }));
       case "cidadesSE":

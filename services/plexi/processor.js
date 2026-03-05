@@ -205,8 +205,9 @@ async function processTicket(ticketId, options) {
 
     const config = ServiceRegistry[registryKey];
 
-    // 4. Validar requiredFields
-    const { valid, missing } = validateRequiredFields(ticket, config.requiredFields);
+    // 4. Validar requiredFields (pode ser array ou função para campos condicionais por estado)
+    const requiredFields = typeof config.requiredFields === 'function' ? config.requiredFields(ticket) : config.requiredFields;
+    const { valid, missing } = validateRequiredFields(ticket, requiredFields);
     if (!valid) {
       const labels = formatMissingFieldsForUser(missing);
       const errMsg = `Dados faltando: ${labels}. Adicione esses campos no formulário de solicitação ou preencha manualmente no ticket e reenvie.`;
@@ -318,11 +319,16 @@ async function processTicket(ticketId, options) {
       return;
     }
 
+    const pollTimeout = config.pollTimeoutMs ?? POLL_TIMEOUT_MS;
     const startPoll = Date.now();
     let pdfBase64 = null;
     let pdfUrl = null;
 
-    while (Date.now() - startPoll < POLL_TIMEOUT_MS) {
+    if (registryKey === 'ANTECEDENTES_PF') {
+      console.log(`[Plexi] Antecedentes PF: polling até ${Math.round(pollTimeout / 60000)} min`);
+    }
+
+    while (Date.now() - startPoll < pollTimeout) {
       await sleep(POLL_INTERVAL_MS);
       try {
         const resultRes = await callPlexiResult(plexiRequestId);
@@ -334,11 +340,28 @@ async function processTicket(ticketId, options) {
         mergeAndSaveTicket(ticketId, tickets[ticketIndex], options);
 
         if (resultRes.done) {
-          const rawPdf = resultRes.pdf || resultRes.base64;
-          pdfBase64 = Array.isArray(rawPdf) ? rawPdf[0] : rawPdf;
-          pdfUrl = resultRes.url;
-          if (resultRes.status === 'erro' && resultRes.mensagem) {
+          // PDF pode vir em várias estruturas (Plexi pode retornar direto ou aninhado)
+          const statusVal = resultRes.status || resultRes.data?.status;
+          const rawPdf =
+            resultRes.pdf ||
+            resultRes.base64 ||
+            resultRes.data?.pdf ||
+            resultRes.data?.base64 ||
+            resultRes.document ||
+            (resultRes.data && (resultRes.data.document || resultRes.data.conteudo)) ||
+            resultRes.result?.pdf ||
+            resultRes.response?.pdf;
+          pdfBase64 = Array.isArray(rawPdf) ? rawPdf[0] : (typeof rawPdf === 'string' ? rawPdf : null);
+          pdfUrl = resultRes.url || resultRes.data?.url;
+          // Só lançar erro se status=erro E não tiver PDF (quando tem PDF, enviamos mesmo em erro)
+          if (statusVal === 'erro' && resultRes.mensagem && !pdfBase64 && !pdfUrl) {
             throw new Error(resultRes.mensagem);
+          }
+          if (registryKey === 'ANTECEDENTES_PF') {
+            console.log(`[Plexi] Antecedentes PF: status=${statusVal}, pdf=${!!pdfBase64}, url=${!!pdfUrl}`);
+            if (!pdfBase64 && !pdfUrl) {
+              console.warn(`[Plexi] Antecedentes PF sem PDF - keys: ${Object.keys(resultRes).join(', ')}`);
+            }
           }
           break;
         }

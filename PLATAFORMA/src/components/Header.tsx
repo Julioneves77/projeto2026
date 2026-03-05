@@ -41,7 +41,7 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'financeiro', 'atendente'] },
     { id: 'tickets', label: 'Tickets', icon: Ticket, roles: ['admin', 'financeiro', 'atendente'], badge: ticketsEmOperacaoSemOperador },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3, roles: ['admin'] },
-    { id: 'estatisticas', label: 'Estatísticas', icon: TrendingUp, roles: ['admin'] },
+    { id: 'estatisticas', label: 'Estatísticas', icon: TrendingUp, roles: ['admin', 'financeiro'] },
     { id: 'usuarios', label: 'Usuários', icon: Users, roles: ['admin'] },
     { id: 'estabilidade', label: 'Estabilidade', icon: Activity, roles: ['admin', 'financeiro'], showStatus: true },
     { id: 'conversoes-sheets', label: 'Conversões (GCLID)', icon: Sheet, roles: ['admin'] },

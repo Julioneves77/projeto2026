@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { format, parse, isValid } from 'date-fns';
 import { Ticket, TicketStatus, HistoricoItem } from '@/types';
+import { copyToClipboard as doCopy } from '@/lib/copyToClipboard';
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
 import { useRespostasProntas } from '@/hooks/useRespostasProntas';
@@ -121,13 +122,17 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     { id: 'interacao', label: 'Interação', icon: MessageSquare },
   ];
 
-  const copyToClipboard = async (text: string, fieldId: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+  const copyToClipboard = (text: string, fieldId: string) => {
+    const ok = doCopy(text);
+    if (ok) {
       setCopiedField(fieldId);
       setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+    } else {
+      toast({
+        title: 'Não foi possível copiar',
+        description: 'Selecione o texto manualmente e use Ctrl+C.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -745,7 +750,7 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
     <>
       <div className="modal-overlay" onClick={onClose}>
         <div 
-          className="modal-content w-[95vw] sm:w-full max-w-[95vw] sm:max-w-4xl animate-slide-up overflow-y-auto"
+          className="modal-content w-[95vw] sm:w-full max-w-[95vw] sm:max-w-4xl animate-slide-up overflow-y-auto select-text"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -839,9 +844,9 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {dadosSolicitacao.map((campo) => (
                       <div key={campo.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 select-text">
                           <p className="text-xs text-muted-foreground mb-1">{campo.label}</p>
-                          <p className="text-sm font-medium text-foreground break-words">{campo.value}</p>
+                          <p className="text-sm font-medium text-foreground break-words select-text">{campo.value}</p>
                         </div>
                         <button
                           onClick={() => copyToClipboard(campo.value, campo.id)}
@@ -929,9 +934,9 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                           
                           return (
                             <div key={key} className="flex items-start justify-between p-3 bg-primary/5 rounded-lg border border-primary/10">
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 select-text">
                                 <p className="text-xs text-primary/70 mb-1 font-medium">{label}</p>
-                                <p className="text-sm font-medium text-foreground break-words">{displayValue}</p>
+                                <p className="text-sm font-medium text-foreground break-words select-text">{displayValue}</p>
                               </div>
                               <button
                                 onClick={() => copyToClipboard(displayValue, `form_${key}`)}
@@ -960,9 +965,9 @@ function TicketDetailModalComponent({ ticket, onClose }: TicketDetailModalProps)
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {dadosTicket.map((campo) => (
                         <div key={campo.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 select-text">
                             <p className="text-xs text-muted-foreground mb-1">{campo.label}</p>
-                            <p className="text-sm font-medium text-foreground break-words">{String(campo.value)}</p>
+                            <p className="text-sm font-medium text-foreground break-words select-text">{String(campo.value)}</p>
                           </div>
                           <button
                             onClick={() => copyToClipboard(String(campo.value), campo.id)}

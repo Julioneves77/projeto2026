@@ -224,6 +224,24 @@ const estaduaisConfigs: Record<string, FormConfig> = {
       ]},
     ],
   },
+  mg: {
+    title: "Certidão Negativa Criminal - Minas Gerais",
+    description: "Tribunal de Justiça de Minas Gerais (TJMG - Certidão de Distribuição)",
+    steps: [
+      { title: "Comarca e Documento", fields: [
+        { name: "comarca", label: "Comarca", type: "select", required: true, options: "comarcasMG" },
+        { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
+        { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+        { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+      ]},
+      { title: "Contato e Confirmação", fields: [
+        ...globalContactFields.slice(1),
+        ...termsFields,
+      ]},
+    ],
+  },
   rs: {
     title: "Certidão Negativa Criminal - Rio Grande do Sul",
     description: "Tribunal de Justiça do Estado do Rio Grande do Sul",
@@ -246,10 +264,34 @@ const estaduaisConfigs: Record<string, FormConfig> = {
       ]},
     ],
   },
+  // Criminal Estadual MS - TJMS exige todos os campos (Comarca, RG, Gênero, Nome da mãe, Nome do pai)
+  ms: {
+    title: "Certidão Negativa Criminal - Mato Grosso do Sul",
+    description: "Tribunal de Justiça de Mato Grosso do Sul (TJMS - SAJ)",
+    steps: [
+      { title: "Tipo de Documento", fields: [
+        { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
+        { name: "comarca", label: "Comarca", type: "select", required: true, options: "comarcasMS", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "cpf", label: "CPF", type: "text", required: true, placeholder: "000.000.000-00", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeCompleto", label: "Nome Completo", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "rg", label: "RG", type: "text", required: true, placeholder: "Número do RG", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "genero", label: "Gênero", type: "select", required: true, options: "sexo", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomeMae", label: "Nome da Mãe", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "nomePai", label: "Nome do Pai", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "dataNascimento", label: "Data de Nascimento", type: "text", required: true, placeholder: "DD/MM/AAAA", showWhen: { field: "tipoDocumento", value: "CPF" } },
+        { name: "cnpj", label: "CNPJ", type: "text", required: true, placeholder: "00.000.000/0000-00", showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+        { name: "razaoSocial", label: "Razão Social", type: "text", required: true, showWhen: { field: "tipoDocumento", value: "CNPJ" } },
+      ]},
+      { title: "Contato e Confirmação", fields: [
+        ...globalContactFields.slice(1),
+        ...termsFields,
+      ]},
+    ],
+  },
 };
 
-// Add remaining states with similar structure
-["ac", "al", "am", "ap", "ce", "es", "ma", "ms", "pa", "pb", "pe", "pi", "rn", "ro", "sc", "se"].forEach((state) => {
+// Add remaining states with similar structure (ms já definido acima)
+["ac", "al", "am", "ap", "ce", "es", "ma", "pa", "pb", "pe", "pi", "rn", "ro", "sc", "se"].forEach((state) => {
   if (!estaduaisConfigs[state]) {
     const step1Fields: FieldConfig[] = [
       { name: "tipoDocumento", label: "Tipo de Documento", type: "select", required: true, options: "tipoDocumento" },
@@ -403,9 +445,10 @@ const cpfRegularConfig: FormConfig = {
   ],
 };
 
-// Get available states (excluding MG and PR)
+// Get available states (excluding PR - MG habilitado com TJMG)
+// Estados sem Plexi: processamento manual
 export function getAvailableStates() {
-  const excludedStates = ["MG", "PR"];
+  const excludedStates = ["PR"];
   return ESTADOS_BRASIL.filter((s) => !excludedStates.includes(s.sigla));
 }
 

@@ -3,14 +3,18 @@ import { User, UserRole } from '@/types';
 import { usuariosBase } from '@/data/mockData';
 import { safeStorage } from '@/lib/safeStorage';
 
+const SYNC_SERVER_URL = import.meta.env.VITE_SYNC_SERVER_URL || 'http://localhost:3001';
+const SYNC_SERVER_API_KEY = import.meta.env.VITE_SYNC_SERVER_API_KEY || null;
+
 interface AuthContextType {
   currentUser: User | null;
   userRole: UserRole | null;
-  login: (email: string, senha: string) => boolean;
+  login: (email: string, senha: string) => Promise<boolean>;
   logout: () => void;
   users: User[];
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (id: number, updates: Partial<User>) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  updateUser: (id: number, updates: Partial<User>) => Promise<void>;
+  refreshUsers: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,34 +25,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
-  useEffect(() => {
-    const stored = safeStorage.getItem(USERS_KEY);
-    if (stored) {
-      try {
-        setUsers(JSON.parse(stored));
-      } catch {
-        setUsers(usuariosBase);
-        safeStorage.setItem(USERS_KEY, JSON.stringify(usuariosBase));
+  const fetchUsersFromServer = async (): Promise<User[]> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+    const res = await fetch(`${SYNC_SERVER_URL}/platform/users`, { headers });
+    if (res.ok) return res.json();
+    return [];
+  };
+
+  const refreshUsers = async () => {
+    try {
+      const serverUsers = await fetchUsersFromServer();
+      if (serverUsers.length > 0) {
+        setUsers(serverUsers);
+        safeStorage.setItem(USERS_KEY, JSON.stringify(serverUsers));
       }
-    } else {
-      setUsers(usuariosBase);
-      safeStorage.setItem(USERS_KEY, JSON.stringify(usuariosBase));
+    } catch {
+      // Fallback: manter localStorage
     }
+  };
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const serverUsers = await fetchUsersFromServer();
+        if (serverUsers.length > 0) {
+          setUsers(serverUsers);
+          safeStorage.setItem(USERS_KEY, JSON.stringify(serverUsers));
+          return;
+        }
+      } catch {
+        // Servidor indisponível, usar localStorage
+      }
+      const stored = safeStorage.getItem(USERS_KEY);
+      if (stored) {
+        try {
+          setUsers(JSON.parse(stored));
+        } catch {
+          setUsers(usuariosBase);
+        }
+      } else {
+        setUsers(usuariosBase);
+      }
+    };
+    loadUsers();
   }, []);
 
-  // Validar e carregar usuário logado após usuários serem carregados
   useEffect(() => {
-    if (users.length === 0) return; // Aguardar usuários serem carregados
-    
     const storedUser = safeStorage.getItem('av_current_user');
     if (storedUser) {
       try {
         const user = JSON.parse(storedUser);
-        const userExists = users.find((u: User) => u.id === user.id && u.email === user.email && u.status === 'ativo');
-        if (userExists) {
+        const userExists = users.find((u: User) => u.id === user.id && u.email === user.email);
+        if (userExists || users.length === 0) {
           setCurrentUser(user);
         } else {
           safeStorage.removeItem('av_current_user');
+          setCurrentUser(null);
         }
       } catch {
         safeStorage.removeItem('av_current_user');
@@ -56,19 +89,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [users]);
 
-  const saveUsers = (newUsers: User[]) => {
-    setUsers(newUsers);
-    safeStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
-  };
+  const login = async (email: string, senha: string): Promise<boolean> => {
+    const tryLocalFallback = () => {
+      const list = users.length > 0 ? users : usuariosBase;
+      const user = list.find(u => u.email === email && u.senha === senha && (u.status || 'ativo') === 'ativo');
+      if (user) {
+        const { senha: _, ...userSemSenha } = user;
+        setCurrentUser(userSemSenha);
+        safeStorage.setItem('av_current_user', JSON.stringify(userSemSenha));
+        return true;
+      }
+      return false;
+    };
 
-  const login = (email: string, senha: string): boolean => {
-    const user = users.find(u => u.email === email && u.senha === senha && u.status === 'ativo');
-    if (user) {
-      setCurrentUser(user);
-      safeStorage.setItem('av_current_user', JSON.stringify(user));
-      return true;
+    try {
+      const res = await fetch(`${SYNC_SERVER_URL}/platform/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, senha }),
+      });
+      if (res.ok) {
+        const user = await res.json();
+        setCurrentUser(user);
+        safeStorage.setItem('av_current_user', JSON.stringify(user));
+        return true;
+      }
+      // Servidor retornou erro (401, 404, 500) - tentar fallback local
+      return tryLocalFallback();
+    } catch {
+      // Erro de rede - tentar fallback local
+      return tryLocalFallback();
     }
-    return false;
   };
 
   const logout = () => {
@@ -76,15 +127,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     safeStorage.removeItem('av_current_user');
   };
 
-  const addUser = (userData: Omit<User, 'id'>) => {
+  const addUser = async (userData: Omit<User, 'id'>) => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      const res = await fetch(`${SYNC_SERVER_URL}/platform/users`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(userData),
+      });
+      if (res.ok) {
+        const newUser = await res.json();
+        setUsers(prev => {
+          const next = [...prev, newUser];
+          safeStorage.setItem(USERS_KEY, JSON.stringify(next));
+          return next;
+        });
+        return;
+      }
+    } catch {
+      // Fallback local
+    }
     const newId = Math.max(...users.map(u => u.id), 0) + 1;
     const newUser: User = { ...userData, id: newId };
-    saveUsers([...users, newUser]);
+    const newUsers = [...users, newUser];
+    setUsers(newUsers);
+    safeStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
   };
 
-  const updateUser = (id: number, updates: Partial<User>) => {
+  const updateUser = async (id: number, updates: Partial<User>) => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (SYNC_SERVER_API_KEY) headers['X-API-Key'] = SYNC_SERVER_API_KEY;
+      const res = await fetch(`${SYNC_SERVER_URL}/platform/users/${id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setUsers(prev => {
+          const next = prev.map(u => u.id === id ? updated : u);
+          safeStorage.setItem(USERS_KEY, JSON.stringify(next));
+          return next;
+        });
+        return;
+      }
+    } catch {
+      // Fallback local
+    }
     const updated = users.map(u => u.id === id ? { ...u, ...updates } : u);
-    saveUsers(updated);
+    setUsers(updated);
+    safeStorage.setItem(USERS_KEY, JSON.stringify(updated));
   };
 
   return (
@@ -95,7 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       users,
       addUser,
-      updateUser
+      updateUser,
+      refreshUsers
     }}>
       {children}
     </AuthContext.Provider>

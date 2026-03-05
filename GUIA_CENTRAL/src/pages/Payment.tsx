@@ -4,7 +4,8 @@ import Layout from "@/components/layout/Layout";
 import SEOHead from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Copy, Check, Clock, Shield, Volume2, VolumeX } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { ArrowLeft, Copy, Check, Clock, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { createTicket, updateTicket, findTicket, sendPaymentConfirmation } from "@/lib/ticketService";
 import { pushDLPortalcacesso } from "@/lib/portalcacessoDataLayer";
@@ -220,36 +221,8 @@ const Payment = () => {
     if (timeLeft !== null && timeLeft <= 0) setPixExpired(true);
   }, [timeLeft]);
 
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   useLayoutEffect(() => {
     scrollToTop();
-  }, []);
-
-  const playPaymentAudio = () => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio("/audios/pix-1.mp3");
-    }
-    const audio = audioRef.current;
-    if (audioPlaying) {
-      audio.pause();
-      audio.currentTime = 0;
-      setAudioPlaying(false);
-      return;
-    }
-    audio.onended = () => setAudioPlaying(false);
-    audio.onerror = () => setAudioPlaying(false);
-    audio.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
-  };
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    };
   }, []);
 
   const formatTime = (s: number) => {
@@ -998,16 +971,6 @@ const Payment = () => {
                 <p className="text-base font-bold text-primary mt-2">
                   R$ {(selectedPlan?.price ?? 47.97).toFixed(2).replace('.', ',')}
                 </p>
-                <button
-                  type="button"
-                  onClick={playPaymentAudio}
-                  className={`inline-flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] mt-2 px-3 py-2 text-sm font-semibold transition-colors ${audioPlaying ? "text-muted-foreground hover:text-foreground" : "text-[#E05A4D] hover:text-[#c94d42] animate-pulse-red-discrete"}`}
-                  title={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
-                  aria-label={audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
-                >
-                  {audioPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                  {audioPlaying ? "Pausar instruções" : "Ouvir instruções"}
-                </button>
               </div>
             </div>
 
@@ -1030,13 +993,13 @@ const Payment = () => {
               <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">Como pagar</p>
               <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
                 <li>Abra seu app do banco</li>
-                <li>Escolha PIX copia e cola</li>
-                <li>Cole o código abaixo</li>
+                <li>Escaneie o QR Code ou escolha PIX copia e cola</li>
+                <li>Cole o código abaixo (se usar copia e cola)</li>
                 <li>Confirme o pagamento</li>
               </ol>
             </div>
 
-            {/* Campo código PIX + botões */}
+            {/* QR Code PIX + botões */}
             {isLoadingPix ? (
               <div className="rounded-lg bg-muted p-4 flex items-center justify-center gap-2">
                 <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -1044,6 +1007,21 @@ const Payment = () => {
               </div>
             ) : (
               <>
+                {/* QR Code - visualização para o usuário */}
+                {pixQrCode && (
+                  <div className="flex justify-center mb-5">
+                    <div className="bg-white border-2 border-border rounded-xl p-4 shadow-sm">
+                      <QRCodeSVG
+                        value={pixQrCode}
+                        size={220}
+                        level="M"
+                        includeMargin={false}
+                        className="mx-auto"
+                      />
+                    </div>
+                  </div>
+                )}
+                {/* Código PIX copia e cola */}
                 <div className="rounded-lg bg-muted p-3 mb-3">
                   <code className="block font-mono text-xs text-foreground truncate">
                     {pixQrCode || "Aguardando geração..."}

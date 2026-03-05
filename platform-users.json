@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "nome": "Administrador",
+    "email": "admin@empresasvirtuais.com",
+    "senha": "admin123",
+    "role": "admin",
+    "status": "ativo",
+    "valorPadrao": 0,
+    "valorPrioridade": 0,
+    "valorPremium": 0,
+    "metaDiariaCertidoes": 0
+  },
+  {
+    "id": 2,
+    "nome": "Financeiro",
+    "email": "financeiro@empresasvirtuais.com",
+    "senha": "financeiro123",
+    "role": "financeiro",
+    "status": "ativo",
+    "valorPadrao": 0,
+    "valorPrioridade": 0,
+    "valorPremium": 0,
+    "metaDiariaCertidoes": 0
+  },
+  {
+    "id": 3,
+    "nome": "Atendente",
+    "email": "atendente@empresasvirtuais.com",
+    "senha": "atendente123",
+    "role": "atendente",
+    "status": "ativo",
+    "valorPadrao": 1,
+    "valorPrioridade": 1.5,
+    "valorPremium": 2,
+    "metaDiariaCertidoes": 20
+  }
+]

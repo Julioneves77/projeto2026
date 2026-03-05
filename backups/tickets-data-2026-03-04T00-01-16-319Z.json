@@ -33,6 +33,178 @@
     "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão."
   },
   {
+    "id": "test-integration-1767234486",
+    "codigo": "TK-TEST-486",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "João Silva Teste",
+    "cpfSolicitante": "123.456.789-00",
+    "dataNascimento": "1990-01-15",
+    "genero": "Masculino",
+    "estadoEmissao": "São Paulo",
+    "cidadeEmissao": "São Paulo",
+    "telefone": "61992283372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Criminal Estadual",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T02:28:06.000Z",
+    "prioridade": "padrao",
+    "status": "EM_OPERACAO",
+    "operador": "Administrador",
+    "dataAtribuicao": "2026-01-01T14:13:41.500Z",
+    "dataConclusao": "2026-01-01T14:14:05.162Z",
+    "historico": [
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "dataHora": "2026-01-01T14:13:41.500Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Administrador",
+        "id": "h-1767276821500"
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-test-123",
+        "dataHora": "2026-01-01T02:28:14.000Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado - Teste de integração",
+        "enviouEmail": false
+      },
+      {
+        "dataHora": "2026-01-01T14:13:41.500Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Administrador",
+        "id": "h-1767276821500"
+      },
+      {
+        "dataHora": "2026-01-01T14:14:05.161Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_ATENDIMENTO",
+        "statusNovo": "CONCLUIDO",
+        "mensagem": "Sua certidão foi emitida com sucesso! Segue em anexo.",
+        "enviouEmail": true,
+        "anexo": {
+          "nome": "FELIPE DO CARMO DE FREITAS ELEUTERIO.pdf",
+          "url": "blob:http://localhost:8081/365a060c-2ae6-45eb-9087-236dd0b365b1",
+          "tipo": "application/pdf"
+        },
+        "id": "h-1767276845162-5-vumh1c3dm"
+      },
+      {
+        "id": "h-1767310218342-11-xv5lqo357-pagarme-webhook",
+        "dataHora": "2026-01-01T23:30:18.342Z",
+        "autor": "Sistema",
+        "statusAnterior": "CONCLUIDO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado via Pagar.me (Pedido: ord_test_123456). Ticket em processamento.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1767310225356-12-x7oowxhgp-confirmation",
+        "dataHora": "2026-01-01T23:30:25.356Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T23:30:25.356Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1771600772862-13-ngvxzmn62-plexi",
+        "dataHora": "2026-02-20T15:19:32.862Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600772912-14-5ac0qi5u8-plexi",
+        "dataHora": "2026-02-20T15:19:32.912Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Certidão Criminal Estadual: estado SÃ não suportado pela Plexi. Estados disponíveis: SP, RJ, MG, RS, ES, PA, DF, BA, CE.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Certidão Criminal Estadual: estado SÃ não suportado pela Plexi. Estados disponíveis: SP, RJ, MG, RS, ES, PA, DF, BA, CE.",
+    "automationAttempts": 1
+  },
+  {
     "id": "test-create-1767234890",
     "codigo": "TK-TEST-CREATE",
     "nomeCompleto": "Teste Criação",
@@ -18922,6 +19094,152 @@
     ]
   },
   {
+    "id": "test-1767288888409-1",
+    "codigo": "TK-005",
+    "nomeCompleto": "Teste Duplicata 1",
+    "status": "EM_OPERACAO",
+    "dataCadastro": "2026-01-01T17:34:48.409Z",
+    "historico": [
+      {
+        "id": "h-1767310266433-0-twneiydy3-pagarme-webhook",
+        "dataHora": "2026-01-01T23:31:06.433Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado via Pagar.me (Pedido: ord_test_1767310266420). Ticket em processamento.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1767310266435-1-gy20l3q30-confirmation",
+        "dataHora": "2026-01-01T23:31:06.435Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento não enviada",
+        "enviouEmail": false,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1771600772966-2-kznozfqat-plexi",
+        "dataHora": "2026-02-20T15:19:32.966Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600772978-3-zhjkvr0yi-plexi",
+        "dataHora": "2026-02-20T15:19:32.978Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão."
+  },
+  {
+    "id": "test-hist-1767288888439",
+    "codigo": "TK-006",
+    "nomeCompleto": "Teste Histórico",
+    "status": "EM_OPERACAO",
+    "dataCadastro": "2026-01-01T17:34:48.439Z",
+    "historico": [
+      {
+        "id": "h-1",
+        "dataHora": "2026-01-01T17:34:48.439Z",
+        "autor": "Sistema",
+        "mensagem": "Item 1"
+      },
+      {
+        "id": "h-2",
+        "dataHora": "2026-01-01T17:34:48.445Z",
+        "autor": "Sistema",
+        "mensagem": "Item 2"
+      },
+      {
+        "id": "h-1771600773012-2-xcvl9czip-plexi",
+        "dataHora": "2026-02-20T15:19:33.012Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600773036-3-zcgr6jmmm-plexi",
+        "dataHora": "2026-02-20T15:19:33.036Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão."
+  },
+  {
+    "id": "test-1767288908683-1",
+    "codigo": "TK-009",
+    "nomeCompleto": "Teste Duplicata 1",
+    "status": "EM_OPERACAO",
+    "dataCadastro": "2026-01-01T17:35:08.683Z",
+    "historico": [
+      {
+        "dataHora": "2026-01-01T19:11:48.366Z",
+        "autor": "Administrador",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_ATENDIMENTO",
+        "mensagem": "Ticket atribuído para Administrador",
+        "id": "h-1767294708366-0-8tufb3mqj"
+      },
+      {
+        "id": "h-1771600773108-1-zowws2eqx-plexi",
+        "dataHora": "2026-02-20T15:19:33.108Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600773125-2-nf4dc83ls-plexi",
+        "dataHora": "2026-02-20T15:19:33.125Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "dataAtribuicao": "2026-01-01T19:11:48.367Z",
+    "dataConclusao": null,
+    "operador": null,
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: undefined. A Plexi não oferece endpoint para este tipo de certidão."
+  },
+  {
     "id": "test-hist-1767288908703",
     "codigo": "TK-010",
     "nomeCompleto": "Teste Histórico",
@@ -18952,5 +19270,281 @@
     "dataAtribuicao": "2026-01-01T19:09:00.320Z",
     "dataConclusao": null,
     "operador": "Administrador"
+  },
+  {
+    "id": "ticket-1767299678777-8aldrc531",
+    "codigo": "TK-012",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "JULIO CESAR NEVES DE SOUZAttttttt",
+    "cpfSolicitante": "695.589.901-59",
+    "dataNascimento": "",
+    "genero": "Não informado",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "",
+    "telefone": "(61) 99228-3372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Federal - CRIMINAL",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T20:34:38.777Z",
+    "prioridade": "premium",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-1767299694985",
+        "dataHora": "2026-01-01T20:34:54.985Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767299702784-1-mam2fns41-email-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para julionevesgestor@gmail.com",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T20:35:02.784Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767299702784-2-ln61eqfib-whatsapp-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para (61) 99228-3372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T20:35:02.784Z"
+      },
+      {
+        "id": "h-1767299702784-3-qfjs1y6ew-both-confirmation",
+        "dataHora": "2026-01-01T20:35:02.784Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T20:35:02.784Z",
+        "dataEnvioWhatsApp": "2026-01-01T20:35:02.784Z"
+      },
+      {
+        "id": "h-1771600773166-4-crf7yahym-plexi",
+        "dataHora": "2026-02-20T15:19:33.166Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600773184-5-1azwadufs-plexi",
+        "dataHora": "2026-02-20T15:19:33.184Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão."
+  },
+  {
+    "id": "ticket-1767305927061-3cb1b9tg1",
+    "codigo": "TK-013",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "DOCUMENTOS CERTIDAO NEGATIVA LTDA",
+    "cpfSolicitante": "695.589.901-59",
+    "dataNascimento": "",
+    "genero": "Não informado",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "",
+    "telefone": "(61) 99228-3372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Federal - CRIMINAL",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T22:18:47.062Z",
+    "prioridade": "premium",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-1767305941841",
+        "dataHora": "2026-01-01T22:19:01.841Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767305951519-1-ivufoednd-email-confirmation",
+        "dataHora": "2026-01-01T22:19:11.519Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para julionevesgestor@gmail.com",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T22:19:11.519Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767305951519-2-r2uy6eknu-whatsapp-confirmation",
+        "dataHora": "2026-01-01T22:19:11.519Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para (61) 99228-3372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T22:19:11.519Z"
+      },
+      {
+        "id": "h-1767305951519-3-jlh6djywp-both-confirmation",
+        "dataHora": "2026-01-01T22:19:11.519Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T22:19:11.519Z",
+        "dataEnvioWhatsApp": "2026-01-01T22:19:11.519Z"
+      },
+      {
+        "id": "h-1771600773400-4-uim1kx2kl-plexi",
+        "dataHora": "2026-02-20T15:19:33.400Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600773442-5-o2qh87zyy-plexi",
+        "dataHora": "2026-02-20T15:19:33.442Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão."
+  },
+  {
+    "id": "ticket-1767308917258-wn2u1hy7e",
+    "codigo": "TK-014",
+    "tipoPessoa": "CPF",
+    "nomeCompleto": "JULIO CESAR NEVES DE SOUZAMMMM",
+    "cpfSolicitante": "695.589.901-59",
+    "dataNascimento": "",
+    "genero": "Não informado",
+    "estadoEmissao": "SP",
+    "cidadeEmissao": "",
+    "telefone": "(61) 99228-3372",
+    "email": "julionevesgestor@gmail.com",
+    "tipoCertidao": "Certidão Federal - CRIMINAL",
+    "dominio": "portalcertidao.com.br",
+    "dataCadastro": "2026-01-01T23:08:37.258Z",
+    "prioridade": "prioridade",
+    "status": "EM_OPERACAO",
+    "operador": null,
+    "dataAtribuicao": null,
+    "dataConclusao": null,
+    "historico": [
+      {
+        "id": "h-1767308945073",
+        "dataHora": "2026-01-01T23:09:05.073Z",
+        "autor": "Sistema",
+        "statusAnterior": "GERAL",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Pagamento confirmado. Ticket em processamento.",
+        "enviouEmail": false
+      },
+      {
+        "id": "h-1767308949194-1-41a2mlttw-email-confirmation",
+        "dataHora": "2026-01-01T23:09:09.194Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Email de confirmação enviado para julionevesgestor@gmail.com",
+        "enviouEmail": true,
+        "enviouWhatsApp": false,
+        "dataEnvioEmail": "2026-01-01T23:09:09.194Z",
+        "dataEnvioWhatsApp": null
+      },
+      {
+        "id": "h-1767308949194-2-hvb5xczyi-whatsapp-confirmation",
+        "dataHora": "2026-01-01T23:09:09.194Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "WhatsApp de confirmação enviado para (61) 99228-3372",
+        "enviouEmail": false,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": null,
+        "dataEnvioWhatsApp": "2026-01-01T23:09:09.194Z"
+      },
+      {
+        "id": "h-1767308949194-3-ci2b48plx-both-confirmation",
+        "dataHora": "2026-01-01T23:09:09.194Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Confirmação de pagamento enviada por email e WhatsApp",
+        "enviouEmail": true,
+        "enviouWhatsApp": true,
+        "dataEnvioEmail": "2026-01-01T23:09:09.194Z",
+        "dataEnvioWhatsApp": "2026-01-01T23:09:09.194Z"
+      },
+      {
+        "id": "h-1771600773509-4-55zsxvpg9-plexi",
+        "dataHora": "2026-02-20T15:19:33.509Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Plexi iniciado",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      },
+      {
+        "id": "h-1771600773529-5-3ops412bv-plexi",
+        "dataHora": "2026-02-20T15:19:33.529Z",
+        "autor": "Sistema",
+        "statusAnterior": "EM_OPERACAO",
+        "statusNovo": "EM_OPERACAO",
+        "mensagem": "Erro Plexi: Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão.",
+        "enviouEmail": false,
+        "enviouWhatsApp": false
+      }
+    ],
+    "automationLockAt": null,
+    "automationLockOwner": null,
+    "automationStatus": "FAILED_FINAL",
+    "automationLastError": "Esta certidão não possui API disponível na Plexi. Tipo: Certidão Federal - CRIMINAL. A Plexi não oferece endpoint para este tipo de certidão."
   }
 ]

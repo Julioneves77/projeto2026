@@ -33,6 +33,7 @@ const TIPO_CERTIDAO_TO_REGISTRY = {
   'Certidão Eleitoral': 'ELEITORAL_NEGATIVA',
   'Antecedentes Criminais': 'ANTECEDENTES_PF',
   'Antecedentes Criminais (Polícia Federal)': 'ANTECEDENTES_PF',
+  'Antecedentes Criminais de Polícia Federal': 'ANTECEDENTES_PF',
   'Antecedentes - Polícia Federal': 'ANTECEDENTES_PF',
   'Certidão de Quitação Eleitoral': 'ELEITORAL_NEGATIVA',
   'Quitação Eleitoral': 'ELEITORAL_NEGATIVA',
@@ -45,7 +46,25 @@ const TIPO_CERTIDAO_TO_REGISTRY = {
   'Situação Cadastral do CPF': 'CPF_REGULAR',
   'Criminal': 'CRIMINAL_ESTADUAL',
   'Cível': 'CIVEL_ESTADUAL',
-  'Eleitoral': 'ELEITORAL_NEGATIVA'
+  'Eleitoral': 'ELEITORAL_NEGATIVA',
+  // Formatos vindos da plataforma/tickets
+  'Certidão Federal - CRIMINAL': 'CRIMINAL_FEDERAL',
+  'Certidão Federal - CÍVEL': 'CIVEL_FEDERAL',
+  'Certidão Federal - ELEITORAL': 'ELEITORAL_NEGATIVA'
+};
+
+// TJMG: mapeamento comarca (formulário) -> Plexi API (camelCase)
+const COMARCA_MG_TO_PLEXI = {
+  'belo horizonte': 'beloHorizonte', 'belohorizonte': 'beloHorizonte',
+  'contagem': 'contagem', 'betim': 'betim', 'divinopolis': 'divinopolis', 'divinópolis': 'divinopolis',
+  'barbacena': 'barbacena', 'juiz de fora': 'juizDeFora', 'juizdefora': 'juizDeFora',
+  'uberlandia': 'uberlandia', 'uberlândia': 'uberlandia', 'montes claros': 'montesClaros',
+  'governador valadares': 'governadorValadares', 'pouso alegre': 'pousoAlegre',
+  'araxa': 'araxa', 'araxá': 'araxa', 'araguari': 'araguari', 'congonhas': 'congonhas',
+  'conselheiro lafaiete': 'conselheiroLafaiete', 'coronel fabriciano': 'coronelFabriciano',
+  'ipatinga': 'ipatinga', 'itauna': 'itauna', 'itaúna': 'itauna', 'passos': 'passos',
+  'patos de minas': 'patosDeMinas', 'poços de caldas': 'pocosDeCaldas', 'santa luzia': 'santaLuzia',
+  'sete lagoas': 'seteLagoas', 'teofilo otoni': 'teofiloOtoni', 'varginha': 'varginha'
 };
 
 // TJRJ: mapeamento comarca (formulário) -> Plexi API
@@ -101,6 +120,36 @@ const ESTADO_TO_TRF = {
   MG: 6
 };
 
+/**
+ * Payload TRF por tipo (criminal, civel, eleitoral).
+ * TRF4 usa "civil" para cível; demais usam "civel".
+ */
+function buildTrfPayload(ticket, tipoCert) {
+  const df = ticket.dadosFormulario || {};
+  const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
+  const trf = ESTADO_TO_TRF[uf] || 3;
+  const cpfCnpj = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '') || (df.cnpj || '').replace(/\D/g, '');
+  const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
+  const tipoPlexi = tipoCert === 'civel' && trf === 4 ? 'civil' : tipoCert;
+
+  if (trf === 1) {
+    const orgaoMap = { AC: 'ac', AM: 'am', AP: 'ap', BA: 'ba', DF: 'df', GO: 'go', MA: 'ma', MT: 'mt', PA: 'pa', PI: 'pi', RO: 'ro', RR: 'rr', TO: 'to' };
+    const orgao = orgaoMap[uf] || 'regionalizada';
+    return { tipo: tipoPlexi, cpfCnpj, orgaos: [orgao] };
+  }
+  if (trf === 2) return { cpfCnpj, tipo: tipoPlexi };
+  if (trf === 3) {
+    if (tipoCert === 'eleitoral' && cpfCnpj.length === 14) throw new Error('Certidão Eleitoral (TRF3) aceita apenas CPF.');
+    if (tipoCert === 'eleitoral' && cpfCnpj.length !== 11) throw new Error('Certidão Eleitoral (TRF3) exige CPF válido (11 dígitos).');
+    const abrangenciaMap = { SP: 'sjsp', MS: 'sjms' };
+    return { cpfCnpj, nome: nome || ticket.nomeCompleto, abrangencia: abrangenciaMap[uf] || 'regional', tipo: tipoPlexi };
+  }
+  if (trf === 4) return { tipo: tipoPlexi, cpfCnpj, nome: nome || ticket.nomeCompleto };
+  if (trf === 5) return { cpfCnpj, orgao: 'regional' };
+  if (trf === 6) return { tipo: tipoPlexi, cpfCnpj, orgaos: ['mg'] };
+  return { cpfCnpj, nome: nome || ticket.nomeCompleto, tipo: tipoPlexi };
+}
+
 const ServiceRegistry = {
   CRIMINAL_FEDERAL: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY
@@ -112,26 +161,7 @@ const ServiceRegistry = {
         }
       : '',
     requiredFields: ['nomeCompleto', 'cpfSolicitante', 'estadoEmissao', 'email', 'telefone'],
-    buildPayload: (ticket) => {
-      const df = ticket.dadosFormulario || {};
-      const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
-      const trf = ESTADO_TO_TRF[uf] || 3;
-      const cpfCnpj = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '') || (df.cnpj || '').replace(/\D/g, '');
-      if (trf === 1) {
-        const orgaoMap = { AC: 'ac', AM: 'am', AP: 'ap', BA: 'ba', DF: 'df', GO: 'go', MA: 'ma', MT: 'mt', PA: 'pa', PI: 'pi', RO: 'ro', RR: 'rr', TO: 'to' };
-        const orgao = orgaoMap[uf] || 'regionalizada';
-        return { tipo: 'criminal', cpfCnpj, orgaos: [orgao] };
-      }
-      if (trf === 2) return { cpfCnpj, tipo: 'criminal' };
-      if (trf === 3) {
-        const abrangenciaMap = { SP: 'sjsp', MS: 'sjms' };
-        return { cpfCnpj, nome: ticket.nomeCompleto, abrangencia: abrangenciaMap[uf] || 'regional', tipo: 'criminal' };
-      }
-      if (trf === 4) return { tipo: 'criminal', cpfCnpj, nome: ticket.nomeCompleto };
-      if (trf === 5) return { cpfCnpj, orgao: 'regional' };
-      if (trf === 6) return { tipo: 'criminal', cpfCnpj, orgaos: ['mg'] };
-      return { cpfCnpj, nome: ticket.nomeCompleto, tipo: 'criminal' };
-    }
+    buildPayload: (ticket) => buildTrfPayload(ticket, 'criminal')
   },
   CRIMINAL_ESTADUAL: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY
@@ -140,7 +170,7 @@ const ServiceRegistry = {
           const endpoints = {
             SP: 'ssp-sp/antecedentes-criminais',
             RJ: 'tjrj/certidao-judicial-eletronica',
-            MG: 'pc-mg-atestado-antecedentes-criminais',
+            MG: 'tjmg/certidao-distribuicao',
             RS: 'tjrs/certidao-negativa',
             ES: 'tjes/certidao-negativa',
             PA: 'tjpa/certidao-antecedentes-criminais',
@@ -153,7 +183,11 @@ const ServiceRegistry = {
           return `${PLEXI_API_URL}/api/maestro/${path}`;
         }
       : '',
-    requiredFields: ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'estadoEmissao', 'email', 'telefone'],
+    requiredFields: (ticket) => {
+      const uf = (ticket.estadoEmissao || ticket.dadosFormulario?.estadoSelecionado || ticket.dadosFormulario?.estadoEmissao || '').toUpperCase().replace(/\s/g, '').slice(0, 2);
+      if (uf === 'MG') return ['nomeCompleto', 'cpfSolicitante', 'estadoEmissao', 'comarca', 'email', 'telefone'];
+      return ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'estadoEmissao', 'email', 'telefone'];
+    },
     buildPayload: (ticket) => {
       const df = ticket.dadosFormulario || {};
       const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || '').toUpperCase().replace(/\s/g, '').slice(0, 2);
@@ -196,9 +230,24 @@ const ServiceRegistry = {
         };
       }
       if (uf === 'MG') {
-        const rg = (df.rg || ticket.rg || '').replace(/\D/g, '');
-        if (!rg) throw new Error('Certidão Criminal Estadual MG exige RG. Preencha o campo RG.');
-        return { nome, rg: df.rg || ticket.rg, dataNascimento: dataNasc };
+        const cpfCnpj = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '') || (df.cnpj || '').replace(/\D/g, '');
+        const nomeSolicitante = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
+        const cpfSolicitante = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
+        const comarcaForm = String(df.comarca || 'beloHorizonte').trim();
+        const comarca = COMARCA_MG_TO_PLEXI[comarcaForm.toLowerCase()] || (/^[a-z][a-zA-Z]*$/.test(comarcaForm) ? comarcaForm : 'beloHorizonte');
+        if (!cpfCnpj) throw new Error('Certidão Criminal MG (TJMG) exige CPF ou CNPJ.');
+        if (!nomeSolicitante) throw new Error('Certidão Criminal MG (TJMG) exige nome.');
+        if (!cpfSolicitante || cpfSolicitante.length < 11) throw new Error('Certidão Criminal MG (TJMG) exige CPF do solicitante.');
+        return {
+          natureza: 'criminal',
+          instancia: (df.instancia || 'primeiraInstancia').toString(),
+          tipo: 'normal',
+          cpfCnpj,
+          nome: nomeSolicitante,
+          nomeSolicitante,
+          cpfSolicitante,
+          comarca: comarca || 'beloHorizonte'
+        };
       }
       if (uf === 'RS') {
         const endereco = ticket.endereco || df.endereco || df.enderecoCompleto || '';
@@ -288,9 +337,22 @@ const ServiceRegistry = {
     }
   },
   CIVEL_FEDERAL: {
-    endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/civel-federal` : '',
-    requiredFields: ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'email', 'telefone'],
-    buildPayload: (ticket) => buildBasePayload(ticket)
+    endpoint: PLEXI_API_URL && PLEXI_API_KEY
+      ? (ticket) => {
+          const uf = (ticket.estadoEmissao || ticket.dadosFormulario?.estadoSelecionado || ticket.dadosFormulario?.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
+          const trf = ESTADO_TO_TRF[uf] || 3;
+          if (trf === 5) return `${PLEXI_API_URL}/api/maestro/civel-federal`;
+          const path = trf === 4 ? 'certidao-regional' : 'certidao-distribuicao';
+          return `${PLEXI_API_URL}/api/maestro/trf${trf}/${path}`;
+        }
+      : '',
+    requiredFields: ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'estadoEmissao', 'email', 'telefone'],
+    buildPayload: (ticket) => {
+      const uf = (ticket.estadoEmissao || ticket.dadosFormulario?.estadoSelecionado || ticket.dadosFormulario?.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
+      const trf = ESTADO_TO_TRF[uf] || 3;
+      if (trf === 5) return buildBasePayload(ticket);
+      return buildTrfPayload(ticket, 'civel');
+    }
   },
   CIVEL_ESTADUAL: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/civel-estadual` : '',
@@ -300,6 +362,8 @@ const ServiceRegistry = {
   ANTECEDENTES_PF: {
     endpoint: PLEXI_API_URL && PLEXI_API_KEY ? `${PLEXI_API_URL}/api/maestro/pf-certidao-antecedentes-criminais` : '',
     requiredFields: ['nomeCompleto', 'cpfSolicitante', 'dataNascimento', 'nomeMae', 'email', 'telefone'],
+    /** Polícia Federal pode demorar mais; timeout de 25 min (padrão 10 min) */
+    pollTimeoutMs: 25 * 60 * 1000,
     buildPayload: (ticket) => {
       const df = ticket.dadosFormulario || {};
       const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
@@ -318,8 +382,9 @@ const ServiceRegistry = {
       ? (ticket) => {
           const uf = (ticket.estadoEmissao || ticket.dadosFormulario?.estadoSelecionado || ticket.dadosFormulario?.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
           const trf = ESTADO_TO_TRF[uf] || 3;
-          if (trf === 3) return `${PLEXI_API_URL}/api/maestro/trf3/certidao-distribuicao`;
-          return `${PLEXI_API_URL}/api/maestro/eleitoral`;
+          if (trf === 5) return `${PLEXI_API_URL}/api/maestro/eleitoral`;
+          const path = trf === 4 ? 'certidao-regional' : 'certidao-distribuicao';
+          return `${PLEXI_API_URL}/api/maestro/trf${trf}/${path}`;
         }
       : '',
     requiredFields: ['nomeCompleto', 'cpfSolicitante', 'estadoEmissao', 'dataNascimento', 'email', 'telefone'],
@@ -328,26 +393,16 @@ const ServiceRegistry = {
       const uf = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || 'SP').toUpperCase().replace(/\s/g, '').slice(0, 2);
       const trf = ESTADO_TO_TRF[uf] || 3;
 
-      if (trf === 3) {
-        const cpfCnpj = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '') || (df.cnpj || '').replace(/\D/g, '');
-        if (cpfCnpj.length === 14) throw new Error('Eleitoral (TRF3) aceita apenas CPF.');
-        if (cpfCnpj.length !== 11) throw new Error('Eleitoral (TRF3) exige CPF válido (11 dígitos).');
+      if (trf === 5) {
+        const cpf = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
         const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
-        if (!nome) throw new Error('Nome é obrigatório para Certidão Eleitoral (TRF3).');
-        const abrangenciaMap = { SP: 'sjsp', MS: 'sjms' };
-        const abrangencia = abrangenciaMap[uf] || 'regional';
-        const validAbrangencia = ['regional', 'sjsp', 'sjms', 'trf'];
-        const abrangenciaFinal = validAbrangencia.includes(abrangencia) ? abrangencia : 'regional';
-        return { cpfCnpj, nome, abrangencia: abrangenciaFinal, tipo: 'eleitoral' };
+        const dataNasc = formatDataPlexi(ticket.dataNascimento || df.dataNascimento);
+        const estado = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || '').trim().toUpperCase().slice(0, 2);
+        const payload = { nome, cpf, dataNascimento: dataNasc };
+        if (estado && UF_CODES.has(estado)) payload.uf = estado;
+        return payload;
       }
-
-      const cpf = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
-      const nome = (ticket.nomeCompleto || df.nomeCompleto || df.nome || '').trim();
-      const dataNasc = formatDataPlexi(ticket.dataNascimento || df.dataNascimento);
-      const estado = (ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao || '').trim().toUpperCase().slice(0, 2);
-      const payload = { nome, cpf, dataNascimento: dataNasc };
-      if (estado && UF_CODES.has(estado)) payload.uf = estado;
-      return payload;
+      return buildTrfPayload(ticket, 'eleitoral');
     }
   },
   CND: {
@@ -439,6 +494,14 @@ function getRegistryKey(tipoCertidao) {
   if (!key && /\beleitoral\b|quitação\s*eleitoral|quitacao\s*eleitoral|certidão\s*eleitoral|certidao\s*eleitoral/i.test(str)) {
     key = 'ELEITORAL_NEGATIVA';
   }
+  // Antecedentes PF: match por palavra-chave (polícia/policia, federal, antecedentes)
+  if (!key && /antecedentes|policia\s*federal|polícia\s*federal|pf\s*criminal/i.test(str)) {
+    key = 'ANTECEDENTES_PF';
+  }
+  // Certidão Federal - CRIMINAL/CÍVEL/ELEITORAL
+  if (!key && /certidão\s*federal.*criminal|certidao\s*federal.*criminal/i.test(str)) key = 'CRIMINAL_FEDERAL';
+  if (!key && /certidão\s*federal.*(cível|civel)|certidao\s*federal.*(cível|civel)/i.test(str)) key = 'CIVEL_FEDERAL';
+  if (!key && /certidão\s*federal.*eleitoral|certidao\s*federal.*eleitoral/i.test(str)) key = 'ELEITORAL_NEGATIVA';
   return key || null;
 }
 
@@ -451,7 +514,8 @@ function getTicketFieldValue(ticket, fieldName) {
     estadoEmissao: ticket.estadoEmissao || df.estadoSelecionado || df.estadoEmissao,
     email: ticket.email || df.email,
     telefone: ticket.telefone || df.telefone,
-    nomeMae: df.nomeMae || ticket.nomeMae
+    nomeMae: df.nomeMae || ticket.nomeMae,
+  comarca: df.comarca || ticket.comarca
   };
   return rootMap[fieldName] ?? df[fieldName] ?? ticket[fieldName] ?? '';
 }
@@ -464,7 +528,8 @@ const FIELD_LABELS = {
   email: 'E-mail',
   telefone: 'Telefone',
   nomeMae: 'Nome da Mãe',
-  estadoSelecionado: 'Estado'
+  estadoSelecionado: 'Estado',
+  comarca: 'Comarca'
 };
 
 function validateRequiredFields(ticket, requiredFields) {

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { Mail, Lock, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,7 +19,7 @@ export function Login() {
     // Simulate small delay for better UX
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    const success = login(email, senha);
+    const success = await login(email, senha);
     if (!success) {
       setErro('E-mail ou senha inválidos');
     }
@@ -26,7 +27,7 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/30 p-4 relative">
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4 relative">
       {/* Theme Toggle */}
       <div className="absolute top-4 right-4">
         <ThemeToggle />
@@ -73,13 +74,21 @@ export function Login() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
                   id="senha"
-                  type="password"
+                  type={mostrarSenha ? 'text' : 'password'}
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-11 pr-4 py-3 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-base"
+                  className="w-full pl-11 pr-12 py-3 min-h-[44px] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-base"
                 />
+                <button
+                  type="button"
+                  onClick={() => setMostrarSenha((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {mostrarSenha ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
@@ -107,49 +116,6 @@ export function Login() {
               )}
             </button>
           </form>
-
-          {/* Demo Credentials - Quick Login Buttons */}
-          <div className="mt-6 pt-6 border-t border-border">
-            <p className="text-xs text-muted-foreground text-center mb-3">Entrar rapidamente como:</p>
-            <div className="grid gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admin@empresasvirtuais.com');
-                  setSenha('admin123');
-                  login('admin@empresasvirtuais.com', 'admin123');
-                }}
-                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
-              >
-                <span className="text-sm font-medium text-foreground">Administrador</span>
-                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('financeiro@empresasvirtuais.com');
-                  setSenha('financeiro123');
-                  login('financeiro@empresasvirtuais.com', 'financeiro123');
-                }}
-                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
-              >
-                <span className="text-sm font-medium text-foreground">Financeiro</span>
-                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('atendente@empresasvirtuais.com');
-                  setSenha('atendente123');
-                  login('atendente@empresasvirtuais.com', 'atendente123');
-                }}
-                className="flex items-center justify-between px-3 py-2.5 min-h-[44px] bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left group touch-manipulation"
-              >
-                <span className="text-sm font-medium text-foreground">Atendente</span>
-                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

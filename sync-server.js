@@ -74,6 +74,7 @@ const PORT = process.env.PORT || 3001;
 const TICKETS_FILE = path.join(__dirname, 'tickets-data.json');
 const CONTACT_MESSAGES_FILE = path.join(__dirname, 'contact-messages.json');
 const COPIES_FILE = path.join(__dirname, 'copies-data.json');
+const PLATFORM_USERS_FILE = path.join(__dirname, 'platform-users.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const STORAGE_CERTIDOES_PATH = path.join(__dirname, 'storage', 'certidoes');
 
@@ -123,6 +124,18 @@ const getCorsOrigins = () => {
         origins.push(origin);
       }
     });
+    // Garantir que plataforma.portalcertidao.org está incluído (PLATAFORMA - login)
+    const plataformaOrigins = [
+      'https://plataforma.portalcertidao.org',
+      'https://www.plataforma.portalcertidao.org',
+      'http://plataforma.portalcertidao.org',
+      'http://www.plataforma.portalcertidao.org'
+    ];
+    plataformaOrigins.forEach(origin => {
+      if (!origins.includes(origin)) {
+        origins.push(origin);
+      }
+    });
     return origins;
   }
   // Em desenvolvimento, incluir origens comuns do localhost
@@ -147,6 +160,11 @@ const getCorsOrigins = () => {
     // Incluir guia-central.online mesmo em desenvolvimento para testes
     'https://www.guia-central.online',
     'https://guia-central.online',
+    // PLATAFORMA - login de qualquer dispositivo
+    'https://plataforma.portalcertidao.org',
+    'https://www.plataforma.portalcertidao.org',
+    'http://plataforma.portalcertidao.org',
+    'http://www.plataforma.portalcertidao.org',
   ];
   return defaultOrigins;
 };
@@ -1196,6 +1214,34 @@ if (!fs.existsSync(CONTACT_MESSAGES_FILE)) {
   }
 }
 
+// ============================================
+// PLATAFORMA - Usuários centralizados (login de qualquer dispositivo)
+// ============================================
+const USUARIOS_BASE = [
+  { id: 1, nome: 'Administrador', email: 'admin@empresasvirtuais.com', senha: 'admin123', role: 'admin', status: 'ativo', valorPadrao: 0, valorPrioridade: 0, valorPremium: 0, metaDiariaCertidoes: 0 },
+  { id: 2, nome: 'Financeiro', email: 'financeiro@empresasvirtuais.com', senha: 'financeiro123', role: 'financeiro', status: 'ativo', valorPadrao: 0, valorPrioridade: 0, valorPremium: 0, metaDiariaCertidoes: 0 },
+  { id: 3, nome: 'Atendente', email: 'atendente@empresasvirtuais.com', senha: 'atendente123', role: 'atendente', status: 'ativo', valorPadrao: 1, valorPrioridade: 1.5, valorPremium: 2, metaDiariaCertidoes: 20 }
+];
+
+if (!fs.existsSync(PLATFORM_USERS_FILE)) {
+  fs.writeFileSync(PLATFORM_USERS_FILE, JSON.stringify(USUARIOS_BASE, null, 2));
+  console.log('📁 Arquivo platform-users.json criado com usuários padrão');
+}
+
+function readPlatformUsers() {
+  try {
+    const data = fs.readFileSync(PLATFORM_USERS_FILE, 'utf8');
+    const users = JSON.parse(data);
+    return Array.isArray(users) ? users : USUARIOS_BASE;
+  } catch {
+    return USUARIOS_BASE;
+  }
+}
+
+function savePlatformUsers(users) {
+  fs.writeFileSync(PLATFORM_USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+}
+
 // Função auxiliar para ler tickets
 function readTickets() {
   try {
@@ -1394,13 +1440,13 @@ setInterval(recoverPlexiPendingTickets, PLEXI_RECOVERY_INTERVAL);
 // ============================================
 // LIMPEZA AUTOMÁTICA DE TICKETS ANTIGOS
 // ============================================
-// Regras:
-// - GERAL: apaga após 5 dias
-// - EM_OPERACAO: apaga após 7 dias
-// - CONCLUIDO: apaga após 10 dias
+// Regras (apenas para aba Geral: tickets GERAL > 3 dias são APAGADOS):
+// - GERAL: apaga após 3 dias (regra exclusiva da aba Geral)
+// - EM_OPERACAO: apaga após 60 dias
+// - CONCLUIDO: apaga após 90 dias
 
 const TICKET_CLEANUP_RULES = {
-  'GERAL': 30,          // 30 dias (aumentado de 5)
+  'GERAL': 3,           // 3 dias - regra exclusiva da aba Geral (não alterar outras regras)
   'EM_OPERACAO': 60,    // 60 dias (aumentado de 7)
   'CONCLUIDO': 90       // 90 dias (aumentado de 10)
 };
@@ -1513,6 +1559,60 @@ setTimeout(() => {
 }, 60000);
 
 console.log('🧹 [CLEANUP] Limpeza automática configurada: GERAL=30d, EM_OPERACAO=60d, CONCLUIDO=90d');
+
+// ============================================
+// PLATAFORMA - Autenticação e usuários (acesso de qualquer dispositivo)
+// ============================================
+
+// POST /platform/auth/login - Login (valida contra usuários centralizados)
+app.post('/platform/auth/login', express.json(), (req, res) => {
+  const { email, senha } = req.body || {};
+  if (!email || !senha) {
+    return res.status(400).json({ error: 'E-mail e senha são obrigatórios' });
+  }
+  const users = readPlatformUsers();
+  const user = users.find(u => u.email === email && u.senha === senha && (u.status || 'ativo') === 'ativo');
+  if (!user) {
+    return res.status(401).json({ error: 'E-mail ou senha inválidos' });
+  }
+  const { senha: _, ...userSemSenha } = user;
+  res.json(userSemSenha);
+});
+
+// GET /platform/users - Listar usuários (requer API key)
+app.get('/platform/users', authenticateRequest, (req, res) => {
+  const users = readPlatformUsers();
+  res.json(users);
+});
+
+// POST /platform/users - Adicionar usuário
+app.post('/platform/users', authenticateRequest, express.json(), (req, res) => {
+  const users = readPlatformUsers();
+  const newId = Math.max(...users.map(u => u.id), 0) + 1;
+  const newUser = { ...req.body, id: newId };
+  if (!newUser.email || !newUser.senha || !newUser.nome) {
+    return res.status(400).json({ error: 'nome, email e senha são obrigatórios' });
+  }
+  if (users.some(u => u.email === newUser.email)) {
+    return res.status(409).json({ error: 'E-mail já cadastrado' });
+  }
+  users.push(newUser);
+  savePlatformUsers(users);
+  res.status(201).json(newUser);
+});
+
+// PUT /platform/users/:id - Atualizar usuário
+app.put('/platform/users/:id', authenticateRequest, express.json(), (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const users = readPlatformUsers();
+  const idx = users.findIndex(u => u.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Usuário não encontrado' });
+  const { senha, ...updates } = req.body;
+  users[idx] = { ...users[idx], ...updates };
+  if (senha !== undefined && senha !== '') users[idx].senha = senha;
+  savePlatformUsers(users);
+  res.json(users[idx]);
+});
 
 // GET /tickets - Listar todos os tickets
 app.get('/tickets', (req, res) => {
