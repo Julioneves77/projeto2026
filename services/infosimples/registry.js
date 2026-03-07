@@ -119,13 +119,15 @@ function buildTrf1Payload(ticket, tipoCertidao) {
   return { tipo, orgao, cpf, considera_filiais: 'false', timeout: 300 };
 }
 
-/** tribunal/trf4/certidao: tipo, cpf. tipo: 1=Cível, 2=Eleitoral, 3=Criminal */
+/** tribunal/trf4/certidao: tipo, cpf. tipo: CIVEL, CRIMINAL ou ELEITORAL (API exige string) */
+const TRF4_TIPO_MAP = { 1: 'CIVEL', 2: 'ELEITORAL', 3: 'CRIMINAL' };
 function buildTrf4Payload(ticket, tipoCertidao) {
   const df = ticket.dadosFormulario || {};
   const cpfRaw = (ticket.cpfSolicitante || df.cpf || '').replace(/\D/g, '');
   const cpf = cpfRaw.length === 11 ? cpfRaw : cpfRaw.padStart(11, '0').slice(-11);
   const cnpj = (df.cnpj || '').replace(/\D/g, '');
-  const payload = { tipo: String(tipoCertidao), timeout: 300 };
+  const tipo = TRF4_TIPO_MAP[tipoCertidao] || TRF4_TIPO_MAP[3];
+  const payload = { tipo, timeout: 300 };
   if (cnpj && cnpj.length === 14) {
     payload.cnpj = cnpj;
   } else {
