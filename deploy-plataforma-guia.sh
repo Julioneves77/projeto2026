@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy PLATAFORMA + GUIA_CENTRAL (mensagens Plexi + campo Data Nascimento)
+# Deploy PLATAFORMA + GUIA_CENTRAL (automação InfoSimples)
 # Uso: ./deploy-plataforma-guia.sh [usuario_ssh]
 
 set -e
@@ -49,12 +49,18 @@ else
   echo "⚠️  Script atualizar-nginx-plataforma-api.sh não encontrado - verifique manualmente"
 fi
 
+# 5b. Desativar sites desnecessários (portalcertidao.org, solicite.link)
+if [ -f "desativar-sites-desnecessarios.sh" ]; then
+  bash desativar-sites-desnecessarios.sh ${SERVER_USER} 2>/dev/null && echo "✅ Estrutura mínima aplicada" || true
+fi
+
 # 6. Atualizar sync-server (GCLID/Sheets + utils)
 echo ""
 echo "📤 Atualizando sync-server..."
 SERVER_PATH="/root/projeto-2026-estrutura"
 rsync -avz sync-server.js ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/ 2>/dev/null || true
 rsync -avz services/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/services/ 2>/dev/null || true
+rsync -avz assets/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/assets/ 2>/dev/null || true
 rsync -avz utils/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/utils/ 2>/dev/null || true
 rsync -avz package.json ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/ 2>/dev/null || true
 ssh ${SERVER_USER}@${SERVER_IP} "cd ${SERVER_PATH} && npm install --production 2>/dev/null && pm2 restart sync-server 2>/dev/null" && \

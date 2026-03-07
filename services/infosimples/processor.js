@@ -125,6 +125,33 @@ function resolveUrl(baseUrl, relativeUrl) {
   }
 }
 
+/** URLs de fallback para brasões TRF2 quando o baseUrl não resolve */
+const TRF2_BRASAO_FALLBACK_URLS = [
+  'https://certidoes.trf2.jus.br/certidoes/img/brasaoColoridoTRF2.png',
+  'https://www.trf2.jus.br/certidoes/img/brasaoColoridoTRF2.png',
+];
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+};
+
+async function fetchImageAsDataUri(url, extraHeaders = {}) {
+  const res = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout: 15000,
+    validateStatus: () => true,
+    headers: { ...BROWSER_HEADERS, ...extraHeaders },
+  });
+  if (res.status !== 200 || !res.data) return null;
+  const buf = Buffer.from(res.data);
+  const ct = (res.headers['content-type'] || 'image/png').split(';')[0].trim().toLowerCase();
+  const mime = ct.includes('png') ? 'png' : ct.includes('jpeg') || ct.includes('jpg') ? 'jpeg' : ct.includes('gif') ? 'gif' : 'png';
+  const b64 = buf.toString('base64');
+  return `data:image/${mime};base64,${b64}`;
+}
+
 async function embedHtmlImages(html, baseUrl) {
   const imgRegex = /<img([^>]*?)src=["']([^"']+)["']([^>]*)>/gi;
   let match;
@@ -136,22 +163,38 @@ async function embedHtmlImages(html, baseUrl) {
     const afterSrc = match[3];
     if (src.startsWith('data:')) continue;
     const absUrl = resolveUrl(baseUrl, src);
+    const isBrasaoTrf2 = /brasao|TRF2/i.test(src);
+    const trf2Referer = { 'Referer': 'https://certidoes.trf2.jus.br/' };
+    let dataUri = null;
     try {
-      const res = await axios.get(absUrl, {
-        responseType: 'arraybuffer',
-        timeout: 15000,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CertidaoBot/1.0)' },
-      });
-      if (res.status !== 200 || !res.data) continue;
-      const buf = Buffer.from(res.data);
-      const ct = (res.headers['content-type'] || 'image/png').split(';')[0].trim().toLowerCase();
-      const mime = ct.includes('png') ? 'png' : ct.includes('jpeg') || ct.includes('jpg') ? 'jpeg' : ct.includes('gif') ? 'gif' : 'png';
-      const b64 = buf.toString('base64');
-      const dataUri = `data:image/${mime};base64,${b64}`;
-      replacements.push({ fullTag, newTag: `<img${beforeSrc} src="${dataUri}"${afterSrc}>` });
+      dataUri = await fetchImageAsDataUri(absUrl, isBrasaoTrf2 ? trf2Referer : {});
     } catch (err) {
       console.warn(`[InfoSimples] Imagem não incorporada (${String(src).slice(0, 50)}...):`, err.message);
+    }
+    if (!dataUri && isBrasaoTrf2) {
+      for (const fallbackUrl of TRF2_BRASAO_FALLBACK_URLS) {
+        try {
+          dataUri = await fetchImageAsDataUri(fallbackUrl, trf2Referer);
+          if (dataUri) {
+            console.log(`[InfoSimples] Brasão TRF2 incorporado via fallback: ${fallbackUrl}`);
+            break;
+          }
+        } catch (_) { /* ignorar */ }
+      }
+    }
+    if (!dataUri && isBrasaoTrf2) {
+      const localPath = path.join(__dirname, '..', '..', 'assets', 'brasao', 'brasaoColoridoTRF2.png');
+      if (fs.existsSync(localPath)) {
+        try {
+          const buf = fs.readFileSync(localPath);
+          const b64 = buf.toString('base64');
+          dataUri = `data:image/png;base64,${b64}`;
+          console.log(`[InfoSimples] Brasão TRF2 incorporado via asset local`);
+        } catch (_) { /* ignorar */ }
+      }
+    }
+    if (dataUri) {
+      replacements.push({ fullTag, newTag: `<img${beforeSrc} src="${dataUri}"${afterSrc}>` });
     }
   }
   let result = html;
