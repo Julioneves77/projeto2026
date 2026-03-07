@@ -35,8 +35,8 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const sendPulseService = require('./services/sendPulseService');
 const zapApiService = require('./services/zapApiService');
-const plexiWorker = require('./services/plexi/worker');
-const { getRegistryKey, validateRequiredFields, formatMissingFieldsForUser, ServiceRegistry } = require('./services/plexi/registry');
+const certidaoWorker = require('./services/infosimples/worker');
+const { getRegistryKey, validateRequiredFields, formatMissingFieldsForUser, ServiceRegistry } = require('./services/infosimples/registry');
 const { validateEmail, validatePhone } = require('./utils/validators');
 const logger = require('./utils/logger');
 const { validateTicket, validateUpload, validateInteraction } = require('./utils/validation');
@@ -357,6 +357,22 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 app.use('/uploads', express.static(UPLOAD_DIR));
+
+// Servir certidões (PDFs gerados pela InfoSimples) - autenticado
+if (!fs.existsSync(STORAGE_CERTIDOES_PATH)) {
+  fs.mkdirSync(STORAGE_CERTIDOES_PATH, { recursive: true });
+}
+app.get('/certidoes/:filename', authenticateRequest, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  if (!filename || !/^[a-zA-Z0-9_\-\.]+$/.test(filename)) {
+    return res.status(400).send('Nome de arquivo inválido');
+  }
+  const fullPath = path.join(STORAGE_CERTIDOES_PATH, filename);
+  if (!fs.existsSync(fullPath)) {
+    return res.status(404).send('Arquivo não encontrado');
+  }
+  res.sendFile(fullPath, { headers: { 'Content-Type': 'application/pdf' } });
+});
 
 // Health check endpoint (sem autenticação)
 app.get('/health', (req, res) => {
@@ -1399,17 +1415,16 @@ function saveTickets(tickets) {
   }
 }
 
-// Inicializar worker Plexi
-plexiWorker.init({
+// Inicializar worker InfoSimples (motor de certidões)
+certidaoWorker.init({
   readTickets,
   saveTickets,
   storageCertidoesPath: STORAGE_CERTIDOES_PATH,
   sendPulseService
 });
 
-// Recuperar tickets EM_OPERACAO com Plexi pendente (nunca processados)
-// Útil após reinício do servidor ou quando enqueue falhou
-function recoverPlexiPendingTickets() {
+// Recuperar tickets EM_OPERACAO pendentes (nunca processados)
+function recoverCertidaoPendingTickets() {
   try {
     const tickets = readTickets();
     const toEnqueue = tickets.filter(t => {
@@ -1419,23 +1434,20 @@ function recoverPlexiPendingTickets() {
       return !autoStatus || autoStatus === '' || autoStatus === 'PENDING';
     });
     if (toEnqueue.length > 0) {
-      console.log(`🤖 [Plexi Recovery] Enfileirando ${toEnqueue.length} ticket(s) pendente(s) para processamento automático`);
+      console.log(`🤖 [InfoSimples Recovery] Enfileirando ${toEnqueue.length} ticket(s) pendente(s)`);
       toEnqueue.forEach(t => {
-        plexiWorker.enqueue(t.id);
-        console.log(`🤖 [Plexi Recovery] Ticket ${t.codigo} enfileirado`);
+        certidaoWorker.enqueue(t.id);
+        console.log(`🤖 [InfoSimples Recovery] Ticket ${t.codigo} enfileirado`);
       });
     }
   } catch (err) {
-    console.error('❌ [Plexi Recovery] Erro:', err.message);
+    console.error('❌ [InfoSimples Recovery] Erro:', err.message);
   }
 }
 
-// Executar recuperação na inicialização (após 3s para dar tempo do servidor subir)
-setTimeout(recoverPlexiPendingTickets, 3000);
-
-// Executar recuperação periodicamente (a cada 5 min) para pegar tickets que ficaram pendentes
-const PLEXI_RECOVERY_INTERVAL = 5 * 60 * 1000;
-setInterval(recoverPlexiPendingTickets, PLEXI_RECOVERY_INTERVAL);
+setTimeout(recoverCertidaoPendingTickets, 3000);
+const CERTIDAO_RECOVERY_INTERVAL = 5 * 60 * 1000;
+setInterval(recoverCertidaoPendingTickets, CERTIDAO_RECOVERY_INTERVAL);
 
 // ============================================
 // LIMPEZA AUTOMÁTICA DE TICKETS ANTIGOS
@@ -1926,10 +1938,10 @@ app.put('/tickets/:id', (req, res) => {
   console.log(`📤 [SYNC] Status após atualização: ${updatedTicket.status}`);
   console.log(`📤 [SYNC] Data conclusão: ${updatedTicket.dataConclusao || 'não definida'}`);
   
-  // Ao mover para EM_OPERACAO (ex: manualmente da aba Geral), enfileirar Plexi
+  // Ao mover para EM_OPERACAO, enfileirar para processamento InfoSimples
   if (updates.status === 'EM_OPERACAO' && currentTicket.status !== 'EM_OPERACAO') {
-    plexiWorker.enqueue(updatedTicket.id);
-    console.log(`🤖 [Plexi] Ticket ${updatedTicket.codigo} enfileirado para processamento automático`);
+    certidaoWorker.enqueue(updatedTicket.id);
+    console.log(`🤖 [InfoSimples] Ticket ${updatedTicket.codigo} enfileirado para processamento automático`);
   }
   
   if (saveTickets(tickets)) {
@@ -2097,14 +2109,14 @@ app.post('/tickets/:id/send-confirmation', async (req, res) => {
   }
 });
 
-// POST /tickets/plexi/recover - Recuperar todos os tickets pendentes (EM_OPERACAO sem automationStatus)
+// POST /tickets/plexi/recover - Compatibilidade: redireciona para recuperação InfoSimples
 app.post('/tickets/plexi/recover', authenticateRequest, express.json(), (req, res) => {
-  logger.info('POST /tickets/plexi/recover - Recuperar tickets Plexi pendentes', { ip: req.ip });
+  logger.info('POST /tickets/plexi/recover - Recuperar tickets pendentes (InfoSimples)', { ip: req.ip });
   try {
-    recoverPlexiPendingTickets();
+    recoverCertidaoPendingTickets();
     return res.json({
       success: true,
-      message: 'Recuperação de tickets Plexi pendentes executada'
+      message: 'Recuperação de tickets pendentes executada'
     });
   } catch (err) {
     logger.logError(err, { endpoint: '/tickets/plexi/recover', ip: req.ip });
@@ -2112,86 +2124,119 @@ app.post('/tickets/plexi/recover', authenticateRequest, express.json(), (req, re
   }
 });
 
-// POST /tickets/:id/plexi/retry - Reenviar para Plexi
+// POST /tickets/infosimples/recover - Recuperar tickets pendentes
+app.post('/tickets/infosimples/recover', authenticateRequest, express.json(), (req, res) => {
+  logger.info('POST /tickets/infosimples/recover - Recuperar tickets pendentes', { ip: req.ip });
+  try {
+    recoverCertidaoPendingTickets();
+    return res.json({ success: true, message: 'Recuperação executada' });
+  } catch (err) {
+    logger.logError(err, { endpoint: '/tickets/infosimples/recover', ip: req.ip });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tickets/:id/plexi/retry - Compatibilidade: reenviar para InfoSimples
 app.post('/tickets/:id/plexi/retry', authenticateRequest, express.json(), (req, res) => {
   const { id } = req.params;
-  logger.info(`POST /tickets/${id}/plexi/retry - Reenviar para Plexi`, { ip: req.ip });
+  logger.info(`POST /tickets/${id}/plexi/retry - Reenviar para InfoSimples`, { ip: req.ip });
+  return handleCertidaoRetry(id, res);
+});
 
+// POST /tickets/:id/infosimples/retry - Reenviar para InfoSimples
+app.post('/tickets/:id/infosimples/retry', authenticateRequest, express.json(), (req, res) => {
+  const { id } = req.params;
+  logger.info(`POST /tickets/${id}/infosimples/retry - Reenviar para InfoSimples`, { ip: req.ip });
+  return handleCertidaoRetry(id, res);
+});
+
+function handleCertidaoRetry(id, res) {
   const tickets = readTickets();
   const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
   if (ticketIndex === -1) {
     return res.status(404).json({ error: 'Ticket não encontrado' });
   }
-
   const ticket = tickets[ticketIndex];
   if (ticket.status !== 'EM_OPERACAO') {
     return res.status(400).json({
-      error: 'Ticket deve estar em EM_OPERACAO para reenviar para Plexi',
+      error: 'Ticket deve estar em EM_OPERACAO para reenviar',
       currentStatus: ticket.status
     });
   }
-
   const registryKey = getRegistryKey(ticket.tipoCertidao);
-  if (!registryKey || !ServiceRegistry[registryKey]) {
+  const config = registryKey && ServiceRegistry[registryKey];
+  if (!config) {
     return res.status(400).json({
-      error: `Esta certidão não possui API disponível na Plexi. Tipo: ${ticket.tipoCertidao}. A Plexi não oferece endpoint para este tipo de certidão.`,
+      error: `Certidão não suportada pela InfoSimples. Tipo: ${ticket.tipoCertidao}.`,
       reason: 'NO_API'
     });
   }
-
-  const config = ServiceRegistry[registryKey];
-  const { valid, missing } = validateRequiredFields(ticket, config.requiredFields);
+  const requiredFields = typeof config.requiredFields === 'function' ? config.requiredFields(ticket) : config.requiredFields;
+  const { valid, missing } = validateRequiredFields(ticket, requiredFields);
   if (!valid) {
     const labels = formatMissingFieldsForUser(missing);
     return res.status(400).json({
-      error: `Dados faltando: ${labels}. Adicione esses campos no formulário de solicitação ou preencha manualmente no ticket e reenvie.`,
+      error: `Dados faltando: ${labels}.`,
       reason: 'MISSING_FIELDS',
       missingFields: missing,
       missingFieldsLabels: labels
     });
   }
-
-  plexiWorker.enqueue(ticket.id);
+  // Limpar estado de falha anterior para permitir reprocessamento
+  if (ticket.automationStatus === 'FAILED_FINAL' || ticket.automationStatus === 'FAILED_TRANSIENT' || ticket.automationStatus === 'BLOCKED') {
+    tickets[ticketIndex] = {
+      ...ticket,
+      automationStatus: undefined,
+      automationLastError: null,
+      automationAttempts: 0,
+      automationLockAt: null,
+      automationLockOwner: null,
+    };
+    saveTickets(tickets);
+  }
+  certidaoWorker.enqueue(ticket.id);
   return res.json({
     success: true,
-    message: 'Ticket enfileirado para processamento Plexi',
+    message: 'Ticket enfileirado para processamento InfoSimples',
     ticketCodigo: ticket.codigo
   });
+}
+
+// POST /tickets/:id/plexi/reset - Compatibilidade
+app.post('/tickets/:id/plexi/reset', authenticateRequest, express.json(), (req, res) => {
+  return handleCertidaoReset(req.params.id, res);
 });
 
-// POST /tickets/:id/plexi/reset - Resetar Plexi (apenas admin/suporte autenticado)
-app.post('/tickets/:id/plexi/reset', authenticateRequest, express.json(), (req, res) => {
-  const { id } = req.params;
-  logger.info(`POST /tickets/${id}/plexi/reset - Resetar Plexi`, { ip: req.ip });
+// POST /tickets/:id/infosimples/reset - Resetar automação
+app.post('/tickets/:id/infosimples/reset', authenticateRequest, express.json(), (req, res) => {
+  return handleCertidaoReset(req.params.id, res);
+});
 
+function handleCertidaoReset(id, res) {
   const tickets = readTickets();
   const ticketIndex = tickets.findIndex(t => t.id === id || t.codigo === id);
   if (ticketIndex === -1) {
     return res.status(404).json({ error: 'Ticket não encontrado' });
   }
-
   const ticket = tickets[ticketIndex];
   if (ticket.status !== 'EM_OPERACAO') {
     return res.status(400).json({
-      error: 'Ticket deve estar em EM_OPERACAO para resetar Plexi',
+      error: 'Ticket deve estar em EM_OPERACAO para resetar',
       currentStatus: ticket.status
     });
   }
-
   const historico = ticket.historico || [];
-  const now = new Date().toISOString();
-  const uniqueId = `h-${Date.now()}-${historico.length}-${Math.random().toString(36).substr(2, 9)}-plexi-reset`;
+  const uniqueId = `h-${Date.now()}-${historico.length}-${Math.random().toString(36).substr(2, 9)}-certidao-reset`;
   const historicoItem = {
     id: uniqueId,
-    dataHora: now,
+    dataHora: new Date().toISOString(),
     autor: 'Sistema',
     statusAnterior: ticket.status,
     statusNovo: ticket.status,
-    mensagem: 'Plexi resetado por admin',
+    mensagem: 'Automação resetada por admin',
     enviouEmail: false,
     enviouWhatsApp: false
   };
-
   tickets[ticketIndex] = {
     ...ticket,
     plexiRequestId: null,
@@ -2202,13 +2247,12 @@ app.post('/tickets/:id/plexi/reset', authenticateRequest, express.json(), (req, 
     historico: [...historico, historicoItem]
   };
   saveTickets(tickets);
-
   return res.json({
     success: true,
-    message: 'Plexi resetado. Use Reenviar para processar novamente.',
+    message: 'Automação resetada. Use Reenviar para processar novamente.',
     ticketCodigo: ticket.codigo
   });
-});
+}
 
 // POST /tickets/:id/send-completion - Enviar resultado de conclusão (email e WhatsApp)
 app.post('/tickets/:id/send-completion', async (req, res) => {
@@ -2334,29 +2378,13 @@ app.post('/tickets/:id/send-completion', async (req, res) => {
     // Se chegou aqui, pode enviar (não foi enviado recentemente ou houve erro ou FORCE_RESEND)
     console.log(`✅ [SYNC] Prosseguindo com envio de notificações...`);
     
-    // Função para gerar nome do arquivo
-    function generateFileName(ticketData) {
-      const nomeCliente = (ticketData.nomeCompleto || ticketData.nome || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const tipoCertidaoMap = {
-        'criminal-federal': 'Certidao_Criminal_Federal',
-        'criminal-estadual': 'Certidao_Criminal_Estadual',
-        'antecedentes-pf': 'Antecedente_PF',
-        'eleitoral': 'Certidao_Eleitoral',
-        'civil-federal': 'Certidao_Civil_Federal',
-        'civil-estadual': 'Certidao_Civil_Estadual',
-        'cnd': 'CND',
-        'cpf-regular': 'CPF_Regular'
-      };
-      const tipoCertidao = tipoCertidaoMap[ticketData.tipoCertidao] || (ticketData.tipoCertidao ? ticketData.tipoCertidao.replace(/[^a-zA-Z0-9]/g, '_') : 'Certidao');
-      return `${nomeCliente}_${tipoCertidao}.pdf`;
-    }
-    
-    // Preparar anexo com nome correto se disponível
+    // Preparar anexo com nome: Certidao_Tipo_Nome_Usuario.ext
     let anexoPreparado = null;
     if (anexo && anexo.base64) {
+      const nomeArquivo = sendPulseService.buildAttachmentFileName(ticket, anexo.nome);
       anexoPreparado = {
         ...anexo,
-        nome: generateFileName(ticket)
+        nome: nomeArquivo
       };
       console.log(`📎 [SYNC] Anexo preparado: ${anexoPreparado.nome}`);
     }
@@ -2744,8 +2772,8 @@ app.post('/webhooks/pagarme', express.json(), async (req, res) => {
       }
     }
 
-    // Enfileirar job Plexi para processamento automático
-    plexiWorker.enqueue(ticket.id);
+    // Enfileirar job InfoSimples para processamento automático
+    certidaoWorker.enqueue(ticket.id);
 
     // Enviar confirmação de pagamento (email e WhatsApp)
     try {

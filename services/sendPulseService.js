@@ -456,6 +456,21 @@ function createCompletionEmailTemplate(ticketData, mensagemInteracao, domainInfo
 }
 
 /**
+ * Gera nome do arquivo para anexo: Certidao_Tipo_Nome_Usuario.ext
+ */
+function buildAttachmentFileName(ticketData, originalNome) {
+  const sanitize = (s) => (s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 50) || 'Documento';
+  const tipo = sanitize(ticketData.tipoCertidao || 'Certidao');
+  const nome = sanitize(ticketData.nomeCompleto || ticketData.nome || 'Cliente');
+  const ext = (originalNome && path.extname(originalNome)) || '.pdf';
+  return `Certidao_${tipo}_${nome}${ext}`;
+}
+
+/**
  * Envia email de conclusão de ticket via SendPulse com anexo
  */
 async function sendCompletionEmail(ticketData, mensagemInteracao, anexo) {
@@ -521,7 +536,7 @@ ${domainInfo.name}
     // Adicionar anexo se disponível (formato correto para SendPulse)
     // O ARQUIVO É ENVIADO COMO ANEXO REAL, NÃO COMO LINK
     if (anexo && anexo.base64) {
-      const fileName = anexo.nome || `certidao-${codigo}.pdf`;
+      const fileName = buildAttachmentFileName(ticketData, anexo.nome) || anexo.nome || `certidao-${codigo}.pdf`;
       console.log(`📎 [SendPulse] Preparando ARQUIVO para envio como anexo: ${fileName}`);
       console.log(`📎 [SendPulse] Tamanho base64: ${anexo.base64.length} caracteres`);
       
@@ -885,10 +900,15 @@ async function sendEmail({ to, subject, html, text, from, cc, bcc }) {
   });
 }
 
+/** Alias para InfoSimples - mesmo fluxo de bloqueio (ex: já solicitado há menos de 30 dias) */
+const sendProviderBlockedEmail = sendPlexiBlockedEmail;
+
 module.exports = {
   sendConfirmationEmail,
   sendCompletionEmail,
+  buildAttachmentFileName,
   sendPlexiBlockedEmail,
+  sendProviderBlockedEmail,
   sendEmail,
   initializeSendPulse
 };
